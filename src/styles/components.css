@@ -152,6 +152,11 @@
   color: #b93901;
 }
 
+.status--approved {
+  background: var(--color-positive-weak);
+  color: var(--color-positive);
+}
+
 .status--scheduled {
   background: var(--color-info-weak);
   color: var(--color-info);

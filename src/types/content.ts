@@ -3,6 +3,7 @@ export type ContentStatus =
   | "drafting"
   | "tone"
   | "review"
+  | "approved"
   | "scheduled"
   | "published";
 

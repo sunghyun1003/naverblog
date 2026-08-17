@@ -12,22 +12,24 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "../../components/Button";
 import { StatusBadge } from "../../components/StatusBadge";
-import { initialContents, recentActivities } from "../../data/content";
+import { recentActivities } from "../../data/content";
 import type { ContentItem, ContentStatus } from "../../types/content";
 import { CreateContentDialog } from "./CreateContentDialog";
+import { useContents } from "./useContents";
 
 const filters: Array<{ key: "all" | ContentStatus; label: string }> = [
   { key: "all", label: "전체" },
   { key: "planning", label: "기획" },
   { key: "drafting", label: "작성 중" },
   { key: "review", label: "검토 필요" },
+  { key: "approved", label: "승인 완료" },
   { key: "scheduled", label: "예약" },
   { key: "published", label: "발행 완료" },
 ];
 
 export function DashboardPage() {
   const navigate = useNavigate();
-  const [contents, setContents] = useState(initialContents);
+  const { contents, setContents, connectionStatus, capabilities, creating, createAndRun } = useContents();
   const [activeFilter, setActiveFilter] = useState<"all" | ContentStatus>("all");
   const [query, setQuery] = useState("");
   const [mineOnly, setMineOnly] = useState(false);
@@ -48,21 +50,30 @@ export function DashboardPage() {
   const reviewCount = contents.filter((content) => content.status === "review").length;
   const scheduledCount = contents.filter((content) => content.status === "scheduled").length;
 
-  const handleCreate = (title: string) => {
-    const newContent: ContentItem = {
-      id: `content-${Date.now()}`,
-      title,
-      status: "planning",
-      assignee: "김서연",
-      initials: "김",
-      updatedAt: "방금",
-      publishAt: null,
-    };
-    setContents((current) => [newContent, ...current]);
-    setCreateOpen(false);
-    setActiveFilter("all");
-    setToast("새 콘텐츠 기획을 시작했어요.");
-    window.setTimeout(() => setToast(""), 2800);
+  const handleCreate = async (title: string, strategy: "trend" | "original") => {
+    try {
+      if (connectionStatus === "connected") {
+        await createAndRun(title, strategy);
+        setToast("9단계 자동화가 끝났어요. 원고 검토를 시작할 수 있습니다.");
+      } else {
+        const newContent: ContentItem = {
+          id: `content-${Date.now()}`,
+          title,
+          status: "planning",
+          assignee: "김서연",
+          initials: "김",
+          updatedAt: "방금",
+          publishAt: null,
+        };
+        setContents((current) => [newContent, ...current]);
+        setToast("API가 연결되지 않아 화면에만 임시 기획을 만들었어요.");
+      }
+      setCreateOpen(false);
+      setActiveFilter("all");
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "자동화 실행에 실패했습니다.");
+    }
+    window.setTimeout(() => setToast(""), 3600);
   };
 
   return (
@@ -77,6 +88,20 @@ export function DashboardPage() {
             콘텐츠 만들기
           </Button>
         </header>
+
+        <div className={`system-status system-status--${connectionStatus}`} role="status">
+          <span className="system-status__dot" />
+          <div>
+            <strong>
+              {connectionStatus === "connected" ? "로컬 자동화 파이프라인 연결됨" : connectionStatus === "connecting" ? "자동화 서버 연결 확인 중" : "자동화 서버 연결 대기"}
+            </strong>
+            <small>
+              {connectionStatus === "connected"
+                ? `${capabilities?.mode ?? "local-mock"} · 외부 연동은 내일 설정`
+                : "샘플 데이터로 화면을 계속 사용할 수 있습니다."}
+            </small>
+          </div>
+        </div>
 
         <section className="status-strip" aria-label="오늘의 콘텐츠 상태">
           <button type="button" onClick={() => setActiveFilter("review")}>
@@ -180,7 +205,10 @@ export function DashboardPage() {
             <span><strong>예약 확인</strong><small>{scheduledCount}건</small></span>
             <ChevronRight size={18} />
           </button>
-          <button type="button" className="task-item" onClick={() => navigate("/contents/silson-generations")}>
+          <button type="button" className="task-item" onClick={() => {
+            const reviewItem = contents.find((content) => content.status === "review");
+            if (reviewItem) navigate(`/contents/${reviewItem.id}`);
+          }}>
             <span className="task-item__icon task-item__icon--positive"><FileCheck2 size={20} /></span>
             <span><strong>자료 출처 확인</strong><small>1건</small></span>
             <ChevronRight size={18} />
@@ -202,7 +230,7 @@ export function DashboardPage() {
         </section>
       </aside>
 
-      <CreateContentDialog open={createOpen} onClose={() => setCreateOpen(false)} onCreate={handleCreate} />
+      <CreateContentDialog open={createOpen} onClose={() => setCreateOpen(false)} onCreate={handleCreate} busy={creating} />
       {toast ? <div className="snackbar" role="status">{toast}</div> : null}
     </div>
   );

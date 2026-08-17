@@ -10,11 +10,13 @@ import {
   ShieldAlert,
   UserRound,
 } from "lucide-react";
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, type ReactNode } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import type { ApiContentVersion } from "../../api/types";
 import { Button } from "../../components/Button";
 import { StatusBadge } from "../../components/StatusBadge";
 import { RejectDialog } from "./RejectDialog";
+import { useContentDetail } from "./useContentDetail";
 
 type ReviewTab = "draft" | "sources" | "history";
 
@@ -32,33 +34,85 @@ const sources = [
   { organization: "보험개발원", date: "2026.05.12", note: "세대별 구조 참고" },
 ];
 
+const pipelineStageLabel: Record<string, string> = {
+  collect_trends: "트렌드 수집",
+  verify_sources: "공식 근거 검증",
+  create_brief: "기획서 생성",
+  write_draft: "초안 작성",
+  optimize_seo: "SEO 최적화",
+  optimize_geo: "GEO 최적화",
+  humanize_tone: "사람 말투 보정",
+  quality_assurance: "품질 검사",
+  notify_review: "검토 요청",
+};
+
 export function ReviewPage() {
   const navigate = useNavigate();
+  const { contentId } = useParams();
+  const { detail, connectionStatus, approve: approveApi, reject: rejectApi } = useContentDetail(contentId);
   const [tab, setTab] = useState<ReviewTab>("draft");
   const [activeOutline, setActiveOutline] = useState("summary");
   const [expandedQuality, setExpandedQuality] = useState("risk");
   const [diffExpanded, setDiffExpanded] = useState(false);
   const [checks, setChecks] = useState({ sources: false, ads: false });
   const [rejectOpen, setRejectOpen] = useState(false);
-  const [status, setStatus] = useState<"review" | "scheduled">("review");
+  const [localApproved, setLocalApproved] = useState(false);
   const [toast, setToast] = useState("");
 
+  const approvedByApi = detail ? ["approved", "scheduled", "published", "measured"].includes(detail.content.state) : false;
+  const status = localApproved || approvedByApi ? "approved" : "review";
   const canApprove = checks.sources && checks.ads && status === "review";
+  const currentSources = detail?.sources.length
+    ? detail.sources.map((source) => ({ organization: source.organization, date: source.collectedAt.slice(0, 10), note: source.title }))
+    : sources;
+  const latestJob = detail?.jobs[0] ?? null;
+  const latestVersion = detail?.versions.at(-1) ?? null;
+  const effectiveQualityItems = detail?.qualityResults.length
+    ? detail.qualityResults.map((result) => {
+        const definition = {
+          facts: { label: "사실 근거", icon: CheckCircle2, tone: "positive" },
+          seo: { label: "SEO 점검", icon: SearchCheck, tone: "info" },
+          geo: { label: "GEO 점검", icon: Globe2, tone: "info" },
+          tone: { label: "사람 말투", icon: UserRound, tone: "positive" },
+          advertising: { label: "광고 위험", icon: ShieldAlert, tone: "warning" },
+        }[result.category];
+        return {
+          id: result.category,
+          label: `${definition.label} ${result.score}점`,
+          icon: definition.icon,
+          tone: result.status === "warning" || result.status === "failed" ? "warning" : definition.tone,
+          detail: result.messages.join(" "),
+        };
+      })
+    : qualityItems;
+  const toneDiffSummary = Array.isArray(latestVersion?.metadata.diffSummary)
+    ? latestVersion.metadata.diffSummary.filter((item): item is string => typeof item === "string")
+    : [];
   const jumpTo = (id: string) => {
     setActiveOutline(id);
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
-  const approve = () => {
+  const approve = async () => {
     if (!canApprove) return;
-    setStatus("scheduled");
-    setToast("원고를 승인했어요. 발행 일정에서 예약할 수 있습니다.");
+    try {
+      if (connectionStatus === "connected") await approveApi();
+      else setLocalApproved(true);
+      setToast("원고를 승인했어요. 발행 일정에서 예약할 수 있습니다.");
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "승인 처리에 실패했습니다.");
+    }
     window.setTimeout(() => setToast(""), 3200);
   };
 
-  const reject = (reason: string) => {
-    setRejectOpen(false);
-    setToast(`반려 사유가 담당자에게 전달됐어요: ${reason}`);
+  const reject = async (reason: string) => {
+    try {
+      if (connectionStatus === "connected") await rejectApi(reason);
+      setRejectOpen(false);
+      setToast(`반려 사유가 담당자에게 전달됐어요: ${reason}`);
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "반려 처리에 실패했습니다.");
+    }
     window.setTimeout(() => setToast(""), 3600);
   };
 
@@ -70,14 +124,14 @@ export function ReviewPage() {
             <ArrowLeft size={22} />
           </button>
           <div>
-            <h1>실손보험 세대별 차이, 무엇이 달라졌을까?</h1>
+            <h1>{detail?.content.title ?? "실손보험 세대별 차이, 무엇이 달라졌을까?"}</h1>
             <StatusBadge status={status} />
           </div>
         </div>
         <div className="review-header__actions">
           <Button onClick={() => setRejectOpen(true)} disabled={status !== "review"}>반려</Button>
-          <Button variant="brand" onClick={approve} disabled={!canApprove} icon={status === "scheduled" ? <Check size={18} /> : undefined}>
-            {status === "scheduled" ? "승인 완료" : "승인하기"}
+          <Button variant="brand" onClick={approve} disabled={!canApprove} icon={status === "approved" ? <Check size={18} /> : undefined}>
+            {status === "approved" ? "승인 완료" : "승인하기"}
           </Button>
         </div>
       </header>
@@ -104,15 +158,32 @@ export function ReviewPage() {
             <button role="tab" aria-selected={tab === "history"} onClick={() => setTab("history")}>변경 이력</button>
           </div>
 
-          {tab === "draft" ? <ArticleDraft /> : null}
-          {tab === "sources" ? <EvidenceView /> : null}
-          {tab === "history" ? <HistoryView /> : null}
+          {tab === "draft" ? <ArticleDraft title={latestVersion?.title} body={latestVersion?.body} /> : null}
+          {tab === "sources" ? <EvidenceView sourceItems={currentSources} /> : null}
+          {tab === "history" ? <HistoryView versions={detail?.versions ?? []} /> : null}
         </section>
 
         <aside className="quality-inspector">
           <h2>검수 결과</h2>
+          <div className={`review-connection review-connection--${connectionStatus}`}>
+            <span />
+            {connectionStatus === "connected" ? "자동화 실행 기록 연결됨" : connectionStatus === "loading" ? "실행 기록 불러오는 중" : "샘플 검수 화면"}
+          </div>
+          {latestJob ? (
+            <section className="pipeline-progress" aria-label="자동화 단계">
+              <header><strong>자동화 단계</strong><small>{latestJob.steps.filter((step) => step.status === "succeeded").length}/{latestJob.steps.length}</small></header>
+              <ol>
+                {latestJob.steps.map((step) => (
+                  <li key={step.stage} className={`pipeline-progress__${step.status}`}>
+                    <span>{step.status === "succeeded" ? <Check size={13} /> : null}</span>
+                    {pipelineStageLabel[step.stage] ?? step.stage}
+                  </li>
+                ))}
+              </ol>
+            </section>
+          ) : null}
           <div className="quality-list">
-            {qualityItems.map(({ id, label, tone, icon: Icon, detail }) => {
+            {effectiveQualityItems.map(({ id, label, tone, icon: Icon, detail: qualityDetail }) => {
               const expanded = expandedQuality === id;
               return (
                 <div className="quality-item" key={id}>
@@ -121,7 +192,7 @@ export function ReviewPage() {
                     <span>{label}</span>
                     <ChevronDown className={expanded ? "chevron--open" : ""} size={17} />
                   </button>
-                  {expanded ? <p>{detail}</p> : null}
+                  {expanded ? <p>{qualityDetail}</p> : null}
                 </div>
               );
             })}
@@ -130,27 +201,35 @@ export function ReviewPage() {
           <section className="inspector-section">
             <h3>말투 보정 변경</h3>
             <div className="diff-card">
-              <div className="diff-columns">
-                <div><small>변경 전</small><p>4세대 실손은 <del>무조건 혜택이 많습니다.</del></p></div>
-                <span aria-hidden="true">→</span>
-                <div><small>변경 후</small><p>4세대 실손은 <ins>이용 형태에 따라 유불리가 달라질 수 있어요.</ins></p></div>
-              </div>
-              {diffExpanded ? (
+              {toneDiffSummary.length ? (
                 <div className="diff-extra">
-                  <p><del>꼭 전환해야 합니다.</del></p>
-                  <p><ins>보장 범위와 보험료를 비교한 뒤 판단하세요.</ins></p>
+                  {toneDiffSummary.map((summary) => <p key={summary}>{summary}</p>)}
                 </div>
-              ) : null}
-              <button type="button" onClick={() => setDiffExpanded((current) => !current)}>
-                {diffExpanded ? "변경 내용 접기" : "변경 내용 보기"}
-              </button>
+              ) : (
+                <>
+                  <div className="diff-columns">
+                    <div><small>변경 전</small><p>4세대 실손은 <del>무조건 혜택이 많습니다.</del></p></div>
+                    <span aria-hidden="true">→</span>
+                    <div><small>변경 후</small><p>4세대 실손은 <ins>이용 형태에 따라 유불리가 달라질 수 있어요.</ins></p></div>
+                  </div>
+                  {diffExpanded ? (
+                    <div className="diff-extra">
+                      <p><del>꼭 전환해야 합니다.</del></p>
+                      <p><ins>보장 범위와 보험료를 비교한 뒤 판단하세요.</ins></p>
+                    </div>
+                  ) : null}
+                  <button type="button" onClick={() => setDiffExpanded((current) => !current)}>
+                    {diffExpanded ? "변경 내용 접기" : "변경 내용 보기"}
+                  </button>
+                </>
+              )}
             </div>
           </section>
 
           <section className="inspector-section">
             <h3>출처</h3>
             <div className="source-list">
-              {sources.map((source) => (
+              {currentSources.map((source) => (
                 <button type="button" key={source.organization} title={source.note}>
                   <span><FileCheck2 size={16} />{source.organization}</span>
                   <small>{source.date}</small>
@@ -181,7 +260,30 @@ export function ReviewPage() {
   );
 }
 
-function ArticleDraft() {
+function renderGeneratedBlocks(body: string): ReactNode[] {
+  let sectionIndex = 0;
+  const sectionIds = ["summary", "differences", "before-switch", "faq"];
+  return body.split("\n\n").flatMap((block, index) => {
+    const text = block.trim();
+    if (!text) return [];
+    if (text.startsWith("### ")) return [<h4 key={index}>{text.slice(4)}</h4>];
+    if (text.startsWith("## ")) {
+      const id = sectionIds[Math.min(sectionIndex++, sectionIds.length - 1)];
+      return [<h3 id={id} key={index}>{text.slice(3)}</h3>];
+    }
+    if (text.startsWith("# ")) return [<h2 id="summary" key={index}>{text.slice(2)}</h2>];
+    if (text.startsWith("- ")) {
+      return [<ul key={index}>{text.split("\n").map((line) => <li key={line}>{line.replace(/^-\s*/, "")}</li>)}</ul>];
+    }
+    if (text.startsWith("> ")) return [<p className="article-note" key={index}>{text.slice(2)}</p>];
+    return [<p key={index}>{text}</p>];
+  });
+}
+
+function ArticleDraft({ title, body }: { title?: string; body?: string }) {
+  if (body) {
+    return <article className="article-draft article-draft--generated" aria-label={`${title ?? "생성된 원고"} 본문`}>{renderGeneratedBlocks(body)}</article>;
+  }
   return (
     <article className="article-draft">
       <section id="summary">
@@ -223,11 +325,11 @@ function ArticleDraft() {
   );
 }
 
-function EvidenceView() {
+function EvidenceView({ sourceItems }: { sourceItems: Array<{ organization: string; date: string; note: string }> }) {
   return (
     <div className="evidence-view" id="sources">
       <header><h2>근거와 주장 연결</h2><p>원고의 중요한 사실 문장이 어떤 공식 자료에 근거하는지 확인하세요.</p></header>
-      {sources.map((source, index) => (
+      {sourceItems.map((source, index) => (
         <section key={source.organization}>
           <span className="evidence-index">{index + 1}</span>
           <div><h3>{source.organization} · {source.note}</h3><p>수집일 {source.date} · 공식 자료 · 검증 완료</p><blockquote>가입 시기와 제도 변경에 따라 보장 범위와 자기부담 구조가 달라질 수 있습니다.</blockquote></div>
@@ -237,17 +339,25 @@ function EvidenceView() {
   );
 }
 
-function HistoryView() {
-  return (
-    <div className="history-view">
-      <header><h2>변경 이력</h2><p>각 자동화 단계가 만든 버전을 시간순으로 확인할 수 있어요.</p></header>
-      {[
+function HistoryView({ versions }: { versions: ApiContentVersion[] }) {
+  const historyItems = versions.length
+    ? [...versions].reverse().map((version) => [
+        `v${version.sequence}`,
+        { human_tone: "사람 말투 보정", geo: "GEO 편집", seo: "SEO 편집", draft: "초안 생성", brief: "기획서 생성", manual: "사람 수정" }[version.stage],
+        version.stage === "human_tone" ? "skill runner" : "자동화 작업",
+        new Intl.DateTimeFormat("ko-KR", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(version.createdAt)),
+      ])
+    : [
         ["v5", "사람 말투 보정", "human-tone skill v1.2", "10분 전"],
         ["v4", "SEO·GEO 편집", "콘텐츠 품질 작업", "18분 전"],
         ["v3", "초안 생성", "작성 작업", "24분 전"],
         ["v2", "근거 검증", "공식 출처 3개", "31분 전"],
         ["v1", "기획서 생성", "김서연", "42분 전"],
-      ].map(([version, title, actor, time]) => (
+      ];
+  return (
+    <div className="history-view">
+      <header><h2>변경 이력</h2><p>각 자동화 단계가 만든 버전을 시간순으로 확인할 수 있어요.</p></header>
+      {historyItems.map(([version, title, actor, time]) => (
         <section key={version}><span>{version}</span><div><h3>{title}</h3><p>{actor}</p></div><time>{time}</time></section>
       ))}
     </div>

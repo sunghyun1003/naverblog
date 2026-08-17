@@ -5,6 +5,7 @@ export const contentStatusLabel: Record<ContentStatus, string> = {
   drafting: "작성 중",
   tone: "말투 보정",
   review: "검토 필요",
+  approved: "승인 완료",
   scheduled: "예약",
   published: "발행 완료",
 };

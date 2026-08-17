@@ -5,20 +5,34 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
-    "check": "tsc -b --pretty false",
+    "dev:web": "vite",
+    "dev:api": "tsx watch server/index.ts",
+    "db:migrate": "tsx server/db/migrate.ts",
+    "start:api": "node dist-server/server/index.js",
+    "build": "npm run build:web && npm run build:server",
+    "build:web": "tsc -b && vite build",
+    "build:server": "tsc -p tsconfig.server.json",
+    "check": "tsc -b --pretty false && tsc -p tsconfig.server.json --noEmit --pretty false && tsc -p tsconfig.test.json --noEmit --pretty false",
+    "test": "tsx --test --test-concurrency=1 tests/**/*.test.ts",
+    "verify": "npm run check && npm run test && npm run build",
     "preview": "vite preview"
   },
   "dependencies": {
+    "fastify": "^5.12.0",
     "lucide-react": "^1.31.0",
+    "pg": "^8.23.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "react-router-dom": "^7.18.2"
+    "react-router-dom": "^7.18.2",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@types/node": "^26.2.0",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^6.0.5",
+    "tsx": "^4.23.12",
     "typescript": "^7.0.2",
     "vite": "^8.2.1"
   }

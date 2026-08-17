@@ -184,6 +184,15 @@
   margin-top: var(--space-3);
 }
 
+.article-draft--generated > h3 {
+  scroll-margin-top: 226px;
+  margin-top: var(--space-10);
+}
+
+.article-draft--generated > h4 {
+  margin-top: var(--space-6);
+}
+
 .article-draft ul {
   display: grid;
   gap: var(--space-2);
@@ -253,6 +262,77 @@
   font-size: 18px;
   line-height: 24px;
 }
+
+.review-connection {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: calc(var(--space-1) * -1) 0 var(--space-3);
+  color: var(--color-text-muted);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.review-connection > span {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-full);
+  background: var(--color-text-muted);
+}
+
+.review-connection--connected > span { background: var(--color-positive); }
+.review-connection--loading > span { background: var(--color-info); }
+
+.pipeline-progress {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-2);
+  margin-bottom: var(--space-3);
+  padding: var(--space-3);
+  background: var(--color-bg);
+}
+
+.pipeline-progress header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-2);
+  font-size: 12px;
+}
+
+.pipeline-progress header small { color: var(--color-positive); }
+
+.pipeline-progress ol {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pipeline-progress li {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--color-text-muted);
+  font-size: 10px;
+  line-height: 14px;
+}
+
+.pipeline-progress li > span {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 auto;
+  border-radius: var(--radius-full);
+  display: grid;
+  place-items: center;
+  background: var(--color-bg-fill);
+}
+
+.pipeline-progress__succeeded { color: var(--color-text-secondary) !important; }
+.pipeline-progress__succeeded > span { background: var(--color-positive-weak) !important; color: var(--color-positive); }
+.pipeline-progress__failed > span { background: var(--color-critical-weak) !important; }
 
 .quality-list,
 .diff-card,
@@ -549,6 +629,10 @@
 
   .diff-columns > span {
     transform: rotate(90deg);
+  }
+
+  .pipeline-progress ol {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 

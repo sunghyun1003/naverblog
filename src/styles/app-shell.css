@@ -1,0 +1,228 @@
+.app-shell {
+  min-height: 100vh;
+  background: var(--color-bg);
+}
+
+.topbar {
+  position: sticky;
+  z-index: 50;
+  top: 0;
+  height: 72px;
+  border-bottom: 1px solid var(--color-border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(12px);
+}
+
+.topbar__brand {
+  width: 248px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0 28px;
+  color: var(--color-text);
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.brand-mark {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  color: var(--color-text);
+}
+
+.topbar__account {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 28px;
+  font-size: 14px;
+}
+
+.notification-button {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: var(--radius-full);
+  display: grid;
+  place-items: center;
+  margin-right: var(--space-2);
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.notification-button:hover {
+  background: var(--color-bg-fill);
+}
+
+.notification-button > span {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 8px;
+  height: 8px;
+  border: 2px solid white;
+  border-radius: var(--radius-full);
+  background: var(--color-brand);
+}
+
+.mobile-menu-button,
+.sidebar__mobile-heading {
+  display: none;
+}
+
+.app-shell__body {
+  min-height: calc(100vh - 72px);
+  display: flex;
+}
+
+.sidebar {
+  position: fixed;
+  z-index: 40;
+  top: 72px;
+  bottom: 0;
+  left: 0;
+  width: 248px;
+  border-right: 1px solid var(--color-border-subtle);
+  padding: var(--space-6) var(--space-4);
+  overflow-y: auto;
+  background: var(--color-bg);
+}
+
+.sidebar nav {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.sidebar__item {
+  position: relative;
+  min-height: 50px;
+  border-radius: var(--radius-3);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 var(--space-4);
+  color: var(--color-text-secondary);
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 500;
+  text-decoration: none;
+  transition: background-color var(--duration-fast) var(--easing), color var(--duration-fast) var(--easing);
+}
+
+.sidebar__item:hover {
+  background: var(--color-bg-subtle);
+  color: var(--color-text);
+}
+
+.sidebar__item--active {
+  background: var(--color-brand-weak);
+  color: var(--color-brand);
+  font-weight: 700;
+}
+
+.app-main {
+  width: calc(100% - 248px);
+  min-width: 0;
+  margin-left: 248px;
+}
+
+.drawer-scrim {
+  display: none;
+}
+
+@media (max-width: 1023px) {
+  .account-name {
+    display: none;
+  }
+}
+
+@media (max-width: 767px) {
+  .topbar {
+    height: 64px;
+  }
+
+  .topbar__brand {
+    width: auto;
+    padding: 0 var(--space-4);
+    font-size: 16px;
+  }
+
+  .topbar__brand .brand-mark {
+    width: 29px;
+    height: 29px;
+  }
+
+  .mobile-menu-button {
+    width: 40px;
+    height: 40px;
+    border: 0;
+    border-radius: var(--radius-2);
+    display: grid;
+    place-items: center;
+    margin-left: -8px;
+    background: transparent;
+    color: var(--color-text-secondary);
+  }
+
+  .topbar__account {
+    padding: 0 var(--space-4);
+  }
+
+  .topbar__account .avatar,
+  .topbar__account > svg {
+    display: none;
+  }
+
+  .notification-button {
+    margin-right: 0;
+  }
+
+  .app-shell__body {
+    min-height: calc(100vh - 64px);
+  }
+
+  .sidebar {
+    top: 0;
+    width: min(304px, 84vw);
+    padding: var(--space-4);
+    transform: translateX(-102%);
+    transition: transform var(--duration-normal) var(--easing-enter);
+  }
+
+  .sidebar--open {
+    box-shadow: var(--shadow-2);
+    transform: translateX(0);
+  }
+
+  .sidebar__mobile-heading {
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: var(--space-4);
+    padding-left: var(--space-3);
+  }
+
+  .drawer-scrim {
+    position: fixed;
+    z-index: 35;
+    inset: 0;
+    border: 0;
+    display: block;
+    background: rgba(0, 0, 0, 0.46);
+  }
+
+  .app-main {
+    width: 100%;
+    margin-left: 0;
+  }
+}

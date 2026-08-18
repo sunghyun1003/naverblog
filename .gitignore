@@ -9,3 +9,4 @@ dist-server/
 Thumbs.db
 playwright-report/
 test-results/
+automation-private/

@@ -27,6 +27,8 @@ const filters: Array<{ key: "all" | ContentStatus; label: string }> = [
   { key: "published", label: "발행 완료" },
 ];
 
+const isHostedPreview = import.meta.env.VITE_PREVIEW_MODE === "true";
+
 export function DashboardPage() {
   const navigate = useNavigate();
   const { contents, setContents, connectionStatus, capabilities, creating, createAndRun } = useContents();
@@ -93,12 +95,20 @@ export function DashboardPage() {
           <span className="system-status__dot" />
           <div>
             <strong>
-              {connectionStatus === "connected" ? "로컬 자동화 파이프라인 연결됨" : connectionStatus === "connecting" ? "자동화 서버 연결 확인 중" : "자동화 서버 연결 대기"}
+              {connectionStatus === "connected"
+                ? "로컬 자동화 파이프라인 연결됨"
+                : connectionStatus === "connecting"
+                  ? "자동화 서버 연결 확인 중"
+                  : isHostedPreview
+                    ? "웹 미리보기 모드"
+                    : "자동화 서버 연결 대기"}
             </strong>
             <small>
               {connectionStatus === "connected"
                 ? `${capabilities?.mode ?? "local-mock"} · 외부 연동은 내일 설정`
-                : "샘플 데이터로 화면을 계속 사용할 수 있습니다."}
+                : isHostedPreview
+                  ? "샘플 데이터로 화면과 상호작용을 확인할 수 있습니다."
+                  : "샘플 데이터로 화면을 계속 사용할 수 있습니다."}
             </small>
           </div>
         </div>

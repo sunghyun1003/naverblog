@@ -1,7 +1,24 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildApp } from "../server/http/app.js";
+import { GitHubAutomationService } from "../server/services/github-automation.js";
 import { testSystem } from "./helpers.js";
+
+test("GitHub 운영 모드에서는 저장소 콘텐츠를 운영 데이터 저장소로 표시한다", async (context) => {
+  const githubAutomation = new GitHubAutomationService({
+    owner: "owner",
+    repository: "automation",
+    branch: "main",
+    token: "test-token",
+  });
+  const app = buildApp({ githubAutomation, databaseProvider: "memory" });
+  context.after(() => app.close());
+
+  const response = await app.inject({ method: "GET", url: "/api/system/capabilities" });
+  assert.equal(response.statusCode, 200);
+  const capabilities = response.json<{ integrations: { database: { configured: boolean; provider: string } } }>();
+  assert.deepEqual(capabilities.integrations.database, { configured: true, provider: "github-contents" });
+});
 
 test("HTTP API로 생성부터 검수 상세 조회까지 실행한다", async (context) => {
   const system = testSystem();

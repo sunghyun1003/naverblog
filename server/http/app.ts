@@ -132,7 +132,10 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       youtube: { configured: false, provider: "mock" },
       slack: { configured: false, provider: "mock" },
       publisher: { configured: Boolean(githubAutomation), provider: githubAutomation ? "copy-package" : "mock" },
-      database: { configured: databaseProvider === "postgres", provider: databaseProvider },
+      database: {
+        configured: Boolean(githubAutomation) || databaseProvider === "postgres",
+        provider: githubAutomation ? "github-contents" : databaseProvider,
+      },
       automation: { configured: Boolean(githubAutomation), provider: githubAutomation ? "github-actions" : "mock" },
     },
   }));

@@ -27,7 +27,7 @@ export function CreateContentDialog({ open, onClose, onCreate, busy = false }: C
       open={open}
       onClose={onClose}
       title="콘텐츠 만들기"
-      description="주제를 직접 입력하거나 수집된 인기 소재를 바탕으로 기획할 수 있어요."
+      description="입력한 주제와 최근 수집된 네이버 블로그 소재 후보를 함께 참고해 기획합니다."
       footer={
         <>
           <Button type="button" onClick={onClose} disabled={busy}>취소</Button>
@@ -56,8 +56,8 @@ export function CreateContentDialog({ open, onClose, onCreate, busy = false }: C
           <label className={`strategy-option ${strategy === "trend" ? "strategy-option--selected" : ""}`}>
             <input type="radio" name="strategy" value="trend" checked={strategy === "trend"} disabled={busy} onChange={() => setStrategy("trend")} />
             <span>
-              <strong>인기 소재 재기획</strong>
-              <small>최근 수집된 네이버 블로그 관심 포인트를 바탕으로 새 관점의 원고를 생성합니다.</small>
+              <strong>최근 소재 재기획</strong>
+              <small>여러 검색어에 반복 노출된 최근 소재의 공통 관심사를 새 관점으로 구성합니다.</small>
             </span>
           </label>
           <label className={`strategy-option ${strategy === "original" ? "strategy-option--selected" : ""}`}>
@@ -71,7 +71,7 @@ export function CreateContentDialog({ open, onClose, onCreate, busy = false }: C
             />
             <span>
               <strong>새 기획으로 시작</strong>
-              <small>공식 자료와 내부 아이디어를 바탕으로 처음부터 기획합니다.</small>
+              <small>입력한 주제를 중심으로 기획하고, 수집 후보는 참고 근거로만 사용합니다.</small>
             </span>
           </label>
         </fieldset>

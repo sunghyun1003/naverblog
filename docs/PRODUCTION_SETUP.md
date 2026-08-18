@@ -133,7 +133,7 @@ GitHub `sunghyun1003/naverblog` → **Settings** → **Secrets and variables** �
 | 이름 | 값 |
 | --- | --- |
 | `GCP_PROJECT_ID` | `naverblog-automation-505904` |
-| `GCP_PROJECT_NUMBER` | `454698851004` |
+| `GCP_PROJECT_NUMBER` | `454698351004` |
 | `GCP_SERVICE_ACCOUNT` | `github-codex-automation@naverblog-automation-505904.iam.gserviceaccount.com` |
 | `GCP_REGION` | `asia-northeast3` |
 | `GCP_ARTIFACT_REPOSITORY` | `naverblog` |

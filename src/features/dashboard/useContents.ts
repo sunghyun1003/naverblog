@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { createContent, getCapabilities, listContents, runPipeline } from "../../api/client";
+import { createContent, generateContent, getCapabilities, listContents, runPipeline } from "../../api/client";
 import { mapContent } from "../../api/mapping";
 import type { ApiCapabilities } from "../../api/types";
 import { initialContents } from "../../data/content";
@@ -15,7 +15,7 @@ export function useContents() {
 
   useEffect(() => {
     const controller = new AbortController();
-    Promise.all([listContents(controller.signal), getCapabilities(controller.signal)])
+    const refresh = () => Promise.all([listContents(controller.signal), getCapabilities(controller.signal)])
       .then(([contentResponse, capabilityResponse]) => {
         setContents(contentResponse.items.map(mapContent));
         setCapabilities(capabilityResponse);
@@ -25,18 +25,26 @@ export function useContents() {
         if (error instanceof DOMException && error.name === "AbortError") return;
         setConnectionStatus("offline");
       });
-    return () => controller.abort();
+    void refresh();
+    const interval = window.setInterval(() => void refresh(), 30_000);
+    return () => {
+      window.clearInterval(interval);
+      controller.abort();
+    };
   }, []);
 
   const createAndRun = async (title: string, strategy: "trend" | "original") => {
     setCreating(true);
     try {
-      const created = await createContent({ title, topic: title, strategy });
-      await runPipeline(created.id);
-      const response = await listContents();
-      setContents(response.items.map(mapContent));
+      if (capabilities?.mode === "github-actions") {
+        await generateContent(title, strategy);
+      } else {
+        const content = await createContent({ title, topic: title, strategy });
+        await runPipeline(content.id);
+        const refreshed = await listContents();
+        setContents(refreshed.items.map(mapContent));
+      }
       setConnectionStatus("connected");
-      return created.id;
     } finally {
       setCreating(false);
     }

@@ -9,6 +9,7 @@ import {
   SearchCheck,
   ShieldAlert,
   UserRound,
+  Copy,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -24,7 +25,7 @@ const qualityItems = [
   { id: "facts", label: "사실 근거 8/8 확인", tone: "positive", icon: CheckCircle2, detail: "수치와 제도 설명이 연결된 출처 3곳과 일치합니다." },
   { id: "seo", label: "SEO 점검 완료", tone: "info", icon: SearchCheck, detail: "제목과 본문이 검색 의도에 맞고 키워드 반복이 감지되지 않았습니다." },
   { id: "geo", label: "GEO 점검 완료", tone: "info", icon: Globe2, detail: "직접 답변, 기준일, 출처, FAQ 구조가 포함됐습니다." },
-  { id: "tone", label: "사람 말투 보정 적용", tone: "positive", icon: UserRound, detail: "human-tone skill v1.2가 적용됐고 보호된 수치는 변경되지 않았습니다." },
+  { id: "tone", label: "사람 말투 보정 적용", tone: "positive", icon: UserRound, detail: "human-tone 스킬이 적용됐고 보호된 수치는 변경되지 않았습니다." },
   { id: "risk", label: "광고 위험 검토 필요", tone: "warning", icon: ShieldAlert, detail: "특정 상품 권유는 없지만 비교 표현을 사람이 최종 확인해야 합니다." },
 ];
 
@@ -63,8 +64,8 @@ export function ReviewPage() {
   const status = localApproved || approvedByApi ? "approved" : "review";
   const canApprove = checks.sources && checks.ads && status === "review";
   const currentSources = detail?.sources.length
-    ? detail.sources.map((source) => ({ organization: source.organization, date: source.collectedAt.slice(0, 10), note: source.title }))
-    : sources;
+    ? detail.sources.map((source) => ({ organization: source.organization, date: source.collectedAt.slice(0, 10), note: source.title, url: source.url }))
+    : sources.map((source) => ({ ...source, url: "" }));
   const latestJob = detail?.jobs[0] ?? null;
   const latestVersion = detail?.versions.at(-1) ?? null;
   const effectiveQualityItems = detail?.qualityResults.length
@@ -88,6 +89,7 @@ export function ReviewPage() {
   const toneDiffSummary = Array.isArray(latestVersion?.metadata.diffSummary)
     ? latestVersion.metadata.diffSummary.filter((item): item is string => typeof item === "string")
     : [];
+  const copyPackage = typeof latestVersion?.metadata.copyPackage === "string" ? latestVersion.metadata.copyPackage : latestVersion?.body ?? "";
   const jumpTo = (id: string) => {
     setActiveOutline(id);
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -129,6 +131,12 @@ export function ReviewPage() {
           </div>
         </div>
         <div className="review-header__actions">
+          <Button icon={<Copy size={17} />} onClick={() => {
+            void navigator.clipboard.writeText(copyPackage).then(() => {
+              setToast("네이버 블로그에 붙여넣을 원고를 복사했습니다.");
+              window.setTimeout(() => setToast(""), 3200);
+            });
+          }}>원고 복사</Button>
           <Button onClick={() => setRejectOpen(true)} disabled={status !== "review"}>반려</Button>
           <Button variant="brand" onClick={approve} disabled={!canApprove} icon={status === "approved" ? <Check size={18} /> : undefined}>
             {status === "approved" ? "승인 완료" : "승인하기"}
@@ -141,8 +149,8 @@ export function ReviewPage() {
           <strong>문서 구성</strong>
           {[
             ["summary", "핵심 요약"],
-            ["differences", "세대별 차이"],
-            ["before-switch", "전환 전 확인"],
+            ["differences", "주요 내용"],
+            ["before-switch", "점검 기준"],
             ["faq", "자주 묻는 질문"],
           ].map(([id, label]) => (
             <button key={id} type="button" className={activeOutline === id ? "document-outline__active" : ""} onClick={() => jumpTo(id)}>
@@ -230,7 +238,7 @@ export function ReviewPage() {
             <h3>출처</h3>
             <div className="source-list">
               {currentSources.map((source) => (
-                <button type="button" key={source.organization} title={source.note}>
+                <button type="button" key={`${source.organization}-${source.url}`} title={source.note} onClick={() => source.url && window.open(source.url, "_blank", "noopener,noreferrer")}>
                   <span><FileCheck2 size={16} />{source.organization}</span>
                   <small>{source.date}</small>
                   <ExternalLink size={15} />
@@ -325,14 +333,14 @@ function ArticleDraft({ title, body }: { title?: string; body?: string }) {
   );
 }
 
-function EvidenceView({ sourceItems }: { sourceItems: Array<{ organization: string; date: string; note: string }> }) {
+function EvidenceView({ sourceItems }: { sourceItems: Array<{ organization: string; date: string; note: string; url: string }> }) {
   return (
     <div className="evidence-view" id="sources">
       <header><h2>근거와 주장 연결</h2><p>원고의 중요한 사실 문장이 어떤 공식 자료에 근거하는지 확인하세요.</p></header>
       {sourceItems.map((source, index) => (
-        <section key={source.organization}>
+        <section key={`${source.organization}-${source.url}`}>
           <span className="evidence-index">{index + 1}</span>
-          <div><h3>{source.organization} · {source.note}</h3><p>수집일 {source.date} · 공식 자료 · 검증 완료</p><blockquote>가입 시기와 제도 변경에 따라 보장 범위와 자기부담 구조가 달라질 수 있습니다.</blockquote></div>
+          <div><h3>{source.organization} · {source.note}</h3><p>수집일 {source.date} · 원문 확인 필요</p><blockquote>금융 사실과 보험 광고 표현은 발행 전에 원문과 대조해야 합니다.</blockquote>{source.url ? <a href={source.url} target="_blank" rel="noreferrer">원문 열기 <ExternalLink size={14} /></a> : null}</div>
         </section>
       ))}
     </div>

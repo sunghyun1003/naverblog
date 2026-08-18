@@ -42,6 +42,7 @@ export function CreateContentDialog({ open, onClose, onCreate, busy = false }: C
           <span className="field__label">콘텐츠 주제</span>
           <input
             autoFocus
+            aria-label="콘텐츠 주제"
             disabled={busy}
             value={title}
             onChange={(event) => setTitle(event.target.value)}
@@ -56,7 +57,7 @@ export function CreateContentDialog({ open, onClose, onCreate, busy = false }: C
             <input type="radio" name="strategy" value="trend" checked={strategy === "trend"} disabled={busy} onChange={() => setStrategy("trend")} />
             <span>
               <strong>인기 소재 재기획</strong>
-              <small>최근 블로그·커뮤니티·YouTube에서 관심 포인트를 모아 새 관점으로 구성합니다.</small>
+              <small>최근 수집된 네이버 블로그 관심 포인트를 바탕으로 새 관점의 원고를 생성합니다.</small>
             </span>
           </label>
           <label className={`strategy-option ${strategy === "original" ? "strategy-option--selected" : ""}`}>

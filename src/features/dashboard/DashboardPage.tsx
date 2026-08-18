@@ -8,11 +8,11 @@ import {
   Plus,
   Search,
 } from "lucide-react";
-import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "../../components/Button";
 import { StatusBadge } from "../../components/StatusBadge";
-import { recentActivities } from "../../data/content";
+import { contentStatusLabel } from "../../data/content";
 import type { ContentItem, ContentStatus } from "../../types/content";
 import { CreateContentDialog } from "./CreateContentDialog";
 import { useContents } from "./useContents";
@@ -31,6 +31,7 @@ const isHostedPreview = import.meta.env.VITE_PREVIEW_MODE === "true";
 
 export function DashboardPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { contents, setContents, connectionStatus, capabilities, creating, createAndRun } = useContents();
   const [activeFilter, setActiveFilter] = useState<"all" | ContentStatus>("all");
   const [query, setQuery] = useState("");
@@ -39,31 +40,45 @@ export function DashboardPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [toast, setToast] = useState("");
 
+  useEffect(() => {
+    const requestedFilter = searchParams.get("filter");
+    if (requestedFilter && filters.some((filter) => filter.key === requestedFilter)) {
+      setActiveFilter(requestedFilter as "all" | ContentStatus);
+    }
+  }, [searchParams]);
+
   const filteredContents = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase("ko");
     return contents.filter((content) => {
       const matchesStatus = activeFilter === "all" || content.status === activeFilter;
       const matchesQuery = !normalizedQuery || content.title.toLocaleLowerCase("ko").includes(normalizedQuery);
-      const matchesMine = !mineOnly || content.assignee === "김서연";
+      const matchesMine = !mineOnly || content.assignee === "carrot";
       return matchesStatus && matchesQuery && matchesMine;
     });
   }, [activeFilter, contents, mineOnly, query]);
 
   const reviewCount = contents.filter((content) => content.status === "review").length;
   const scheduledCount = contents.filter((content) => content.status === "scheduled").length;
+  const recentActivities = contents.slice(0, 4).map((content) => ({
+    id: content.id,
+    title: content.title,
+    message: `현재 상태: ${contentStatusLabel[content.status]}`,
+    time: content.updatedAt,
+    tone: content.status === "review" ? "brand" : content.status === "scheduled" ? "info" : "neutral",
+  }));
 
   const handleCreate = async (title: string, strategy: "trend" | "original") => {
     try {
       if (connectionStatus === "connected") {
         await createAndRun(title, strategy);
-        setToast("9단계 자동화가 끝났어요. 원고 검토를 시작할 수 있습니다.");
+        setToast("원고 생성 작업을 시작했어요. 완료되면 목록에 자동으로 표시됩니다.");
       } else {
         const newContent: ContentItem = {
           id: `content-${Date.now()}`,
           title,
           status: "planning",
-          assignee: "김서연",
-          initials: "김",
+          assignee: "carrot",
+          initials: "C",
           updatedAt: "방금",
           publishAt: null,
         };
@@ -96,7 +111,9 @@ export function DashboardPage() {
           <div>
             <strong>
               {connectionStatus === "connected"
-                ? "로컬 자동화 파이프라인 연결됨"
+                ? capabilities?.mode === "github-actions"
+                  ? "GitHub Actions 자동화 연결됨"
+                  : "로컬 검증 파이프라인 연결됨"
                 : connectionStatus === "connecting"
                   ? "자동화 서버 연결 확인 중"
                   : isHostedPreview
@@ -105,7 +122,9 @@ export function DashboardPage() {
             </strong>
             <small>
               {connectionStatus === "connected"
-                ? `${capabilities?.mode ?? "local-mock"} · 외부 연동은 내일 설정`
+                ? capabilities?.mode === "github-actions"
+                  ? "비공개 자동화 저장소 · 수집·생성·말투 보정 사용 가능"
+                  : "모의 데이터로 생성·검수·승인 흐름을 확인할 수 있습니다."
                 : isHostedPreview
                   ? "샘플 데이터로 화면과 상호작용을 확인할 수 있습니다."
                   : "샘플 데이터로 화면을 계속 사용할 수 있습니다."}
@@ -124,7 +143,7 @@ export function DashboardPage() {
           </button>
           <button type="button" onClick={() => navigate("/trends")}>
             <span className="status-strip__icon status-strip__icon--positive"><FileCheck2 size={21} /></span>
-            <span><small>수집 중</small><strong>1</strong></span>
+            <span><small>트렌드 수집</small><strong>{capabilities?.integrations.naverSearch.configured ? "ON" : "-"}</strong></span>
           </button>
         </section>
 
@@ -220,7 +239,7 @@ export function DashboardPage() {
             if (reviewItem) navigate(`/contents/${reviewItem.id}`);
           }}>
             <span className="task-item__icon task-item__icon--positive"><FileCheck2 size={20} /></span>
-            <span><strong>자료 출처 확인</strong><small>1건</small></span>
+            <span><strong>자료 출처 확인</strong><small>{reviewCount}건</small></span>
             <ChevronRight size={18} />
           </button>
         </section>

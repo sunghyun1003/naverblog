@@ -23,8 +23,8 @@ export function mapContent(content: ApiContent): ContentItem {
     id: content.id,
     title: content.title,
     status: statusMap[content.state],
-    assignee: content.assigneeId === "demo-editor" ? "김서연" : "나",
-    initials: content.assigneeId === "demo-editor" ? "김" : "나",
+    assignee: content.assigneeId ?? "carrot",
+    initials: (content.assigneeId ?? "carrot").slice(0, 1).toUpperCase(),
     updatedAt: formatDate(content.updatedAt) ?? "방금",
     publishAt: formatDate(content.scheduledAt),
   };

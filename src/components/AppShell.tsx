@@ -2,17 +2,18 @@ import {
   BarChart3,
   Bell,
   CalendarDays,
-  ChevronDown,
   FileText,
   Home,
   Menu,
   Settings,
   Sparkles,
   X,
+  LogOut,
 } from "lucide-react";
 import { useState } from "react";
-import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { BrandMark } from "./BrandMark";
+import { useAuth } from "../features/auth/AuthProvider";
 
 const navigation = [
   { label: "홈", path: "/home", icon: Home, exact: true },
@@ -24,6 +25,7 @@ const navigation = [
 ];
 
 export function AppShell() {
+  const { user, logout } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
   const location = useLocation();
 
@@ -40,13 +42,16 @@ export function AppShell() {
           <span>블로그 운영센터</span>
         </div>
         <div className="topbar__account">
-          <button className="notification-button" type="button" aria-label="새 알림 1개">
+          <Link className="notification-button" to="/contents?filter=review" aria-label="검토 대기 콘텐츠 보기">
             <Bell size={21} />
             <span aria-hidden="true" />
+          </Link>
+          <span className="avatar avatar--large">C</span>
+          <span className="account-name">{user?.name ?? "carrot"}</span>
+          <button className="logout-button" type="button" onClick={() => void logout()} aria-label="로그아웃">
+            <LogOut size={17} aria-hidden="true" />
+            <span>로그아웃</span>
           </button>
-          <span className="avatar avatar--large">김</span>
-          <span className="account-name">김서연</span>
-          <ChevronDown size={17} aria-hidden="true" />
         </div>
       </header>
 

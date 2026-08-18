@@ -3,25 +3,34 @@ import { AppShell } from "./components/AppShell";
 import { PlaceholderPage } from "./components/PlaceholderPage";
 import { DashboardPage } from "./features/dashboard/DashboardPage";
 import { ReviewPage } from "./features/review/ReviewPage";
+import { useAuth } from "./features/auth/AuthProvider";
+import { LoginPage } from "./features/auth/LoginPage";
+import { HomePage } from "./features/operations/HomePage";
+import { TrendsPage } from "./features/operations/TrendsPage";
+import { SchedulePage } from "./features/operations/SchedulePage";
+import { SettingsPage } from "./features/operations/SettingsPage";
 
 export default function App() {
+  const { user, loading } = useAuth();
+  if (loading) return <div className="auth-loading" role="status">운영센터를 불러오는 중...</div>;
+  if (!user) return <LoginPage />;
   return (
     <Routes>
       <Route element={<AppShell />}>
         <Route index element={<Navigate to="/contents" replace />} />
         <Route
           path="home"
-          element={<PlaceholderPage title="홈" description="팀의 오늘 할 일과 운영 현황을 한눈에 보는 영역입니다." />}
+          element={<HomePage />}
         />
         <Route path="contents" element={<DashboardPage />} />
         <Route path="contents/:contentId" element={<ReviewPage />} />
         <Route
           path="trends"
-          element={<PlaceholderPage title="트렌드 수집" description="네이버·커뮤니티·YouTube 수집기를 연결할 영역입니다." />}
+          element={<TrendsPage />}
         />
         <Route
           path="schedule"
-          element={<PlaceholderPage title="발행 일정" description="승인된 콘텐츠의 예약과 발행 일정을 관리할 영역입니다." />}
+          element={<SchedulePage />}
         />
         <Route
           path="analytics"
@@ -29,7 +38,7 @@ export default function App() {
         />
         <Route
           path="settings"
-          element={<PlaceholderPage title="설정" description="팀원, 권한, 출처, 자동화 연결을 관리할 영역입니다." />}
+          element={<SettingsPage />}
         />
       </Route>
       <Route path="*" element={<Navigate to="/contents" replace />} />

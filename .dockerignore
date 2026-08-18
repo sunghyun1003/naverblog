@@ -1,0 +1,9 @@
+.git
+.github
+.codex-remote-attachments
+automation-private
+node_modules
+dist
+dist-server
+npm-debug.log
+docs/design

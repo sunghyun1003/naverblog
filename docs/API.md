@@ -1,19 +1,27 @@
-# 로컬 API 계약
+# 대시보드 API 계약
 
 기본 주소: `http://127.0.0.1:8787`
 
-개발 인증 헤더:
+운영 인증은 로그인 성공 후 발급되는 `HttpOnly` 서명 쿠키를 사용한다. 상태 변경 요청은 쿠키와 함께 `X-Requested-With: dashboard` 헤더가 필요하다.
+
+로컬 모의 모드에서는 아래 개발 헤더도 사용할 수 있다.
 
 - `X-User-Id`: 사용자 식별자
 - `X-User-Roles`: 쉼표로 구분한 역할
 - `X-Idempotency-Key`: 생성·작업 중복 방지 키
 
-개발 기본값은 `local-admin/admin`이다. 운영에서는 반드시 회사 인증 미들웨어로 교체한다.
+운영 초기 계정은 Google Secret Manager의 `dashboard-username`, `dashboard-password`로 관리한다.
 
 | Method | Path | 책임 |
 | --- | --- | --- |
 | GET | `/health` | 서버 상태 |
+| POST | `/api/auth/login` | 로그인과 세션 쿠키 발급 |
+| GET | `/api/auth/session` | 현재 로그인 확인 |
+| POST | `/api/auth/logout` | 세션 쿠키 만료 |
 | GET | `/api/system/capabilities` | 연동 준비 상태 |
+| GET | `/api/automation/runs` | 수집·생성 워크플로 실행 이력 |
+| POST | `/api/automation/collect` | NAVER 수집 워크플로 실행 |
+| POST | `/api/automation/generate` | 원고 생성 워크플로 실행 |
 | GET | `/api/contents` | 콘텐츠 목록 |
 | POST | `/api/contents` | 콘텐츠 생성 |
 | GET | `/api/contents/:id` | 버전·출처·주장·QA·작업 포함 상세 |

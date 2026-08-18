@@ -84,3 +84,38 @@ export interface ApiCapabilities {
   mode: string;
   integrations: Record<string, { configured: boolean; provider: string }>;
 }
+
+export interface ApiUser {
+  id: string;
+  name: string;
+  roles: string[];
+}
+
+export interface ApiWorkflowRun {
+  id: number;
+  workflow: "collect" | "generate";
+  status: string;
+  conclusion: string | null;
+  createdAt: string;
+  updatedAt: string;
+  url: string;
+}
+
+export interface ApiTrendItem {
+  title: string;
+  link: string;
+  description: string;
+  bloggername: string;
+  postdate: string;
+  candidateScore: number;
+  matchedQueries: string[];
+}
+
+export interface ApiTrendSnapshot {
+  collectionDate: string;
+  collectedAt: string;
+  queryCount: number;
+  itemCount: number;
+  source: string;
+  items: ApiTrendItem[];
+}

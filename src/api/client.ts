@@ -1,10 +1,6 @@
-import type { ApiCapabilities, ApiContent, ApiContentDetail, ApiJob } from "./types";
+import type { ApiCapabilities, ApiContent, ApiContentDetail, ApiJob, ApiTrendSnapshot, ApiUser, ApiWorkflowRun } from "./types";
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "";
-const localActorHeaders = {
-  "X-User-Id": "local-admin",
-  "X-User-Roles": "admin",
-};
 
 export class ApiError extends Error {
   constructor(
@@ -20,13 +16,34 @@ export class ApiError extends Error {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${apiBaseUrl}${path}`, {
     ...init,
-    headers: { ...(init?.body ? { "Content-Type": "application/json" } : {}), ...localActorHeaders, ...init?.headers },
+    credentials: "include",
+    headers: {
+      ...(init?.body ? { "Content-Type": "application/json" } : {}),
+      ...(init?.method && init.method !== "GET" ? { "X-Requested-With": "dashboard" } : {}),
+      ...init?.headers,
+    },
   });
   if (!response.ok) {
     const payload = (await response.json().catch(() => null)) as { error?: { code?: string; message?: string } } | null;
     throw new ApiError(payload?.error?.message ?? "API 요청에 실패했습니다.", response.status, payload?.error?.code ?? "UNKNOWN");
   }
+  if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
+}
+
+export function getSession(signal?: AbortSignal): Promise<{ user: ApiUser }> {
+  return request("/api/auth/session", { signal });
+}
+
+export function login(username: string, password: string): Promise<{ user: ApiUser }> {
+  return request("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ username, password }),
+  });
+}
+
+export function logout(): Promise<void> {
+  return request("/api/auth/logout", { method: "POST" });
 }
 
 export function listContents(signal?: AbortSignal): Promise<{ items: ApiContent[] }> {
@@ -67,5 +84,38 @@ export function rejectContent(contentId: string, reason: string): Promise<ApiCon
   return request(`/api/contents/${encodeURIComponent(contentId)}/reject`, {
     method: "POST",
     body: JSON.stringify({ reason }),
+  });
+}
+
+export function collectTrends(): Promise<{ accepted: boolean }> {
+  return request("/api/automation/collect", { method: "POST" });
+}
+
+export function generateContent(topic: string, strategy: "trend" | "original"): Promise<{ accepted: boolean }> {
+  return request("/api/automation/generate", {
+    method: "POST",
+    body: JSON.stringify({ topic, strategy }),
+  });
+}
+
+export function listWorkflowRuns(signal?: AbortSignal): Promise<{ items: ApiWorkflowRun[] }> {
+  return request("/api/automation/runs", { signal });
+}
+
+export function getTrends(signal?: AbortSignal): Promise<ApiTrendSnapshot> {
+  return request("/api/trends", { signal });
+}
+
+export function scheduleContent(contentId: string, scheduledAt: string): Promise<unknown> {
+  return request(`/api/contents/${encodeURIComponent(contentId)}/schedule`, {
+    method: "POST",
+    body: JSON.stringify({ scheduledAt }),
+  });
+}
+
+export function markContentPublished(contentId: string, externalUrl: string): Promise<unknown> {
+  return request(`/api/contents/${encodeURIComponent(contentId)}/publish`, {
+    method: "POST",
+    body: JSON.stringify({ externalUrl }),
   });
 }

@@ -12,6 +12,36 @@
   font-size: 14px;
 }
 
+.auth-loading__panel {
+  width: min(360px, 100%);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-4);
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--space-4);
+  padding: 22px 24px;
+  background: var(--color-bg-floating);
+  box-shadow: var(--shadow-1);
+}
+
+.auth-loading__panel .brand-mark { width: 36px; height: 36px; }
+.auth-loading__panel > div { display: grid; gap: 3px; }
+.auth-loading__panel strong { color: var(--color-text); font-size: 16px; }
+.auth-loading__panel span { font-size: 12px; }
+
+.auth-loading__spinner,
+.page-loading__spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--color-border);
+  border-top-color: var(--color-brand);
+  border-radius: var(--radius-full);
+  animation: loading-spin 0.8s linear infinite;
+}
+
+@keyframes loading-spin { to { transform: rotate(360deg); } }
+
 .login-panel {
   width: min(440px, 100%);
   border: 1px solid var(--color-border-subtle);

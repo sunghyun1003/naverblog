@@ -5,14 +5,23 @@ import type { ApiContent } from "../../api/types";
 import { Button } from "../../components/Button";
 import { StatusBadge } from "../../components/StatusBadge";
 import { mapContent } from "../../api/mapping";
+import { PageLoadingState } from "../../components/PageLoadingState";
 
 export function SchedulePage() {
   const [contents, setContents] = useState<ApiContent[]>([]);
   const [dates, setDates] = useState<Record<string, string>>({});
   const [urls, setUrls] = useState<Record<string, string>>({});
   const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(true);
 
-  const refresh = async () => setContents((await listContents()).items.filter((content) => ["approved", "scheduled", "published"].includes(content.state)));
+  const refresh = async () => {
+    setLoading(true);
+    try {
+      setContents((await listContents()).items.filter((content) => ["approved", "scheduled", "published"].includes(content.state)));
+    } finally {
+      setLoading(false);
+    }
+  };
   useEffect(() => { void refresh(); }, []);
 
   const schedule = async (content: ApiContent) => {
@@ -41,10 +50,10 @@ export function SchedulePage() {
 
   return (
     <div className="operations-page">
-      <header className="operations-heading"><div><h1>발행 일정</h1><p>승인된 원고의 발행 예정 시간과 실제 게시 URL을 기록하세요.</p></div><Button icon={<RefreshCw size={17} />} onClick={() => void refresh()}>새로고침</Button></header>
+      <header className="operations-heading"><div><h1>발행 일정</h1><p>승인된 원고의 발행 예정 시간과 실제 게시 URL을 기록하세요.</p></div><Button icon={<RefreshCw size={17} />} onClick={() => void refresh()} disabled={loading}>새로고침</Button></header>
       {message ? <div className="operations-notice" role="status">{message}</div> : null}
       <section className="schedule-list">
-        {contents.map((content) => {
+        {loading && !contents.length ? <PageLoadingState label="발행 일정을 불러오는 중입니다." /> : contents.map((content) => {
           const mapped = mapContent(content);
           return (
             <article key={content.id}>
@@ -55,7 +64,7 @@ export function SchedulePage() {
             </article>
           );
         })}
-        {!contents.length ? <div className="operations-empty">승인되거나 예약된 원고가 없습니다.</div> : null}
+        {!loading && !contents.length ? <div className="operations-empty">승인되거나 예약된 원고가 없습니다.</div> : null}
       </section>
     </div>
   );

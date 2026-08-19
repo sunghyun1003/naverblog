@@ -64,6 +64,7 @@
 .system-status--connected .system-status__dot { background: var(--color-positive); }
 .system-status--connecting .system-status__dot { background: var(--color-info); }
 .system-status--offline .system-status__dot { background: var(--color-warning); }
+.content-list-loading { min-height: 220px; display: flex; align-items: center; justify-content: center; gap: var(--space-3); color: var(--color-text-secondary); font-size: 14px; }
 
 .system-status > div {
   min-width: 0;

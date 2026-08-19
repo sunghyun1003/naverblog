@@ -6,9 +6,10 @@ import { initialContents } from "../../data/content";
 import type { ContentItem } from "../../types/content";
 
 type ConnectionStatus = "connecting" | "connected" | "offline";
+const previewMode = import.meta.env.VITE_PREVIEW_MODE === "true";
 
 export function useContents() {
-  const [contents, setContents] = useState<ContentItem[]>(initialContents);
+  const [contents, setContents] = useState<ContentItem[]>(() => previewMode ? initialContents : []);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("connecting");
   const [capabilities, setCapabilities] = useState<ApiCapabilities | null>(null);
   const [creating, setCreating] = useState(false);

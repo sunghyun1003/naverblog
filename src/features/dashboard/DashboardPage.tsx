@@ -125,9 +125,11 @@ export function DashboardPage() {
                 ? capabilities?.mode === "github-actions"
                   ? "비공개 자동화 저장소 · 수집·생성·말투 보정 사용 가능"
                   : "모의 데이터로 생성·검수·승인 흐름을 확인할 수 있습니다."
-                : isHostedPreview
+                : connectionStatus === "connecting"
+                  ? "실제 콘텐츠와 자동화 상태를 확인하고 있습니다."
+                  : isHostedPreview
                   ? "샘플 데이터로 화면과 상호작용을 확인할 수 있습니다."
-                  : "샘플 데이터로 화면을 계속 사용할 수 있습니다."}
+                  : "자동화 서버에 연결하지 못했습니다. 잠시 후 새로고침해 주세요."}
             </small>
           </div>
         </div>
@@ -135,11 +137,11 @@ export function DashboardPage() {
         <section className="status-strip" aria-label="오늘의 콘텐츠 상태">
           <button type="button" onClick={() => setActiveFilter("review")}>
             <span className="status-strip__icon status-strip__icon--brand"><Clock3 size={21} /></span>
-            <span><small>검토 대기</small><strong>{reviewCount}</strong></span>
+            <span><small>검토 대기</small><strong>{connectionStatus === "connecting" ? "-" : reviewCount}</strong></span>
           </button>
           <button type="button" onClick={() => setActiveFilter("scheduled")}>
             <span className="status-strip__icon status-strip__icon--info"><CalendarCheck2 size={21} /></span>
-            <span><small>오늘 예약</small><strong>{scheduledCount}</strong></span>
+            <span><small>오늘 예약</small><strong>{connectionStatus === "connecting" ? "-" : scheduledCount}</strong></span>
           </button>
           <button type="button" onClick={() => navigate("/trends")}>
             <span className="status-strip__icon status-strip__icon--positive"><FileCheck2 size={21} /></span>
@@ -193,7 +195,9 @@ export function DashboardPage() {
             <span>콘텐츠</span><span>상태</span><span>담당자</span><span>업데이트</span><span>발행 예정</span><span />
           </div>
           <div className="content-table__body">
-            {filteredContents.length ? filteredContents.map((content) => (
+            {connectionStatus === "connecting" ? (
+              <div className="content-list-loading" role="status"><span className="page-loading__spinner" aria-hidden="true" />실제 콘텐츠를 불러오는 중입니다.</div>
+            ) : filteredContents.length ? filteredContents.map((content) => (
               <button key={content.id} type="button" className="content-row" onClick={() => navigate(`/contents/${content.id}`)}>
                 <span className="content-row__title">{content.title}</span>
                 <span><StatusBadge status={content.status} /></span>
@@ -226,12 +230,12 @@ export function DashboardPage() {
           <h2>오늘 할 일</h2>
           <button type="button" className="task-item" onClick={() => setActiveFilter("review")}>
             <span className="task-item__icon task-item__icon--brand"><FileCheck2 size={20} /></span>
-            <span><strong>원고 검토</strong><small>{reviewCount}건</small></span>
+            <span><strong>원고 검토</strong><small>{connectionStatus === "connecting" ? "-" : `${reviewCount}건`}</small></span>
             <ChevronRight size={18} />
           </button>
           <button type="button" className="task-item" onClick={() => setActiveFilter("scheduled")}>
             <span className="task-item__icon task-item__icon--info"><CalendarCheck2 size={20} /></span>
-            <span><strong>예약 확인</strong><small>{scheduledCount}건</small></span>
+            <span><strong>예약 확인</strong><small>{connectionStatus === "connecting" ? "-" : `${scheduledCount}건`}</small></span>
             <ChevronRight size={18} />
           </button>
           <button type="button" className="task-item" onClick={() => {
@@ -239,7 +243,7 @@ export function DashboardPage() {
             if (reviewItem) navigate(`/contents/${reviewItem.id}`);
           }}>
             <span className="task-item__icon task-item__icon--positive"><FileCheck2 size={20} /></span>
-            <span><strong>자료 출처 확인</strong><small>{reviewCount}건</small></span>
+            <span><strong>자료 출처 확인</strong><small>{connectionStatus === "connecting" ? "-" : `${reviewCount}건`}</small></span>
             <ChevronRight size={18} />
           </button>
         </section>

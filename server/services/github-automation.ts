@@ -15,6 +15,8 @@ export interface DashboardDraftState {
   publicationStatus: DashboardPublicationStatus;
   checks: { sources: boolean; advertising: boolean };
   reason: string | null;
+  approvedBy?: string | null;
+  rejectedBy?: string | null;
   approvedAt: string | null;
   rejectedAt: string | null;
   scheduledAt: string | null;
@@ -32,6 +34,7 @@ export interface AutomationDraftSummary {
   generatedAt: string;
   pipelineStatus: string;
   toneSkillApplied: boolean;
+  updatedAt: string;
   reviewStatus: DashboardReviewStatus;
   publicationStatus: DashboardPublicationStatus;
   scheduledAt: string | null;
@@ -126,6 +129,8 @@ function defaultState(runId: string, generatedAt: string): DashboardDraftState {
     publicationStatus: "none",
     checks: { sources: false, advertising: false },
     reason: null,
+    approvedBy: null,
+    rejectedBy: null,
     approvedAt: null,
     rejectedAt: null,
     scheduledAt: null,
@@ -250,6 +255,7 @@ export class GitHubAutomationService {
 
   private summary(runId: string, status: GeneratedStatus, article: GeneratedArticle, state: DashboardDraftState): AutomationDraftSummary {
     const generatedAt = status.generatedAt ?? new Date(0).toISOString();
+    const updatedAt = Date.parse(state.updatedAt) > Date.parse(generatedAt) ? state.updatedAt : generatedAt;
     return {
       runId,
       title: article.article?.title ?? `원고 ${runId}`,
@@ -258,6 +264,7 @@ export class GitHubAutomationService {
       generatedAt,
       pipelineStatus: status.status ?? "UNKNOWN",
       toneSkillApplied: status.toneSkillApplied === true,
+      updatedAt,
       reviewStatus: state.reviewStatus,
       publicationStatus: state.publicationStatus,
       scheduledAt: state.scheduledAt,

@@ -130,3 +130,70 @@ test("권한 없는 역할의 승인을 거부한다", async (context) => {
   assert.equal(response.statusCode, 403);
   assert.equal(response.json<{ error: { code: string } }>().error.code, "FORBIDDEN");
 });
+
+test("반려 사유는 5자 이상 검증하고 성공한 반려를 저장한다", async (context) => {
+  const system = testSystem();
+  const app = buildApp({ system });
+  context.after(() => app.close());
+  const actor = { id: "admin", roles: ["admin"] as const };
+  const content = await system.contentService.create(
+    { title: "보험금 청구 원고 검수", topic: "보험금 청구", strategy: "trend", idempotencyKey: "api-rejection" },
+    actor,
+  );
+  await system.contentService.runPipeline(content.id, "api-rejection-pipeline", actor);
+
+  const invalid = await app.inject({
+    method: "POST",
+    url: `/api/contents/${content.id}/reject`,
+    headers: { "x-user-id": "admin", "x-user-roles": "admin" },
+    payload: { reason: "수정필요" },
+  });
+  assert.equal(invalid.statusCode, 400);
+  assert.equal(invalid.json<{ error: { code: string } }>().error.code, "INVALID_REQUEST");
+  assert.equal(invalid.json<{ error: { message: string } }>().error.message, "반려 사유는 5자 이상 입력해주세요.");
+
+  const accepted = await app.inject({
+    method: "POST",
+    url: `/api/contents/${content.id}/reject`,
+    headers: { "x-user-id": "admin", "x-user-roles": "admin" },
+    payload: { reason: "출처를 다시 확인해주세요." },
+  });
+  assert.equal(accepted.statusCode, 200);
+  assert.equal(accepted.json<{ state: string }>().state, "drafting");
+  assert.equal((await system.repository.listApprovals(content.id)).length, 1);
+  assert.equal((await system.repository.listAuditEvents(content.id)).at(-1)?.action, "content.rejected");
+});
+
+test("GitHub 원고는 검토 대기 상태에서만 승인하거나 반려할 수 있다", async (context) => {
+  let reviewStatus: "approved" | "rejected" = "rejected";
+  let publicationStatus: "none" | "scheduled" = "none";
+  let updates = 0;
+  const githubAutomation = {
+    getDraft: async () => ({ reviewStatus, publicationStatus, pipelineStatus: "TONE_REVIEW_COMPLETE" }),
+    updateState: async () => { updates += 1; },
+  } as unknown as GitHubAutomationService;
+  const app = buildApp({ githubAutomation, databaseProvider: "memory" });
+  context.after(() => app.close());
+  const headers = { "x-user-id": "admin", "x-user-roles": "admin" };
+
+  const approveRejected = await app.inject({
+    method: "POST",
+    url: "/api/contents/321/approve",
+    headers,
+    payload: { checks: { sources: true, advertising: true } },
+  });
+  assert.equal(approveRejected.statusCode, 409);
+  assert.equal(approveRejected.json<{ error: { code: string } }>().error.code, "CONTENT_NOT_REVIEW_READY");
+
+  reviewStatus = "approved";
+  publicationStatus = "scheduled";
+  const rejectScheduled = await app.inject({
+    method: "POST",
+    url: "/api/contents/321/reject",
+    headers,
+    payload: { reason: "출처를 다시 확인해주세요." },
+  });
+  assert.equal(rejectScheduled.statusCode, 409);
+  assert.equal(rejectScheduled.json<{ error: { code: string } }>().error.code, "CONTENT_NOT_REVIEW_READY");
+  assert.equal(updates, 0);
+});

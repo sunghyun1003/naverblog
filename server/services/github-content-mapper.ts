@@ -21,7 +21,7 @@ export function draftToContent(draft: AutomationDraftSummary): ContentRecord {
     assigneeId: "carrot",
     createdBy: "github-actions",
     createdAt: draft.generatedAt,
-    updatedAt: draft.publishedAt ?? draft.scheduledAt ?? draft.generatedAt,
+    updatedAt: draft.updatedAt,
     scheduledAt: draft.scheduledAt,
     publishedAt: draft.publishedAt,
   };
@@ -59,14 +59,20 @@ export function draftToDetail(draft: AutomationDraftDetail): ContentDetail {
     ["tone", draft.toneSkillApplied ? "passed" : "failed", draft.toneSkillApplied ? 100 : 0, draft.toneSkillApplied ? "demi Humanizer 피드백과 재작성이 적용됐습니다." : "말투 보정이 적용되지 않았습니다."],
     ["advertising", "warning", 70, "보험 광고 표현은 사람이 최종 확인해야 합니다."],
   ] as const;
+  const approvalCreatedAt = draft.state.reviewStatus === "approved"
+    ? draft.state.approvedAt
+    : draft.state.rejectedAt;
+  const approvalActorId = draft.state.reviewStatus === "approved"
+    ? draft.state.approvedBy ?? draft.state.updatedBy
+    : draft.state.rejectedBy ?? draft.state.updatedBy;
   const approvals = draft.state.reviewStatus === "pending" ? [] : [{
-    id: `${draft.runId}:approval`,
+    id: `${draft.runId}:approval:${draft.state.reviewStatus}:${approvalCreatedAt ?? draft.state.updatedAt}`,
     contentId: draft.runId,
     versionId,
     decision: draft.state.reviewStatus,
-    actorId: draft.state.updatedBy,
+    actorId: approvalActorId,
     reason: draft.state.reason,
-    createdAt: draft.state.approvedAt ?? draft.state.rejectedAt ?? draft.state.updatedAt,
+    createdAt: approvalCreatedAt ?? draft.state.updatedAt,
   }];
   const publications = draft.state.publicationStatus === "none" ? [] : [{
     id: `${draft.runId}:publication`,
@@ -132,7 +138,7 @@ export function draftToDetail(draft: AutomationDraftDetail): ContentDetail {
     approvals,
     publications,
     auditEvents: [{
-      id: `${draft.runId}:audit`,
+      id: `${draft.runId}:audit:${draft.state.updatedAt}`,
       contentId: draft.runId,
       actorId: draft.state.updatedBy,
       action: `dashboard.${draft.state.reviewStatus}.${draft.state.publicationStatus}`,

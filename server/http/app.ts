@@ -22,7 +22,11 @@ const approvalSchema = z.object({
   checks: z.object({ sources: z.boolean(), advertising: z.boolean() }),
 });
 
-const rejectionSchema = z.object({ reason: z.string().trim().min(5).max(1000) });
+const rejectionSchema = z.object({
+  reason: z.string().trim()
+    .min(5, "반려 사유는 5자 이상 입력해주세요.")
+    .max(1000, "반려 사유는 1,000자 이하로 입력해주세요."),
+});
 const scheduleSchema = z.object({ scheduledAt: z.iso.datetime({ offset: true }) });
 const publicationSchema = z.object({ externalUrl: z.url().refine((value) => value.startsWith("https://blog.naver.com/"), "네이버 블로그 URL을 입력하세요.") });
 const loginSchema = z.object({ username: z.string().min(1).max(100), password: z.string().min(1).max(200) });
@@ -129,7 +133,14 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       return reply.status(error.statusCode).send({ error: { code: error.code, message: error.message, details: error.details ?? null } });
     }
     if (error instanceof z.ZodError) {
-      return reply.status(400).send({ error: { code: "INVALID_REQUEST", message: "요청 값이 올바르지 않습니다.", details: error.flatten() } });
+      const reasonIssue = error.issues.find((issue) => issue.path[0] === "reason");
+      return reply.status(400).send({
+        error: {
+          code: "INVALID_REQUEST",
+          message: reasonIssue?.message ?? "요청 값이 올바르지 않습니다.",
+          details: error.flatten(),
+        },
+      });
     }
     app.log.error(error);
     return reply.status(500).send({ error: { code: "INTERNAL_ERROR", message: "처리 중 오류가 발생했습니다." } });
@@ -231,33 +242,45 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       if (!body.checks.sources || !body.checks.advertising) {
         return reply.status(409).send({ error: { code: "FINAL_CHECKS_REQUIRED", message: "수치·출처와 광고성 표현을 모두 확인해야 승인할 수 있습니다.", details: null } });
       }
-      const state = await githubAutomation.updateState(id, {
+      const draft = await githubAutomation.getDraft(id);
+      if (draftToContent(draft).state !== "review_ready") {
+        return reply.status(409).send({ error: { code: "CONTENT_NOT_REVIEW_READY", message: "검토 대기 상태의 원고만 승인할 수 있습니다.", details: null } });
+      }
+      await githubAutomation.updateState(id, {
         reviewStatus: "approved",
         checks: body.checks,
         reason: null,
+        approvedBy: actor.id,
+        rejectedBy: null,
         approvedAt: new Date().toISOString(),
         rejectedAt: null,
       }, actor.id);
       const updatedDraft = await githubAutomation.getDraft(id);
       if (persistGitHubData) await persistGitHubDraftDetail(system.repository, updatedDraft);
-      return { ...draftToContent(updatedDraft), state };
+      return draftToContent(updatedDraft);
     }
     return system.contentService.approve(id, body.checks, actor);
   });
-  app.post("/api/contents/:id/reject", async (request) => {
+  app.post("/api/contents/:id/reject", async (request, reply) => {
     const { id } = idParamsSchema.parse(request.params);
     const body = rejectionSchema.parse(request.body);
     const actor = actorFrom(request, auth?.verifyCookie(request.headers.cookie)?.username);
     if (githubAutomation) {
-      const state = await githubAutomation.updateState(id, {
+      const draft = await githubAutomation.getDraft(id);
+      if (draftToContent(draft).state !== "review_ready") {
+        return reply.status(409).send({ error: { code: "CONTENT_NOT_REVIEW_READY", message: "검토 대기 상태의 원고만 반려할 수 있습니다.", details: null } });
+      }
+      await githubAutomation.updateState(id, {
         reviewStatus: "rejected",
         reason: body.reason,
+        approvedBy: null,
+        rejectedBy: actor.id,
         rejectedAt: new Date().toISOString(),
         approvedAt: null,
       }, actor.id);
       const updatedDraft = await githubAutomation.getDraft(id);
       if (persistGitHubData) await persistGitHubDraftDetail(system.repository, updatedDraft);
-      return { ...draftToContent(updatedDraft), state };
+      return draftToContent(updatedDraft);
     }
     return system.contentService.reject(id, body.reason, actor);
   });

@@ -16,6 +16,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import type { ApiContentVersion } from "../../api/types";
 import { Button } from "../../components/Button";
 import { StatusBadge } from "../../components/StatusBadge";
+import type { ContentStatus } from "../../types/content";
 import { RejectDialog } from "./RejectDialog";
 import { useContentDetail } from "./useContentDetail";
 
@@ -58,11 +59,25 @@ export function ReviewPage() {
   const [checks, setChecks] = useState({ sources: false, ads: false });
   const [rejectOpen, setRejectOpen] = useState(false);
   const [localApproved, setLocalApproved] = useState(false);
+  const [approving, setApproving] = useState(false);
   const [toast, setToast] = useState("");
 
-  const approvedByApi = detail ? ["approved", "scheduled", "published", "measured"].includes(detail.content.state) : false;
-  const status = localApproved || approvedByApi ? "approved" : "review";
-  const canApprove = checks.sources && checks.ads && status === "review";
+  const apiState = detail?.content.state;
+  const status: ContentStatus = localApproved
+    ? "approved"
+    : !apiState || apiState === "review_ready"
+      ? "review"
+      : apiState === "approved"
+        ? "approved"
+        : apiState === "scheduled"
+          ? "scheduled"
+          : apiState === "published" || apiState === "measured"
+            ? "published"
+            : apiState === "drafting"
+              ? "drafting"
+              : "planning";
+  const finalChecksComplete = checks.sources && checks.ads;
+  const canApprove = finalChecksComplete && status === "review" && !approving;
   const currentSources = detail?.sources.length
     ? detail.sources.map((source) => ({ organization: source.organization, date: source.collectedAt.slice(0, 10), note: source.title, url: source.url }))
     : sources.map((source) => ({ ...source, url: "" }));
@@ -97,12 +112,15 @@ export function ReviewPage() {
 
   const approve = async () => {
     if (!canApprove) return;
+    setApproving(true);
     try {
       if (connectionStatus === "connected") await approveApi();
       else setLocalApproved(true);
       setToast("원고를 승인했어요. 발행 일정에서 예약할 수 있습니다.");
     } catch (error) {
       setToast(error instanceof Error ? error.message : "승인 처리에 실패했습니다.");
+    } finally {
+      setApproving(false);
     }
     window.setTimeout(() => setToast(""), 3200);
   };
@@ -114,8 +132,10 @@ export function ReviewPage() {
       setToast(`반려 사유가 담당자에게 전달됐어요: ${reason}`);
     } catch (error) {
       setToast(error instanceof Error ? error.message : "반려 처리에 실패했습니다.");
+      throw error;
+    } finally {
+      window.setTimeout(() => setToast(""), 3600);
     }
-    window.setTimeout(() => setToast(""), 3600);
   };
 
   return (
@@ -139,7 +159,7 @@ export function ReviewPage() {
           }}>원고 복사</Button>
           <Button onClick={() => setRejectOpen(true)} disabled={status !== "review"}>반려</Button>
           <Button variant="brand" onClick={approve} disabled={!canApprove} icon={status === "approved" ? <Check size={18} /> : undefined}>
-            {status === "approved" ? "승인 완료" : "승인하기"}
+            {status === "approved" ? "승인 완료" : approving ? "승인 처리 중" : "승인하기"}
           </Button>
         </div>
       </header>
@@ -177,6 +197,18 @@ export function ReviewPage() {
             <span />
             {connectionStatus === "connected" ? "자동화 실행 기록 연결됨" : connectionStatus === "loading" ? "실행 기록 불러오는 중" : "샘플 검수 화면"}
           </div>
+          <section className="inspector-section final-checks final-checks--priority">
+            <h3>최종 승인 확인</h3>
+            <label>
+              <input type="checkbox" checked={checks.sources} onChange={(event) => setChecks((current) => ({ ...current, sources: event.target.checked }))} />
+              <span>수치와 출처를 확인했어요</span>
+            </label>
+            <label>
+              <input type="checkbox" checked={checks.ads} onChange={(event) => setChecks((current) => ({ ...current, ads: event.target.checked }))} />
+              <span>광고성 표현을 확인했어요</span>
+            </label>
+            {!finalChecksComplete && status === "review" ? <p>두 항목을 확인하면 승인 버튼이 활성화됩니다.</p> : null}
+          </section>
           {latestJob ? (
             <section className="pipeline-progress" aria-label="자동화 단계">
               <header><strong>자동화 단계</strong><small>{latestJob.steps.filter((step) => step.status === "succeeded").length}/{latestJob.steps.length}</small></header>
@@ -247,18 +279,6 @@ export function ReviewPage() {
             </div>
           </section>
 
-          <section className="inspector-section final-checks">
-            <h3>최종 확인</h3>
-            <label>
-              <input type="checkbox" checked={checks.sources} onChange={(event) => setChecks((current) => ({ ...current, sources: event.target.checked }))} />
-              <span>수치와 출처를 확인했어요</span>
-            </label>
-            <label>
-              <input type="checkbox" checked={checks.ads} onChange={(event) => setChecks((current) => ({ ...current, ads: event.target.checked }))} />
-              <span>광고성 표현을 확인했어요</span>
-            </label>
-            {!canApprove && status === "review" ? <p>두 항목을 확인하면 승인할 수 있어요.</p> : null}
-          </section>
         </aside>
       </div>
 

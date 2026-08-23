@@ -494,6 +494,14 @@
   gap: var(--space-3);
 }
 
+.final-checks--priority {
+  border: 1px solid #ffd6c4;
+  border-radius: var(--radius-2);
+  margin: 0 0 var(--space-4);
+  padding: var(--space-3);
+  background: var(--color-brand-weak);
+}
+
 .final-checks h3 {
   margin-bottom: 0;
 }

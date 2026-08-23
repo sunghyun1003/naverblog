@@ -74,7 +74,7 @@ Google Cloud Console → **API 및 서비스** → **라이브러리**에서 다
 
 ## 3. Secret Manager에 운영 비밀값 저장하기
 
-**보안** → **Secret Manager** → **보안 비밀 만들기**에서 아래 4개를 각각 만든다. 복제 정책은 자동을 사용한다.
+**보안** → **Secret Manager** → **보안 비밀 만들기**에서 아래 기본 4개를 각각 만든다. 복제 정책은 자동을 사용한다.
 
 | 보안 비밀 이름 | 저장할 값 |
 | --- | --- |
@@ -95,6 +95,8 @@ openssl rand -hex 32
 - 역할: `Secret Manager 보안 비밀 접근자`
 
 **예상 결과:** Cloud Run만 로그인 값과 GitHub 토큰을 읽을 수 있고 브라우저에는 GitHub 토큰이 노출되지 않는다.
+
+Neon PostgreSQL 운영 저장소를 연결할 때는 `dashboard-database-url`, `dashboard-database-direct-url` 2개를 추가한다. 생성·권한·마이그레이션 순서는 [Neon 설정](./NEON_SETUP.md)을 따른다.
 
 ## 4. 기존 GitHub Actions 배포 계정 권한 보강하기
 
@@ -151,7 +153,7 @@ GitHub `sunghyun1003/naverblog` → **Actions** → `deploy-operational-dashboar
 
 - `Google Cloud 인증`: Workload Identity 조건과 6개 GitHub 변수 확인
 - `컨테이너 빌드·업로드`: Artifact Registry 이름·리전과 작성자 역할 확인
-- `Cloud Run 배포`: Cloud Run 관리자, 서비스 계정 사용자, 4개 Secret 이름과 접근자 역할 확인
+- `Cloud Run 배포`: Cloud Run 관리자, 서비스 계정 사용자, 운영용 Secret 이름과 접근자 역할 확인
 
 ## 8. 실제 운영 확인 순서
 

@@ -10,8 +10,8 @@ const configSchema = z.object({
   WEB_ORIGIN: z.string().default("http://127.0.0.1:5173"),
   STORAGE_PROVIDER: z.enum(["memory", "postgres"]).default("memory"),
   DATABASE_URL: optionalText,
-  DATABASE_TEAM_ID: optionalText,
-  DATABASE_POOL_MAX: z.coerce.number().int().min(1).max(50).default(10),
+  DATABASE_TEAM_ID: z.string().min(1).default("carrot-company"),
+  DATABASE_POOL_MAX: z.coerce.number().int().min(1).max(50).default(3),
   AI_PROVIDER: z.enum(["mock", "openai"]).default("mock"),
   AUTOMATION_PROVIDER: z.enum(["mock", "github"]).default("mock"),
   DASHBOARD_USERNAME: z.string().min(1).default("carrot"),
@@ -27,9 +27,6 @@ const configSchema = z.object({
   if (value.STORAGE_PROVIDER === "postgres") {
     if (!value.DATABASE_URL) {
       context.addIssue({ code: "custom", path: ["DATABASE_URL"], message: "PostgreSQL 사용 시 DATABASE_URL이 필요합니다." });
-    }
-    if (!value.DATABASE_TEAM_ID) {
-      context.addIssue({ code: "custom", path: ["DATABASE_TEAM_ID"], message: "PostgreSQL 사용 시 DATABASE_TEAM_ID가 필요합니다." });
     }
   }
   if (value.AUTOMATION_PROVIDER === "github" && !value.GITHUB_AUTOMATION_TOKEN) {

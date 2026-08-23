@@ -8,7 +8,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: dashboard-cloud-run-production
+  group: dashboard-production
   cancel-in-progress: false
 
 jobs:
@@ -59,8 +59,8 @@ jobs:
             --max-instances 1 \
             --memory 512Mi \
             --cpu 1 \
-            --set-env-vars "NODE_ENV=production,API_HOST=0.0.0.0,SERVE_WEB=true,AUTOMATION_PROVIDER=github,DASHBOARD_SECURE_COOKIE=true,GITHUB_AUTOMATION_OWNER=sunghyun1003,GITHUB_AUTOMATION_REPOSITORY=naverblog-automation,GITHUB_AUTOMATION_BRANCH=main" \
-            --set-secrets "DASHBOARD_USERNAME=dashboard-username:latest,DASHBOARD_PASSWORD=dashboard-password:latest,DASHBOARD_SESSION_SECRET=dashboard-session-secret:latest,GITHUB_AUTOMATION_TOKEN=github-automation-token:latest"
+            --set-env-vars "NODE_ENV=production,API_HOST=0.0.0.0,SERVE_WEB=true,AUTOMATION_PROVIDER=github,STORAGE_PROVIDER=postgres,DATABASE_TEAM_ID=carrot-company,DATABASE_POOL_MAX=3,DASHBOARD_SECURE_COOKIE=true,GITHUB_AUTOMATION_OWNER=sunghyun1003,GITHUB_AUTOMATION_REPOSITORY=naverblog-automation,GITHUB_AUTOMATION_BRANCH=main" \
+            --set-secrets "DASHBOARD_USERNAME=dashboard-username:latest,DASHBOARD_PASSWORD=dashboard-password:latest,DASHBOARD_SESSION_SECRET=dashboard-session-secret:latest,GITHUB_AUTOMATION_TOKEN=github-automation-token:latest,DATABASE_URL=dashboard-database-url:latest"
 
       - name: 배포 주소
         run: gcloud run services describe "$SERVICE_NAME" --region "$REGION" --format='value(status.url)'

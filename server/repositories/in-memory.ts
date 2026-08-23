@@ -19,9 +19,10 @@ function clone<T>(value: T): T {
   return structuredClone(value);
 }
 
-function appendByKey<T>(map: Map<string, T[]>, key: string, values: T[]): T[] {
-  const next = [...(map.get(key) ?? []), ...clone(values)];
-  map.set(key, next);
+function upsertById<T extends { id: string }>(map: Map<string, T[]>, key: string, values: T[]): T[] {
+  const next = new Map((map.get(key) ?? []).map((value) => [value.id, value]));
+  for (const value of values) next.set(value.id, clone(value));
+  map.set(key, [...next.values()]);
   return clone(values);
 }
 
@@ -111,7 +112,7 @@ export class InMemoryAutomationRepository implements AutomationRepository {
   }
 
   async saveClaims(contentId: string, claims: ClaimRecord[]): Promise<ClaimRecord[]> {
-    return appendByKey(this.claims, contentId, claims);
+    return upsertById(this.claims, contentId, claims);
   }
 
   async listClaims(contentId: string): Promise<ClaimRecord[]> {
@@ -119,7 +120,7 @@ export class InMemoryAutomationRepository implements AutomationRepository {
   }
 
   async saveVersion(version: ContentVersion): Promise<ContentVersion> {
-    appendByKey(this.versions, version.contentId, [version]);
+    upsertById(this.versions, version.contentId, [version]);
     return clone(version);
   }
 
@@ -159,7 +160,7 @@ export class InMemoryAutomationRepository implements AutomationRepository {
   }
 
   async saveQualityResults(contentId: string, results: QualityResult[]): Promise<QualityResult[]> {
-    return appendByKey(this.qualityResults, contentId, results);
+    return upsertById(this.qualityResults, contentId, results);
   }
 
   async listQualityResults(contentId: string): Promise<QualityResult[]> {
@@ -167,7 +168,7 @@ export class InMemoryAutomationRepository implements AutomationRepository {
   }
 
   async saveApproval(approval: ApprovalRecord): Promise<ApprovalRecord> {
-    appendByKey(this.approvals, approval.contentId, [approval]);
+    upsertById(this.approvals, approval.contentId, [approval]);
     return clone(approval);
   }
 
@@ -186,7 +187,7 @@ export class InMemoryAutomationRepository implements AutomationRepository {
   }
 
   async appendAudit(event: AuditEvent): Promise<AuditEvent> {
-    if (event.contentId) appendByKey(this.auditEvents, event.contentId, [event]);
+    if (event.contentId) upsertById(this.auditEvents, event.contentId, [event]);
     return clone(event);
   }
 

@@ -62,7 +62,7 @@ flowchart LR
 
 ## 저장소
 
-기본 API는 `InMemoryAutomationRepository`로 즉시 실행된다. `PostgresAutomationRepository`와 `server/db/migrations/001_initial.sql`도 구현돼 있으며 `STORAGE_PROVIDER=postgres`로 선택할 수 있다. PostgreSQL 모드는 회사 인증에서 매핑한 내부 사용자 UUID와 팀 UUID가 먼저 준비돼야 한다. 저장소를 바꿔도 도메인·파이프라인 코드는 변경되지 않는다.
+기본 API는 `InMemoryAutomationRepository`로 즉시 실행된다. 운영에서는 비공개 GitHub 레포의 원고를 원본으로 유지하고 `PostgresAutomationRepository`가 콘텐츠·버전·검수·승인·실행 이력을 운영용으로 동기화한다. 초기 마이그레이션이 `carrot-company` 팀과 `carrot`, `github-actions`, `system` 사용자를 생성한다. GitHub 조회가 일시적으로 실패하면 PostgreSQL의 마지막 동기화 데이터를 사용한다.
 
 ## 외부 제공자 경계
 

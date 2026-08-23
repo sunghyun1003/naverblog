@@ -1,0 +1,48 @@
+name: migrate-neon-database
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: dashboard-production
+  cancel-in-progress: false
+
+jobs:
+  migrate-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: 의존성 설치
+        run: npm ci
+
+      - name: Google Cloud 인증
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: "projects/${{ vars.GCP_PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github-actions/providers/github-actions"
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+
+      - uses: google-github-actions/setup-gcloud@v3
+
+      - name: Neon 직접 접속 정보 확인
+        run: gcloud secrets describe dashboard-database-direct-url --project "${{ vars.GCP_PROJECT_ID }}" --quiet
+
+      - name: 데이터베이스 마이그레이션·검증
+        env:
+          DATABASE_TEAM_ID: carrot-company
+        run: |
+          DATABASE_URL="$(gcloud secrets versions access latest --secret=dashboard-database-direct-url --project "${{ vars.GCP_PROJECT_ID }}")"
+          export DATABASE_URL
+          npm run db:migrate
+          npm run db:verify

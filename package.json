@@ -8,6 +8,7 @@
     "dev:web": "vite",
     "dev:api": "tsx watch server/index.ts",
     "db:migrate": "tsx server/db/migrate.ts",
+    "db:verify": "tsx server/db/verify.ts",
     "start:api": "node dist-server/server/index.js",
     "build": "npm run build:web && npm run build:server",
     "build:web": "tsc -b && vite build",

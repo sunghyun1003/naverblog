@@ -43,4 +43,4 @@ npm run dev:web
 npm run verify
 ```
 
-전체 구조는 [아키텍처](./docs/ARCHITECTURE.md), 실제 배포는 [운영 설정](./docs/PRODUCTION_SETUP.md), 사내 입력 양식은 [운영 정책 템플릿](./docs/POLICY_TEMPLATE.md), 현재 검증 결과는 [검증 기록](./docs/VERIFICATION.md)을 참고하세요.
+전체 구조는 [아키텍처](./docs/ARCHITECTURE.md), 실제 배포는 [운영 설정](./docs/PRODUCTION_SETUP.md), Neon 연결은 [Neon 운영 저장소 설정](./docs/NEON_SETUP.md), 사내 입력 양식은 [운영 정책 템플릿](./docs/POLICY_TEMPLATE.md), 현재 검증 결과는 [검증 기록](./docs/VERIFICATION.md)을 참고하세요.

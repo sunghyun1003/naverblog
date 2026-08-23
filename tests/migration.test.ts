@@ -13,4 +13,7 @@ test("초기 마이그레이션에 운영 핵심 테이블과 중복 방지 제�
   assert.match(sql, /UNIQUE \(team_id, creation_key\)/);
   assert.match(sql, /idempotency_key text NOT NULL UNIQUE/);
   assert.match(sql, /one_open_publication_per_content/);
+  assert.match(sql, /'carrot-company', '블로그 운영센터'/);
+  assert.match(sql, /'github-actions'.*'GitHub Actions'/);
+  assert.doesNotMatch(sql, /\bid uuid\b/);
 });

@@ -7,6 +7,7 @@ import { userRoles, type Actor, type UserRole } from "../domain/types.js";
 import { randomId } from "../domain/utils.js";
 import { draftToContent, draftToDetail } from "../services/github-content-mapper.js";
 import type { GitHubAutomationService } from "../services/github-automation.js";
+import { persistGitHubDraftDetail, persistGitHubDraftSummaries, persistGitHubTrends } from "../services/github-persistence.js";
 import type { SessionAuthService } from "../services/session-auth.js";
 import { createAutomationSystem, type AutomationSystem } from "../system.js";
 
@@ -69,6 +70,35 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   const databaseProvider = options.databaseProvider ?? "memory";
   const auth = options.auth;
   const githubAutomation = options.githubAutomation;
+  const persistGitHubData = Boolean(githubAutomation) && databaseProvider === "postgres";
+
+  async function listGitHubContents() {
+    try {
+      const drafts = await githubAutomation!.listDrafts();
+      if (persistGitHubData) return persistGitHubDraftSummaries(system.repository, drafts);
+      return drafts.map(draftToContent);
+    } catch (error) {
+      if (!persistGitHubData) throw error;
+      const cached = await system.repository.listContents();
+      if (!cached.length) throw error;
+      app.log.warn({ err: error }, "GitHub 원고 목록 조회에 실패해 PostgreSQL 캐시를 사용합니다.");
+      return cached;
+    }
+  }
+
+  async function getGitHubDetail(id: string) {
+    try {
+      const draft = await githubAutomation!.getDraft(id);
+      if (persistGitHubData) return persistGitHubDraftDetail(system.repository, draft);
+      return draftToDetail(draft);
+    } catch (error) {
+      if (!persistGitHubData) throw error;
+      const cached = await system.repository.getContentDetail(id);
+      if (!cached) throw error;
+      app.log.warn({ err: error, contentId: id }, "GitHub 원고 조회에 실패해 PostgreSQL 캐시를 사용합니다.");
+      return cached;
+    }
+  }
 
   app.addHook("onRequest", async (request, reply) => {
     reply.header("Access-Control-Allow-Origin", origin);
@@ -134,7 +164,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       publisher: { configured: Boolean(githubAutomation), provider: githubAutomation ? "copy-package" : "mock" },
       database: {
         configured: Boolean(githubAutomation) || databaseProvider === "postgres",
-        provider: githubAutomation ? "github-contents" : databaseProvider,
+        provider: databaseProvider === "postgres" ? "postgres-mirror" : githubAutomation ? "github-contents" : databaseProvider,
       },
       automation: { configured: Boolean(githubAutomation), provider: githubAutomation ? "github-actions" : "mock" },
     },
@@ -158,7 +188,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   });
 
   app.get("/api/contents", async () => ({
-    items: githubAutomation ? (await githubAutomation.listDrafts()).map(draftToContent) : await system.contentService.list(),
+    items: githubAutomation ? await listGitHubContents() : await system.contentService.list(),
   }));
   app.post("/api/contents", async (request, reply) => {
     if (githubAutomation) {
@@ -175,7 +205,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   });
   app.get("/api/contents/:id", async (request) => {
     const { id } = idParamsSchema.parse(request.params);
-    if (githubAutomation) return draftToDetail(await githubAutomation.getDraft(id));
+    if (githubAutomation) return getGitHubDetail(id);
     return system.contentService.detail(id);
   });
   app.post("/api/contents/:id/pipeline", async (request, reply) => {
@@ -198,7 +228,9 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
         approvedAt: new Date().toISOString(),
         rejectedAt: null,
       }, actor.id);
-      return { ...draftToContent(await githubAutomation.getDraft(id)), state };
+      const updatedDraft = await githubAutomation.getDraft(id);
+      if (persistGitHubData) await persistGitHubDraftDetail(system.repository, updatedDraft);
+      return { ...draftToContent(updatedDraft), state };
     }
     return system.contentService.approve(id, body.checks, actor);
   });
@@ -213,7 +245,9 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
         rejectedAt: new Date().toISOString(),
         approvedAt: null,
       }, actor.id);
-      return { ...draftToContent(await githubAutomation.getDraft(id)), state };
+      const updatedDraft = await githubAutomation.getDraft(id);
+      if (persistGitHubData) await persistGitHubDraftDetail(system.repository, updatedDraft);
+      return { ...draftToContent(updatedDraft), state };
     }
     return system.contentService.reject(id, body.reason, actor);
   });
@@ -225,7 +259,9 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       const draft = await githubAutomation.getDraft(id);
       if (draft.reviewStatus !== "approved") return reply.status(409).send({ error: { code: "CONTENT_NOT_APPROVED", message: "승인된 원고만 예약할 수 있습니다.", details: null } });
       const state = await githubAutomation.updateState(id, { publicationStatus: "scheduled", scheduledAt: body.scheduledAt }, actor.id);
-      return { content: draftToContent(await githubAutomation.getDraft(id)), publication: state };
+      const updatedDraft = await githubAutomation.getDraft(id);
+      if (persistGitHubData) await persistGitHubDraftDetail(system.repository, updatedDraft);
+      return { content: draftToContent(updatedDraft), publication: state };
     }
     return system.contentService.schedule(id, body.scheduledAt, actor);
   });
@@ -240,12 +276,41 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       }
       const now = new Date().toISOString();
       const state = await githubAutomation.updateState(id, { publicationStatus: "published", publishedAt: now, externalUrl: body.externalUrl }, actor.id);
-      return { content: draftToContent(await githubAutomation.getDraft(id)), publication: state };
+      const updatedDraft = await githubAutomation.getDraft(id);
+      if (persistGitHubData) await persistGitHubDraftDetail(system.repository, updatedDraft);
+      return { content: draftToContent(updatedDraft), publication: state };
     }
     return system.contentService.publish(id, actor);
   });
   app.get("/api/trends", async () => {
-    if (githubAutomation) return githubAutomation.getTrends();
+    if (githubAutomation) {
+      try {
+        const trends = await githubAutomation.getTrends();
+        if (persistGitHubData) await persistGitHubTrends(system.repository, trends);
+        return trends;
+      } catch (error) {
+        if (!persistGitHubData) throw error;
+        const cached = await system.repository.listTrendSignals();
+        if (!cached.length) throw error;
+        app.log.warn({ err: error }, "GitHub 트렌드 조회에 실패해 PostgreSQL 캐시를 사용합니다.");
+        return {
+          collectionDate: cached[0]!.collectedAt.slice(0, 10),
+          collectedAt: cached[0]!.collectedAt,
+          queryCount: new Set(cached.map((trend) => trend.topicKey)).size,
+          itemCount: cached.length,
+          source: "postgres-cache",
+          items: cached.map((trend) => ({
+            title: trend.title,
+            link: trend.url,
+            description: "GitHub 원본을 잠시 읽을 수 없어 저장된 운영 데이터를 표시합니다.",
+            bloggername: "NAVER 블로그",
+            postdate: trend.publishedAt.slice(0, 10),
+            candidateScore: trend.relevanceScore,
+            matchedQueries: [trend.topicKey],
+          })),
+        };
+      }
+    }
     const trends = await system.repository.listTrendSignals();
     return {
       collectionDate: new Date().toISOString().slice(0, 10),

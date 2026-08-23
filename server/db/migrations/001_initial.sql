@@ -1,14 +1,12 @@
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
-
 CREATE TABLE teams (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  id text PRIMARY KEY,
   name text NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE TABLE users (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  team_id uuid NOT NULL REFERENCES teams(id),
+  id text PRIMARY KEY,
+  team_id text NOT NULL REFERENCES teams(id),
   external_subject text,
   email text NOT NULL,
   display_name text NOT NULL,
@@ -34,21 +32,21 @@ INSERT INTO roles (code, description) VALUES
 ON CONFLICT (code) DO NOTHING;
 
 CREATE TABLE user_roles (
-  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  user_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   role_code text NOT NULL REFERENCES roles(code),
   PRIMARY KEY (user_id, role_code)
 );
 
 CREATE TABLE contents (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  team_id uuid NOT NULL REFERENCES teams(id),
+  id text PRIMARY KEY,
+  team_id text NOT NULL REFERENCES teams(id),
   creation_key text NOT NULL,
   title text NOT NULL,
   topic text NOT NULL,
   strategy text NOT NULL CHECK (strategy IN ('trend', 'original')),
   state text NOT NULL CHECK (state IN ('idea', 'researching', 'brief_ready', 'drafting', 'review_ready', 'approved', 'scheduled', 'published', 'measured')),
-  assignee_id uuid REFERENCES users(id),
-  created_by uuid NOT NULL REFERENCES users(id),
+  assignee_id text REFERENCES users(id),
+  created_by text NOT NULL REFERENCES users(id),
   scheduled_at timestamptz,
   published_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
@@ -57,8 +55,8 @@ CREATE TABLE contents (
 );
 
 CREATE TABLE trend_signals (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  team_id uuid NOT NULL REFERENCES teams(id),
+  id text PRIMARY KEY,
+  team_id text NOT NULL REFERENCES teams(id),
   source_type text NOT NULL CHECK (source_type IN ('naver_blog', 'community', 'youtube', 'official')),
   title text NOT NULL,
   canonical_url text NOT NULL,
@@ -72,8 +70,8 @@ CREATE TABLE trend_signals (
 );
 
 CREATE TABLE sources (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  content_id uuid NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
+  id text PRIMARY KEY,
+  content_id text NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
   organization text NOT NULL,
   title text NOT NULL,
   canonical_url text NOT NULL,
@@ -85,9 +83,9 @@ CREATE TABLE sources (
 );
 
 CREATE TABLE claims (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  content_id uuid NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
-  source_id uuid NOT NULL REFERENCES sources(id),
+  id text PRIMARY KEY,
+  content_id text NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
+  source_id text NOT NULL REFERENCES sources(id),
   statement text NOT NULL,
   evidence_excerpt text NOT NULL,
   evidence_locator text NOT NULL,
@@ -97,23 +95,23 @@ CREATE TABLE claims (
 );
 
 CREATE TABLE content_versions (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  content_id uuid NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
+  id text PRIMARY KEY,
+  content_id text NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
   sequence integer NOT NULL CHECK (sequence > 0),
   stage text NOT NULL CHECK (stage IN ('brief', 'draft', 'seo', 'geo', 'human_tone', 'manual')),
   title text NOT NULL,
   body text NOT NULL,
   brief jsonb,
-  created_by uuid NOT NULL REFERENCES users(id),
-  parent_version_id uuid REFERENCES content_versions(id),
+  created_by text NOT NULL REFERENCES users(id),
+  parent_version_id text REFERENCES content_versions(id),
   metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (content_id, sequence)
 );
 
 CREATE TABLE automation_jobs (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  content_id uuid NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
+  id text PRIMARY KEY,
+  content_id text NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
   idempotency_key text NOT NULL UNIQUE,
   status text NOT NULL CHECK (status IN ('queued', 'running', 'succeeded', 'failed')),
   started_at timestamptz,
@@ -123,22 +121,22 @@ CREATE TABLE automation_jobs (
 );
 
 CREATE TABLE automation_job_steps (
-  job_id uuid NOT NULL REFERENCES automation_jobs(id) ON DELETE CASCADE,
+  job_id text NOT NULL REFERENCES automation_jobs(id) ON DELETE CASCADE,
   stage text NOT NULL CHECK (stage IN ('collect_trends', 'verify_sources', 'create_brief', 'write_draft', 'optimize_seo', 'optimize_geo', 'humanize_tone', 'quality_assurance', 'notify_review')),
   position integer NOT NULL,
   status text NOT NULL CHECK (status IN ('pending', 'running', 'succeeded', 'failed')),
   started_at timestamptz,
   completed_at timestamptz,
-  output_version_id uuid REFERENCES content_versions(id),
+  output_version_id text REFERENCES content_versions(id),
   error text,
   PRIMARY KEY (job_id, stage),
   UNIQUE (job_id, position)
 );
 
 CREATE TABLE qa_results (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  content_id uuid NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
-  version_id uuid NOT NULL REFERENCES content_versions(id) ON DELETE CASCADE,
+  id text PRIMARY KEY,
+  content_id text NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
+  version_id text NOT NULL REFERENCES content_versions(id) ON DELETE CASCADE,
   category text NOT NULL CHECK (category IN ('facts', 'seo', 'geo', 'tone', 'advertising')),
   status text NOT NULL CHECK (status IN ('passed', 'warning', 'failed')),
   score numeric(5,2) NOT NULL CHECK (score BETWEEN 0 AND 100),
@@ -148,18 +146,18 @@ CREATE TABLE qa_results (
 );
 
 CREATE TABLE approvals (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  content_id uuid NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
-  version_id uuid NOT NULL REFERENCES content_versions(id),
+  id text PRIMARY KEY,
+  content_id text NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
+  version_id text NOT NULL REFERENCES content_versions(id),
   decision text NOT NULL CHECK (decision IN ('approved', 'rejected')),
-  actor_id uuid NOT NULL REFERENCES users(id),
+  actor_id text NOT NULL REFERENCES users(id),
   reason text,
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE TABLE publications (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  content_id uuid NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
+  id text PRIMARY KEY,
+  content_id text NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
   status text NOT NULL CHECK (status IN ('prepared', 'scheduled', 'published', 'failed')),
   scheduled_at timestamptz,
   published_at timestamptz,
@@ -173,18 +171,18 @@ CREATE UNIQUE INDEX one_open_publication_per_content
   WHERE status IN ('prepared', 'scheduled');
 
 CREATE TABLE audit_logs (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  team_id uuid NOT NULL REFERENCES teams(id),
-  content_id uuid REFERENCES contents(id) ON DELETE SET NULL,
-  actor_id uuid REFERENCES users(id) ON DELETE SET NULL,
+  id text PRIMARY KEY,
+  team_id text NOT NULL REFERENCES teams(id),
+  content_id text REFERENCES contents(id) ON DELETE SET NULL,
+  actor_id text REFERENCES users(id) ON DELETE SET NULL,
   action text NOT NULL,
   detail jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE TABLE content_metrics (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  content_id uuid NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
+  id text PRIMARY KEY,
+  content_id text NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
   measured_on date NOT NULL,
   views integer CHECK (views >= 0),
   visitors integer CHECK (visitors >= 0),
@@ -206,3 +204,23 @@ COMMENT ON TABLE content_versions IS '자동화 각 단계와 사람 수정 버�
 COMMENT ON TABLE claims IS '원고의 사실 주장과 근거 위치를 연결하는 주장 장부다.';
 COMMENT ON TABLE automation_jobs IS '콘텐츠 상태와 분리된 자동화 실행 상태다.';
 COMMENT ON COLUMN automation_jobs.idempotency_key IS '재시도 시 중복 실행을 방지하는 고유 키다.';
+
+INSERT INTO teams (id, name) VALUES
+  ('carrot-company', '블로그 운영센터')
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name;
+
+INSERT INTO users (id, team_id, external_subject, email, display_name) VALUES
+  ('carrot', 'carrot-company', 'carrot', 'carrot@users.invalid', 'carrot'),
+  ('github-actions', 'carrot-company', 'github-actions', 'github-actions@users.invalid', 'GitHub Actions'),
+  ('system', 'carrot-company', 'system', 'system@users.invalid', '자동화 시스템')
+ON CONFLICT (id) DO UPDATE SET
+  team_id = EXCLUDED.team_id,
+  external_subject = EXCLUDED.external_subject,
+  display_name = EXCLUDED.display_name,
+  updated_at = now();
+
+INSERT INTO user_roles (user_id, role_code) VALUES
+  ('carrot', 'admin'),
+  ('github-actions', 'editor'),
+  ('system', 'admin')
+ON CONFLICT (user_id, role_code) DO NOTHING;

@@ -18,6 +18,8 @@ export async function bootstrapSystem(config: AppConfig): Promise<RuntimeSystem>
     });
     try {
       await repository.pool.query("SELECT 1");
+      const team = await repository.pool.query("SELECT 1 FROM teams WHERE id=$1", [config.DATABASE_TEAM_ID]);
+      if (!team.rowCount) throw new Error(`운영 팀을 찾을 수 없습니다: ${config.DATABASE_TEAM_ID}. 먼저 데이터베이스 마이그레이션을 실행하세요.`);
       return {
         system: createAutomationSystem({ repository }),
         databaseProvider: "postgres",

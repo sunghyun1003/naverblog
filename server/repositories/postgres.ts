@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { Pool, type PoolClient, type QueryResultRow } from "pg";
 import type {
   ApprovalRecord,
@@ -90,11 +91,15 @@ export class PostgresAutomationRepository implements AutomationRepository {
   }
 
   async createContent(content: ContentRecord): Promise<ContentRecord> {
+    await Promise.all([this.ensureUser(content.createdBy), this.ensureUser(content.assigneeId)]);
     const result = await this.pool.query(
       `INSERT INTO contents
         (id, team_id, creation_key, title, topic, strategy, state, assignee_id, created_by, scheduled_at, published_at, created_at, updated_at)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-       ON CONFLICT (team_id, creation_key) DO UPDATE SET creation_key = EXCLUDED.creation_key
+       ON CONFLICT (team_id, creation_key) DO UPDATE SET
+         title=EXCLUDED.title, topic=EXCLUDED.topic, strategy=EXCLUDED.strategy, state=EXCLUDED.state,
+         assignee_id=EXCLUDED.assignee_id, created_by=EXCLUDED.created_by, scheduled_at=EXCLUDED.scheduled_at,
+         published_at=EXCLUDED.published_at, updated_at=EXCLUDED.updated_at
        RETURNING *`,
       [content.id, this.teamId, content.creationKey, content.title, content.topic, content.strategy, content.state, content.assigneeId, content.createdBy, content.scheduledAt, content.publishedAt, content.createdAt, content.updatedAt],
     );
@@ -102,6 +107,7 @@ export class PostgresAutomationRepository implements AutomationRepository {
   }
 
   async updateContent(content: ContentRecord): Promise<ContentRecord> {
+    await this.ensureUser(content.assigneeId);
     const result = await this.pool.query(
       `UPDATE contents SET title=$3, topic=$4, strategy=$5, state=$6, assignee_id=$7, scheduled_at=$8, published_at=$9, updated_at=$10
        WHERE id=$1 AND team_id=$2 RETURNING *`,
@@ -190,7 +196,10 @@ export class PostgresAutomationRepository implements AutomationRepository {
       await this.pool.query(
         `INSERT INTO claims
           (id, content_id, source_id, statement, evidence_excerpt, evidence_locator, effective_date, verification_status, created_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (id) DO NOTHING`,
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (id) DO UPDATE SET
+           source_id=EXCLUDED.source_id, statement=EXCLUDED.statement, evidence_excerpt=EXCLUDED.evidence_excerpt,
+           evidence_locator=EXCLUDED.evidence_locator, effective_date=EXCLUDED.effective_date,
+           verification_status=EXCLUDED.verification_status`,
         [claim.id, contentId, claim.sourceId, claim.statement, claim.evidenceExcerpt, claim.evidenceLocator, claim.effectiveDate, claim.verificationStatus, claim.createdAt],
       );
     }
@@ -211,10 +220,16 @@ export class PostgresAutomationRepository implements AutomationRepository {
   }
 
   async saveVersion(version: ContentVersion): Promise<ContentVersion> {
+    await this.ensureUser(version.createdBy);
     const result = await this.pool.query(
       `INSERT INTO content_versions
         (id, content_id, sequence, stage, title, body, brief, created_by, parent_version_id, metadata, created_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+       ON CONFLICT (content_id, sequence) DO UPDATE SET
+         stage=EXCLUDED.stage, title=EXCLUDED.title, body=EXCLUDED.body, brief=EXCLUDED.brief,
+         created_by=EXCLUDED.created_by, parent_version_id=EXCLUDED.parent_version_id,
+         metadata=EXCLUDED.metadata, created_at=EXCLUDED.created_at
+       RETURNING *`,
       [version.id, version.contentId, version.sequence, version.stage, version.title, version.body, version.brief, version.createdBy, version.parentVersionId, version.metadata, version.createdAt],
     );
     return versionFrom(result.rows[0]!);
@@ -317,8 +332,11 @@ export class PostgresAutomationRepository implements AutomationRepository {
   }
 
   async saveApproval(approval: ApprovalRecord): Promise<ApprovalRecord> {
+    await this.ensureUser(approval.actorId);
     await this.pool.query(
-      `INSERT INTO approvals (id, content_id, version_id, decision, actor_id, reason, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      `INSERT INTO approvals (id, content_id, version_id, decision, actor_id, reason, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)
+       ON CONFLICT (id) DO UPDATE SET decision=EXCLUDED.decision, actor_id=EXCLUDED.actor_id,
+         reason=EXCLUDED.reason, created_at=EXCLUDED.created_at`,
       [approval.id, approval.contentId, approval.versionId, approval.decision, approval.actorId, approval.reason, approval.createdAt],
     );
     return approval;
@@ -360,8 +378,11 @@ export class PostgresAutomationRepository implements AutomationRepository {
   }
 
   async appendAudit(event: AuditEvent): Promise<AuditEvent> {
+    await this.ensureUser(event.actorId);
     await this.pool.query(
-      `INSERT INTO audit_logs (id, team_id, content_id, actor_id, action, detail, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      `INSERT INTO audit_logs (id, team_id, content_id, actor_id, action, detail, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)
+       ON CONFLICT (id) DO UPDATE SET actor_id=EXCLUDED.actor_id, action=EXCLUDED.action,
+         detail=EXCLUDED.detail, created_at=EXCLUDED.created_at`,
       [event.id, this.teamId, event.contentId, event.actorId, event.action, event.detail, event.createdAt],
     );
     return event;
@@ -389,6 +410,17 @@ export class PostgresAutomationRepository implements AutomationRepository {
         [job.id, step.stage, position, step.status, step.startedAt, step.completedAt, step.outputVersionId, step.error],
       );
     }
+  }
+
+  private async ensureUser(actorId: string | null): Promise<void> {
+    if (!actorId) return;
+    const emailKey = createHash("sha256").update(actorId).digest("hex").slice(0, 24);
+    await this.pool.query(
+      `INSERT INTO users (id, team_id, external_subject, email, display_name)
+       VALUES ($1,$2,$1,$3,$1)
+       ON CONFLICT (id) DO NOTHING`,
+      [actorId, this.teamId, `${emailKey}@users.invalid`],
+    );
   }
 
   private async jobFrom(row: QueryResultRow): Promise<AutomationJob> {

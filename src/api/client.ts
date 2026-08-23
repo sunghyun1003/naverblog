@@ -46,8 +46,8 @@ export function logout(): Promise<void> {
   return request("/api/auth/logout", { method: "POST" });
 }
 
-export function listContents(signal?: AbortSignal): Promise<{ items: ApiContent[] }> {
-  return request("/api/contents", { signal });
+export function listContents(signal?: AbortSignal, refresh = false): Promise<{ items: ApiContent[] }> {
+  return request(`/api/contents${refresh ? "?refresh=true" : ""}`, { signal });
 }
 
 export function getCapabilities(signal?: AbortSignal): Promise<ApiCapabilities> {
@@ -102,8 +102,8 @@ export function listWorkflowRuns(signal?: AbortSignal): Promise<{ items: ApiWork
   return request("/api/automation/runs", { signal });
 }
 
-export function getTrends(signal?: AbortSignal): Promise<ApiTrendSnapshot> {
-  return request("/api/trends", { signal });
+export function getTrends(signal?: AbortSignal, refresh = false): Promise<ApiTrendSnapshot> {
+  return request(`/api/trends${refresh ? "?refresh=true" : ""}`, { signal });
 }
 
 export function scheduleContent(contentId: string, scheduledAt: string): Promise<unknown> {

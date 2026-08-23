@@ -31,6 +31,7 @@ const generationSchema = z.object({
   strategy: z.enum(["trend", "original"]).default("trend"),
 });
 const idParamsSchema = z.object({ id: z.string().min(1) });
+const refreshQuerySchema = z.object({ refresh: z.enum(["true", "false"]).default("false") });
 
 export interface AppOptions {
   system?: AutomationSystem;
@@ -72,7 +73,11 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   const githubAutomation = options.githubAutomation;
   const persistGitHubData = Boolean(githubAutomation) && databaseProvider === "postgres";
 
-  async function listGitHubContents() {
+  async function listGitHubContents(forceRefresh = false) {
+    if (persistGitHubData && !forceRefresh) {
+      const cached = await system.repository.listContents();
+      if (cached.length) return cached;
+    }
     try {
       const drafts = await githubAutomation!.listDrafts();
       if (persistGitHubData) return persistGitHubDraftSummaries(system.repository, drafts);
@@ -87,6 +92,10 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   }
 
   async function getGitHubDetail(id: string) {
+    if (persistGitHubData) {
+      const cached = await system.repository.getContentDetail(id);
+      if (cached?.versions.length) return cached;
+    }
     try {
       const draft = await githubAutomation!.getDraft(id);
       if (persistGitHubData) return persistGitHubDraftDetail(system.repository, draft);
@@ -187,9 +196,10 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     return reply.status(202).send({ accepted: true });
   });
 
-  app.get("/api/contents", async () => ({
-    items: githubAutomation ? await listGitHubContents() : await system.contentService.list(),
-  }));
+  app.get("/api/contents", async (request) => {
+    const query = refreshQuerySchema.parse(request.query);
+    return { items: githubAutomation ? await listGitHubContents(query.refresh === "true") : await system.contentService.list() };
+  });
   app.post("/api/contents", async (request, reply) => {
     if (githubAutomation) {
       const body = createContentSchema.parse(request.body);
@@ -282,8 +292,32 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     }
     return system.contentService.publish(id, actor);
   });
-  app.get("/api/trends", async () => {
+  function trendSnapshotFromCache(cached: Awaited<ReturnType<typeof system.repository.listTrendSignals>>) {
+    return {
+      collectionDate: cached[0]!.collectedAt.slice(0, 10),
+      collectedAt: cached[0]!.collectedAt,
+      queryCount: new Set(cached.map((trend) => trend.topicKey)).size,
+      itemCount: cached.length,
+      source: "postgres-cache",
+      items: cached.map((trend) => ({
+        title: trend.title,
+        link: trend.url,
+        description: "저장된 운영 데이터를 먼저 표시하고 최신 자료를 확인하고 있습니다.",
+        bloggername: "NAVER 블로그",
+        postdate: trend.publishedAt.slice(0, 10),
+        candidateScore: trend.relevanceScore,
+        matchedQueries: [trend.topicKey],
+      })),
+    };
+  }
+
+  app.get("/api/trends", async (request) => {
+    const query = refreshQuerySchema.parse(request.query);
     if (githubAutomation) {
+      if (persistGitHubData && query.refresh !== "true") {
+        const cached = await system.repository.listTrendSignals();
+        if (cached.length) return trendSnapshotFromCache(cached);
+      }
       let trends;
       try {
         trends = await githubAutomation.getTrends();
@@ -292,22 +326,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
         const cached = await system.repository.listTrendSignals();
         if (!cached.length) throw error;
         app.log.warn({ err: error }, "GitHub 트렌드 조회에 실패해 PostgreSQL 캐시를 사용합니다.");
-        return {
-          collectionDate: cached[0]!.collectedAt.slice(0, 10),
-          collectedAt: cached[0]!.collectedAt,
-          queryCount: new Set(cached.map((trend) => trend.topicKey)).size,
-          itemCount: cached.length,
-          source: "postgres-cache",
-          items: cached.map((trend) => ({
-            title: trend.title,
-            link: trend.url,
-            description: "GitHub 원본을 잠시 읽을 수 없어 저장된 운영 데이터를 표시합니다.",
-            bloggername: "NAVER 블로그",
-            postdate: trend.publishedAt.slice(0, 10),
-            candidateScore: trend.relevanceScore,
-            matchedQueries: [trend.topicKey],
-          })),
-        };
+        return trendSnapshotFromCache(cached);
       }
       if (persistGitHubData) {
         try {

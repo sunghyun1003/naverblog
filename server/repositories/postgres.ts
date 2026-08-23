@@ -143,17 +143,35 @@ export class PostgresAutomationRepository implements AutomationRepository {
   }
 
   async saveTrendSignals(signals: TrendSignal[]): Promise<TrendSignal[]> {
-    for (const signal of signals) {
-      await this.pool.query(
-        `INSERT INTO trend_signals
-          (id, team_id, source_type, title, canonical_url, published_at, engagement_score, relevance_score, trust_score, topic_key, collected_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-         ON CONFLICT (team_id, canonical_url) DO UPDATE SET
-          title=EXCLUDED.title, published_at=EXCLUDED.published_at, engagement_score=EXCLUDED.engagement_score,
-          relevance_score=EXCLUDED.relevance_score, trust_score=EXCLUDED.trust_score, collected_at=EXCLUDED.collected_at`,
-        [signal.id, this.teamId, signal.sourceType, signal.title, signal.url, signal.publishedAt, signal.engagementScore, signal.relevanceScore, signal.trustScore, signal.topicKey, signal.collectedAt],
-      );
-    }
+    if (!signals.length) return signals;
+    const rows = signals.map((signal) => ({
+      id: signal.id,
+      source_type: signal.sourceType,
+      title: signal.title,
+      canonical_url: signal.url,
+      published_at: signal.publishedAt,
+      engagement_score: signal.engagementScore,
+      relevance_score: signal.relevanceScore,
+      trust_score: signal.trustScore,
+      topic_key: signal.topicKey,
+      collected_at: signal.collectedAt,
+    }));
+    await this.pool.query(
+      `INSERT INTO trend_signals
+        (id, team_id, source_type, title, canonical_url, published_at, engagement_score, relevance_score, trust_score, topic_key, collected_at)
+       SELECT incoming.id, $2, incoming.source_type, incoming.title, incoming.canonical_url,
+         incoming.published_at::timestamptz, incoming.engagement_score, incoming.relevance_score,
+         incoming.trust_score, incoming.topic_key, incoming.collected_at::timestamptz
+       FROM jsonb_to_recordset($1::jsonb) AS incoming(
+         id text, source_type text, title text, canonical_url text, published_at text,
+         engagement_score numeric, relevance_score numeric, trust_score numeric, topic_key text, collected_at text
+       )
+       ON CONFLICT (team_id, canonical_url) DO UPDATE SET
+        title=EXCLUDED.title, published_at=EXCLUDED.published_at, engagement_score=EXCLUDED.engagement_score,
+        relevance_score=EXCLUDED.relevance_score, trust_score=EXCLUDED.trust_score,
+        topic_key=EXCLUDED.topic_key, collected_at=EXCLUDED.collected_at`,
+      [JSON.stringify(rows), this.teamId],
+    );
     return signals;
   }
 

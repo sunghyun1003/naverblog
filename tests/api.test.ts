@@ -50,6 +50,36 @@ test("Neon 동기화가 실패해도 GitHub 트렌드는 화면에 반환한다"
   assert.equal(response.json<{ items: unknown[] }>().items.length, 1);
 });
 
+test("Neon 캐시가 있으면 목록 화면은 GitHub 응답을 기다리지 않는다", async (context) => {
+  const system = testSystem();
+  const content = await system.contentService.create(
+    { title: "실손보험 전환 확인", topic: "실손보험", strategy: "trend", idempotencyKey: "cached-content" },
+    { id: "admin", roles: ["admin"] },
+  );
+  await system.contentService.runPipeline(content.id, "cached-pipeline", { id: "admin", roles: ["admin"] });
+  let githubRequests = 0;
+  const githubAutomation = new GitHubAutomationService(
+    { owner: "owner", repository: "automation", branch: "main", token: "test-token" },
+    (async () => {
+      githubRequests += 1;
+      throw new Error("GitHub should not be called");
+    }) as typeof fetch,
+  );
+  const app = buildApp({ system, githubAutomation, databaseProvider: "postgres" });
+  context.after(() => app.close());
+
+  const [contents, trends, detail] = await Promise.all([
+    app.inject({ method: "GET", url: "/api/contents" }),
+    app.inject({ method: "GET", url: "/api/trends" }),
+    app.inject({ method: "GET", url: `/api/contents/${content.id}` }),
+  ]);
+
+  assert.equal(contents.statusCode, 200);
+  assert.equal(trends.statusCode, 200);
+  assert.equal(detail.statusCode, 200);
+  assert.equal(githubRequests, 0);
+});
+
 test("HTTP API로 생성부터 검수 상세 조회까지 실행한다", async (context) => {
   const system = testSystem();
   const app = buildApp({ system });

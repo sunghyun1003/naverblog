@@ -16,7 +16,7 @@ export function useContents() {
 
   useEffect(() => {
     const controller = new AbortController();
-    const refresh = () => Promise.all([listContents(controller.signal), getCapabilities(controller.signal)])
+    const refresh = (force = false) => Promise.all([listContents(controller.signal, force), getCapabilities(controller.signal)])
       .then(([contentResponse, capabilityResponse]) => {
         setContents(contentResponse.items.map(mapContent));
         setCapabilities(capabilityResponse);
@@ -24,10 +24,10 @@ export function useContents() {
       })
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === "AbortError") return;
-        setConnectionStatus("offline");
+        if (!force) setConnectionStatus("offline");
       });
-    void refresh();
-    const interval = window.setInterval(() => void refresh(), 30_000);
+    void refresh().then(() => void refresh(true));
+    const interval = window.setInterval(() => void refresh(true), 120_000);
     return () => {
       window.clearInterval(interval);
       controller.abort();

@@ -26,6 +26,23 @@ try {
   );
   if (users.rowCount !== 3) throw new Error("초기 운영 사용자가 모두 생성되지 않았습니다.");
 
+  const counts = await pool.query<{
+    contents: string;
+    content_versions: string;
+    trend_signals: string;
+    automation_jobs: string;
+    audit_logs: string;
+  }>(
+    `SELECT
+       (SELECT count(*) FROM contents WHERE team_id=$1)::text AS contents,
+       (SELECT count(*) FROM content_versions v JOIN contents c ON c.id=v.content_id WHERE c.team_id=$1)::text AS content_versions,
+       (SELECT count(*) FROM trend_signals WHERE team_id=$1)::text AS trend_signals,
+       (SELECT count(*) FROM automation_jobs j JOIN contents c ON c.id=j.content_id WHERE c.team_id=$1)::text AS automation_jobs,
+       (SELECT count(*) FROM audit_logs WHERE team_id=$1)::text AS audit_logs`,
+    [teamId],
+  );
+  const stored = counts.rows[0]!;
+
   process.stdout.write(JSON.stringify({
     status: "ok",
     provider: "postgres",
@@ -33,6 +50,13 @@ try {
     teamName: team.rows[0]!.name,
     tables: requiredTables.length,
     users: users.rows.map((row) => row.id),
+    stored: {
+      contents: Number(stored.contents),
+      contentVersions: Number(stored.content_versions),
+      trendSignals: Number(stored.trend_signals),
+      automationJobs: Number(stored.automation_jobs),
+      auditLogs: Number(stored.audit_logs),
+    },
   }));
 } finally {
   await pool.end();

@@ -12,6 +12,7 @@ test("Neon 마이그레이션과 Cloud Run 배포가 직렬화되고 접속 정�
   assert.match(migration, /group: dashboard-production/);
   assert.match(migration, /dashboard-database-direct-url/);
   assert.doesNotMatch(migration, /latest --secret=dashboard-database-url/);
+  assert.doesNotMatch(migration, /gcloud secrets describe/);
 
   assert.match(deployment, /group: dashboard-production/);
   assert.match(deployment, /STORAGE_PROVIDER=postgres/);

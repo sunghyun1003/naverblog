@@ -53,12 +53,12 @@ Google Cloud 프로젝 `naverblog-automation-505904`에서 다음 Secret을 생�
 
 ## 4. Secret 접근 권한
 
-`dashboard-database-url`에는 다음 서비스 계정을 **Secret Manager 비밀번호 액세스 자**로 추가한다.
+`dashboard-database-url`에는 Cloud Run 실행 계정만 **Secret Manager Secret Accessor
+(`roles/secretmanager.secretAccessor`)**로 추가한다.
 
 - `naverblog-dashboard@naverblog-automation-505904.iam.gserviceaccount.com`
-- `github-codex-automation@naverblog-automation-505904.iam.gserviceaccount.com`
 
-`dashboard-database-direct-url`에는 마이그레이션을 실행하는 계정만 추가한다.
+`dashboard-database-direct-url`에는 마이그레이션 실행 계정만 같은 역할로 추가한다.
 
 - `github-codex-automation@naverblog-automation-505904.iam.gserviceaccount.com`
 
@@ -88,7 +88,7 @@ GitHub `sunghyun1003/naverblog` → **Actions** → **migrate-neon-database** �
 
 ## 문제 발생 시
 
-- `Secret not found`: Secret 이름과 프로젝를 확인한다.
-- `Permission denied`: 해당 Secret의 액세스 자 권한을 확인한다.
+- `Secret not found`: Secret 이름과 프로젝트를 확인한다.
+- `Permission denied`: 해당 Secret의 Secret Accessor 권한을 확인한다.
 - `password authentication failed`: Neon에서 접속 문자열을 다시 복사해 새 Secret 버전으로 추가한다.
 - `운영 팀을 찾을 수 없습니다`: `migrate-neon-database`를 먼저 실행한다.

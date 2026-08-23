@@ -35,9 +35,6 @@ jobs:
 
       - uses: google-github-actions/setup-gcloud@v3
 
-      - name: Neon 직접 접속 정보 확인
-        run: gcloud secrets describe dashboard-database-direct-url --project "${{ vars.GCP_PROJECT_ID }}" --quiet
-
       - name: 데이터베이스 마이그레이션·검증
         env:
           DATABASE_TEAM_ID: carrot-company

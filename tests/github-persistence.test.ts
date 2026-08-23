@@ -83,3 +83,19 @@ test("GitHub 트렌드 스냅샷을 PostgreSQL 도메인 형식으로 변환한�
   assert.equal(trends[0]?.publishedAt, "2026-08-23T00:00:00.000Z");
   assert.equal(trends[0]?.topicKey, "실손보험");
 });
+
+test("100을 넘는 내부 후보 점수를 순위를 유지하며 저장 범위로 환산한다", async () => {
+  const repository = new InMemoryAutomationRepository();
+  await persistGitHubTrends(repository, {
+    collectedAt: generatedAt,
+    items: [
+      { title: "반복 노출 1위", link: "https://blog.naver.com/example/1", postdate: "20260823", candidateScore: 190, matchedQueries: ["보험"] },
+      { title: "반복 노출 2위", link: "https://blog.naver.com/example/2", postdate: "20260823", candidateScore: 110, matchedQueries: ["보험"] },
+    ],
+  });
+
+  const trends = await repository.listTrendSignals();
+  assert.equal(trends[0]?.engagementScore, 100);
+  assert.ok((trends[1]?.engagementScore ?? 0) < 100);
+  assert.ok((trends[1]?.engagementScore ?? 0) > 0);
+});

@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildApp } from "../server/http/app.js";
+import type { TrendSignal } from "../server/domain/types.js";
+import { InMemoryAutomationRepository } from "../server/repositories/in-memory.js";
 import { GitHubAutomationService } from "../server/services/github-automation.js";
+import { createAutomationSystem } from "../server/system.js";
 import { testSystem } from "./helpers.js";
 
 test("GitHub 운영 모드에서는 저장소 콘텐츠를 운영 데이터 저장소로 표시한다", async (context) => {
@@ -18,6 +21,33 @@ test("GitHub 운영 모드에서는 저장소 콘텐츠를 운영 데이터 저�
   assert.equal(response.statusCode, 200);
   const capabilities = response.json<{ integrations: { database: { configured: boolean; provider: string } } }>();
   assert.deepEqual(capabilities.integrations.database, { configured: true, provider: "github-contents" });
+});
+
+test("Neon 동기화가 실패해도 GitHub 트렌드는 화면에 반환한다", async (context) => {
+  class FailingTrendRepository extends InMemoryAutomationRepository {
+    override async saveTrendSignals(_signals: TrendSignal[]): Promise<TrendSignal[]> {
+      throw new Error("database constraint");
+    }
+  }
+  const request = (async (input: string | URL | Request) => {
+    if (String(input).includes("data/latest.json")) {
+      const content = Buffer.from(JSON.stringify({
+        collectionDate: "2026-08-24",
+        collectedAt: "2026-08-24T00:00:00Z",
+        items: [{ title: "실손보험", link: "https://blog.naver.com/example/1", candidateScore: 190 }],
+      })).toString("base64");
+      return new Response(JSON.stringify({ content, encoding: "base64", sha: "sha-1" }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ message: "Not Found" }), { status: 404 });
+  }) as typeof fetch;
+  const repository = new FailingTrendRepository();
+  const githubAutomation = new GitHubAutomationService({ owner: "owner", repository: "automation", branch: "main", token: "test-token" }, request);
+  const app = buildApp({ system: createAutomationSystem({ repository }), githubAutomation, databaseProvider: "postgres" });
+  context.after(() => app.close());
+
+  const response = await app.inject({ method: "GET", url: "/api/trends" });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.json<{ items: unknown[] }>().items.length, 1);
 });
 
 test("HTTP API로 생성부터 검수 상세 조회까지 실행한다", async (context) => {

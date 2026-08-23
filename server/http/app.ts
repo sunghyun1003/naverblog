@@ -284,10 +284,9 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   });
   app.get("/api/trends", async () => {
     if (githubAutomation) {
+      let trends;
       try {
-        const trends = await githubAutomation.getTrends();
-        if (persistGitHubData) await persistGitHubTrends(system.repository, trends);
-        return trends;
+        trends = await githubAutomation.getTrends();
       } catch (error) {
         if (!persistGitHubData) throw error;
         const cached = await system.repository.listTrendSignals();
@@ -310,6 +309,14 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
           })),
         };
       }
+      if (persistGitHubData) {
+        try {
+          await persistGitHubTrends(system.repository, trends);
+        } catch (error) {
+          app.log.warn({ err: error }, "GitHub 트렌드의 PostgreSQL 동기화에 실패했습니다.");
+        }
+      }
+      return trends;
     }
     const trends = await system.repository.listTrendSignals();
     return {

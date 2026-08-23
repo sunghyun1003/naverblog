@@ -62,14 +62,16 @@ export async function persistGitHubTrends(
   snapshot: CollectedTrendsForPersistence,
 ): Promise<TrendSignal[]> {
   const collectedAt = Number.isNaN(Date.parse(snapshot.collectedAt)) ? new Date().toISOString() : snapshot.collectedAt;
+  const scoreScale = Math.max(100, ...snapshot.items.map((item) => item.candidateScore));
+  const normalizedScore = (score: number) => Math.max(0, Math.min(100, (score / scoreScale) * 100));
   const signals = snapshot.items.map((item, index): TrendSignal => ({
     id: `github-trend:${encodeURIComponent(item.link || item.title)}:${index + 1}`,
     sourceType: "naver_blog",
     title: item.title,
     url: item.link || `urn:naverblog:trend:${index + 1}`,
     publishedAt: normalizedPostDate(item.postdate, collectedAt),
-    engagementScore: item.candidateScore,
-    relevanceScore: item.candidateScore,
+    engagementScore: normalizedScore(item.candidateScore),
+    relevanceScore: normalizedScore(item.candidateScore),
     trustScore: 40,
     topicKey: item.matchedQueries[0] ?? "보험",
     collectedAt,

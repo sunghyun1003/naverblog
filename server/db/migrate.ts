@@ -2,13 +2,14 @@ import { readdir, readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Pool } from "pg";
+import { securePostgresConnectionString } from "./connection.js";
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) throw new Error("DATABASE_URL이 필요합니다.");
 
 const migrationsDirectory = join(dirname(fileURLToPath(import.meta.url)), "migrations");
 const migrationFiles = (await readdir(migrationsDirectory)).filter((file) => file.endsWith(".sql")).sort();
-const pool = new Pool({ connectionString, max: 1, connectionTimeoutMillis: 5_000 });
+const pool = new Pool({ connectionString: securePostgresConnectionString(connectionString), max: 1, connectionTimeoutMillis: 5_000 });
 
 try {
   await pool.query(`CREATE TABLE IF NOT EXISTS schema_migrations (

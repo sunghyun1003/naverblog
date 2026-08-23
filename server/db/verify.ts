@@ -1,10 +1,11 @@
 import { Pool } from "pg";
+import { securePostgresConnectionString } from "./connection.js";
 
 const connectionString = process.env.DATABASE_URL;
 const teamId = process.env.DATABASE_TEAM_ID ?? "carrot-company";
 if (!connectionString) throw new Error("DATABASE_URL이 필요합니다.");
 
-const pool = new Pool({ connectionString, max: 1, connectionTimeoutMillis: 10_000 });
+const pool = new Pool({ connectionString: securePostgresConnectionString(connectionString), max: 1, connectionTimeoutMillis: 10_000 });
 
 try {
   const requiredTables = ["teams", "users", "contents", "content_versions", "automation_jobs", "audit_logs"];

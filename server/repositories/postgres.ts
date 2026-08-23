@@ -15,6 +15,7 @@ import type {
   TrendSignal,
 } from "../domain/types.js";
 import type { AutomationRepository } from "./contracts.js";
+import { securePostgresConnectionString } from "../db/connection.js";
 
 export interface PostgresRepositoryOptions {
   connectionString: string;
@@ -78,7 +79,7 @@ export class PostgresAutomationRepository implements AutomationRepository {
 
   static create(options: PostgresRepositoryOptions): PostgresAutomationRepository {
     const pool = new Pool({
-      connectionString: options.connectionString,
+      connectionString: securePostgresConnectionString(options.connectionString),
       max: options.maxConnections ?? 10,
       connectionTimeoutMillis: 5_000,
       idleTimeoutMillis: 30_000,

@@ -45,6 +45,8 @@ Project Dashboard의 **Connect**를 연다.
 - 전체 `postgresql://...` 문자열을 복사한다.
 
 두 값은 `sslmode=require`를 포함해야 한다. 비밀번호를 GitHub 변수나 채팅에 입력하지 않는다.
+서버는 이 값을 Neon이 지원하는 가장 엄격한 `sslmode=verify-full`로 자동 보정하므로 Secret을
+별도로 수정할 필요가 없다.
 
 ## 3. Google Secret Manager에 저장
 

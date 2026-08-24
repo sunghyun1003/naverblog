@@ -23,6 +23,8 @@ export interface ApiContent {
   scheduledAt: string | null;
   publishedAt: string | null;
   mirrorSynced?: boolean;
+  rewriteQueued?: boolean;
+  rewriteStatus?: "queued" | "completed" | "failed" | null;
 }
 
 export interface ApiFreshness {

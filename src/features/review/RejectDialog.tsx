@@ -31,7 +31,7 @@ export function RejectDialog({ open, busy = false, onClose, onReject }: { open: 
       open={open}
       onClose={() => { if (!processing) onClose(); }}
       title="원고 반려"
-      description="반려 의견을 저장합니다. 의견을 반영한 자동 재작성은 아직 실행되지 않습니다."
+      description="반려 의견을 저장하면 기존 원고를 보존한 채 새 버전 재작성을 바로 시작합니다."
       footer={
         <>
           <Button type="button" onClick={onClose} disabled={processing}>취소</Button>

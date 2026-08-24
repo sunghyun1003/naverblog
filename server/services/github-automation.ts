@@ -9,6 +9,15 @@ export interface GitHubAutomationConfig {
 
 export type DashboardReviewStatus = "pending" | "approved" | "rejected";
 export type DashboardPublicationStatus = "none" | "scheduled" | "published";
+export type DashboardRewriteStatus = "queued" | "completed" | "failed";
+
+export interface DashboardDecisionEvent {
+  decision: "approved" | "rejected";
+  reason: string | null;
+  actorId: string;
+  createdAt: string;
+  revision: number;
+}
 
 export interface DashboardDraftState {
   schemaVersion: 1;
@@ -24,6 +33,11 @@ export interface DashboardDraftState {
   scheduledAt: string | null;
   publishedAt: string | null;
   externalUrl: string | null;
+  revision?: number;
+  rewriteStatus?: DashboardRewriteStatus;
+  rewriteRequestedAt?: string | null;
+  rewrittenAt?: string | null;
+  decisionHistory?: DashboardDecisionEvent[];
   updatedAt: string;
   updatedBy: string;
 }
@@ -41,6 +55,16 @@ export interface AutomationDraftSummary {
   publicationStatus: DashboardPublicationStatus;
   scheduledAt: string | null;
   publishedAt: string | null;
+  revision?: number;
+  rewriteStatus?: DashboardRewriteStatus | null;
+}
+
+export interface AutomationDraftRevision {
+  revision: number;
+  title: string;
+  articleMarkdown: string;
+  copyPackage: string;
+  createdAt: string;
 }
 
 export interface AutomationDraftDetail extends AutomationDraftSummary {
@@ -49,6 +73,7 @@ export interface AutomationDraftDetail extends AutomationDraftSummary {
   sourcesMarkdown: string;
   article: GeneratedArticle;
   state: DashboardDraftState;
+  revisions?: AutomationDraftRevision[];
 }
 
 export interface WorkflowRunSummary {
@@ -82,6 +107,8 @@ interface GeneratedArticle {
 
 interface GeneratedStatus {
   generatedAt?: string;
+  updatedAt?: string;
+  revision?: number;
   status?: string;
   toneSkillApplied?: boolean;
 }
@@ -176,7 +203,7 @@ export class GitHubAutomationService {
     return responses.flat().sort((left, right) => right.createdAt.localeCompare(left.createdAt));
   }
 
-  async dispatch(workflow: "collect" | "generate", inputs: Record<string, string> = {}): Promise<void> {
+  async dispatch(workflow: "collect" | "generate" | "rewrite", inputs: Record<string, string> = {}): Promise<void> {
     await this.github(`/actions/workflows/${workflow}.yml/dispatches`, {
       method: "POST",
       body: JSON.stringify({ ref: this.config.branch, ...(Object.keys(inputs).length ? { inputs } : {}) }),
@@ -210,9 +237,13 @@ export class GitHubAutomationService {
 
   async getDraft(runId: string): Promise<AutomationDraftDetail> {
     const tree = await this.tree();
-    const statusPath = tree.map((item) => item.path).find((file) => file.endsWith(`/run-${runId}/status.json`));
+    const paths = tree.map((item) => item.path);
+    const statusPath = paths.find((file) => file.endsWith(`/run-${runId}/status.json`));
     if (!statusPath) throw new Error("원고를 찾을 수 없습니다.");
     const basePath = statusPath.slice(0, -"/status.json".length);
+    const revisionStatusPaths = paths
+      .filter((file) => file.startsWith(`${basePath}/revisions/v`) && file.endsWith("/status.json"))
+      .sort((left, right) => left.localeCompare(right, undefined, { numeric: true }));
     const [status, article, articleMarkdown, copyPackage, sourcesMarkdown, state] = await Promise.all([
       this.readJson<GeneratedStatus>(statusPath),
       this.readJson<GeneratedArticle>(`${basePath}/article.json`),
@@ -221,7 +252,24 @@ export class GitHubAutomationService {
       this.readText(`${basePath}/sources.md`),
       this.readState(runId),
     ]);
-    return { ...this.summary(runId, status, article, state), articleMarkdown, copyPackage, sourcesMarkdown, article, state };
+    const revisions = await Promise.all(revisionStatusPaths.map(async (revisionStatusPath) => {
+      const revisionBasePath = revisionStatusPath.slice(0, -"/status.json".length);
+      const revision = Number(revisionBasePath.match(/\/revisions\/v(\d+)$/)?.[1] ?? 0);
+      const [revisionStatus, revisionArticle, revisionMarkdown, revisionCopyPackage] = await Promise.all([
+        this.readJson<GeneratedStatus>(revisionStatusPath),
+        this.readJson<GeneratedArticle>(`${revisionBasePath}/article.json`),
+        this.readText(`${revisionBasePath}/article.md`),
+        this.readText(`${revisionBasePath}/copy-package.txt`),
+      ]);
+      return {
+        revision,
+        title: revisionArticle.article?.title ?? `Draft ${runId}`,
+        articleMarkdown: revisionMarkdown,
+        copyPackage: revisionCopyPackage,
+        createdAt: revisionStatus.updatedAt ?? revisionStatus.generatedAt ?? status.generatedAt ?? new Date(0).toISOString(),
+      };
+    }));
+    return { ...this.summary(runId, status, article, state), articleMarkdown, copyPackage, sourcesMarkdown, article, state, revisions };
   }
 
   async getTrends() {
@@ -271,7 +319,8 @@ export class GitHubAutomationService {
 
   private summary(runId: string, status: GeneratedStatus, article: GeneratedArticle, state: DashboardDraftState): AutomationDraftSummary {
     const generatedAt = status.generatedAt ?? new Date(0).toISOString();
-    const updatedAt = Date.parse(state.updatedAt) > Date.parse(generatedAt) ? state.updatedAt : generatedAt;
+    const packageUpdatedAt = status.updatedAt ?? generatedAt;
+    const updatedAt = Date.parse(state.updatedAt) > Date.parse(packageUpdatedAt) ? state.updatedAt : packageUpdatedAt;
     return {
       runId,
       title: article.article?.title ?? `원고 ${runId}`,
@@ -285,6 +334,8 @@ export class GitHubAutomationService {
       publicationStatus: state.publicationStatus,
       scheduledAt: state.scheduledAt,
       publishedAt: state.publishedAt,
+      revision: state.revision ?? status.revision ?? 1,
+      rewriteStatus: state.rewriteStatus ?? null,
     };
   }
 

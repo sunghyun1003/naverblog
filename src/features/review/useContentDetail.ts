@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { approveContent, getContentDetail, rejectContent } from "../../api/client";
 import type { ApiContentDetail } from "../../api/types";
 
@@ -7,6 +7,15 @@ export function useContentDetail(contentId: string | undefined) {
   const [connectionStatus, setConnectionStatus] = useState<"loading" | "connected" | "offline">("loading");
   const [loadError, setLoadError] = useState("");
   const [requestVersion, setRequestVersion] = useState(0);
+
+  const refresh = useCallback(async () => {
+    if (!contentId) throw new Error("Content ID is missing.");
+    const response = await getContentDetail(contentId);
+    setDetail(response);
+    setConnectionStatus("connected");
+    setLoadError("");
+    return response;
+  }, [contentId]);
 
   useEffect(() => {
     if (!contentId) {
@@ -48,5 +57,5 @@ export function useContentDetail(contentId: string | undefined) {
 
   const reload = () => setRequestVersion((current) => current + 1);
 
-  return { detail, connectionStatus, loadError, reload, approve, reject };
+  return { detail, connectionStatus, loadError, reload, refresh, approve, reject };
 }

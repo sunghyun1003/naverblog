@@ -24,12 +24,17 @@ export function draftToContent(draft: AutomationDraftSummary): ContentRecord {
     updatedAt: draft.updatedAt,
     scheduledAt: draft.scheduledAt,
     publishedAt: draft.publishedAt,
+    rewriteStatus: draft.rewriteStatus ?? null,
   };
 }
 
 export function draftToDetail(draft: AutomationDraftDetail): ContentDetail {
   const content = draftToContent(draft);
-  const versionId = `${draft.runId}:human-tone`;
+  const currentRevision = draft.revision ?? draft.state.revision ?? 1;
+  const versionIdForRevision = (revision: number) => revision === 1
+    ? `${draft.runId}:human-tone`
+    : `${draft.runId}:human-tone:${revision}`;
+  const versionId = versionIdForRevision(currentRevision);
   const sourceByKey = new Map<string, ContentDetail["sources"][number]>();
   const sourceByOriginalIndex: ContentDetail["sources"] = [];
   for (const [index, source] of (draft.article.sources ?? []).entries()) {
@@ -93,7 +98,7 @@ export function draftToDetail(draft: AutomationDraftDetail): ContentDetail {
   const approvalActorId = draft.state.reviewStatus === "approved"
     ? draft.state.approvedBy ?? draft.state.updatedBy
     : draft.state.rejectedBy ?? draft.state.updatedBy;
-  const approvals = draft.state.reviewStatus === "pending" ? [] : [{
+  const currentApproval: ContentDetail["approvals"] = draft.state.reviewStatus === "pending" ? [] : [{
     id: `${draft.runId}:approval:${draft.state.reviewStatus}:${approvalCreatedAt ?? draft.state.updatedAt}`,
     contentId: draft.runId,
     versionId,
@@ -102,6 +107,18 @@ export function draftToDetail(draft: AutomationDraftDetail): ContentDetail {
     reason: draft.state.reason,
     createdAt: approvalCreatedAt ?? draft.state.updatedAt,
   }];
+  const historicApprovals: ContentDetail["approvals"] = (draft.state.decisionHistory ?? []).map((event) => ({
+    id: `${draft.runId}:approval:${event.decision}:${event.createdAt}`,
+    contentId: draft.runId,
+    versionId: versionIdForRevision(event.revision),
+    decision: event.decision,
+    actorId: event.actorId,
+    reason: event.reason,
+    createdAt: event.createdAt,
+  }));
+  const approvals = [...historicApprovals, ...currentApproval].filter((approval, index, values) =>
+    values.findIndex((candidate) => candidate.id === approval.id) === index,
+  );
   const publications = draft.state.publicationStatus === "none" ? [] : [{
     id: `${draft.runId}:publication`,
     contentId: draft.runId,
@@ -115,20 +132,38 @@ export function draftToDetail(draft: AutomationDraftDetail): ContentDetail {
 
   return {
     content,
-    versions: [{
+    versions: [...(draft.revisions ?? []).map((revision) => ({
+      id: versionIdForRevision(revision.revision),
+      contentId: draft.runId,
+      sequence: revision.revision,
+      stage: "human_tone" as const,
+      title: revision.title,
+      body: revision.articleMarkdown,
+      brief: null,
+      createdBy: "github-actions",
+      createdAt: revision.createdAt,
+      parentVersionId: revision.revision > 1 ? versionIdForRevision(revision.revision - 1) : null,
+      metadata: {
+        skillName: "demi",
+        toneSkillApplied: true,
+        revision: revision.revision,
+        copyPackage: revision.copyPackage,
+      },
+    })), {
       id: versionId,
       contentId: draft.runId,
-      sequence: 1,
+      sequence: currentRevision,
       stage: "human_tone",
       title: draft.title,
       body: draft.articleMarkdown,
       brief: null,
       createdBy: "github-actions",
-      createdAt: draft.generatedAt,
-      parentVersionId: null,
+      createdAt: currentRevision > 1 ? draft.state.rewrittenAt ?? draft.updatedAt : draft.generatedAt,
+      parentVersionId: currentRevision > 1 ? versionIdForRevision(currentRevision - 1) : null,
       metadata: {
         skillName: "demi",
         toneSkillApplied: draft.toneSkillApplied,
+        revision: currentRevision,
         diffSummary: ["Humanizer 33개 패턴 진단", "피드백 반영 재작성", "사실·출처 보존 자체 감사"],
         copyPackage: draft.copyPackage,
       },

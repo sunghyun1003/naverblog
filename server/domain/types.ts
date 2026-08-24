@@ -45,6 +45,7 @@ export interface ContentRecord {
   updatedAt: string;
   scheduledAt: string | null;
   publishedAt: string | null;
+  rewriteStatus?: "queued" | "completed" | "failed" | null;
 }
 
 export interface TrendSignal {

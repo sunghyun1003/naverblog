@@ -69,6 +69,46 @@ test("GitHub 원고를 영속 저장소에 중복 없이 동기화한다", async
   assert.equal(detail.auditEvents.length, 1);
 });
 
+test("반려 재작성 전후 버전과 반려 이력을 함께 보존한다", () => {
+  const input = draft();
+  input.reviewStatus = "pending";
+  input.publicationStatus = "none";
+  input.scheduledAt = null;
+  input.revision = 2;
+  input.rewriteStatus = "completed";
+  input.title = "수정된 원고";
+  input.articleMarkdown = "# 수정된 원고";
+  input.copyPackage = "수정된 복사본";
+  input.revisions = [{
+    revision: 1,
+    title: "초기 원고",
+    articleMarkdown: "# 초기 원고",
+    copyPackage: "초기 복사본",
+    createdAt: generatedAt,
+  }];
+  input.state.reviewStatus = "pending";
+  input.state.publicationStatus = "none";
+  input.state.scheduledAt = null;
+  input.state.revision = 2;
+  input.state.rewriteStatus = "completed";
+  input.state.rewrittenAt = "2026-08-24T01:00:00.000Z";
+  input.state.decisionHistory = [{
+    decision: "rejected",
+    reason: "구체적인 사례를 추가해주세요.",
+    actorId: "carrot",
+    createdAt: "2026-08-24T00:30:00.000Z",
+    revision: 1,
+  }];
+
+  const detail = draftToDetail(input);
+  assert.equal(detail.content.rewriteStatus, "completed");
+  assert.deepEqual(detail.versions.map((version) => version.sequence), [1, 2]);
+  assert.deepEqual(detail.versions.map((version) => version.title), ["초기 원고", "수정된 원고"]);
+  assert.equal(detail.approvals.length, 1);
+  assert.equal(detail.approvals[0]?.decision, "rejected");
+  assert.equal(detail.approvals[0]?.versionId, "321:human-tone");
+});
+
 test("출처가 없는 사실 검증 항목에는 실제 placeholder 출처를 연결한다", () => {
   const input = draft();
   input.article.sources = [];

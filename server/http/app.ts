@@ -76,6 +76,8 @@ function draftWithState(draft: AutomationDraftDetail, state: DashboardDraftState
     publicationStatus: state.publicationStatus,
     scheduledAt: state.scheduledAt,
     publishedAt: state.publishedAt,
+    revision: state.revision ?? draft.revision ?? 1,
+    rewriteStatus: state.rewriteStatus ?? draft.rewriteStatus ?? null,
     updatedAt: state.updatedAt,
   };
 }
@@ -92,6 +94,20 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   const auth = options.auth;
   const githubAutomation = options.githubAutomation;
   const persistGitHubData = Boolean(githubAutomation) && databaseProvider === "postgres";
+
+  async function persistGitHubDetailWithRetry(draft: AutomationDraftDetail): Promise<void> {
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        await persistGitHubDraftDetail(system.repository, draft);
+        return;
+      } catch (error) {
+        lastError = error;
+        if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, attempt * 150));
+      }
+    }
+    throw lastError;
+  }
 
   async function listGitHubContents(forceRefresh = false) {
     const cachedBeforeSync = persistGitHubData ? await system.repository.listContents() : [];
@@ -126,7 +142,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   async function persistGitHubDetailSafely(draft: AutomationDraftDetail, operation: string): Promise<boolean> {
     if (!persistGitHubData) return true;
     try {
-      await persistGitHubDraftDetail(system.repository, draft);
+      await persistGitHubDetailWithRetry(draft);
       return true;
     } catch (error) {
       app.log.warn(
@@ -337,17 +353,35 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       if (draftToContent(draft).state !== "review_ready") {
         return reply.status(409).send({ error: { code: "CONTENT_NOT_REVIEW_READY", message: "검토 대기 상태의 원고만 반려할 수 있습니다.", details: null } });
       }
+      const rejectedAt = new Date().toISOString();
       const state = await githubAutomation.updateState(id, {
         reviewStatus: "rejected",
         reason: body.reason,
         approvedBy: null,
         rejectedBy: actor.id,
-        rejectedAt: new Date().toISOString(),
+        rejectedAt,
         approvedAt: null,
+        revision: draft.revision ?? draft.state.revision ?? 1,
+        rewriteStatus: "queued",
+        rewriteRequestedAt: rejectedAt,
       }, actor.id, draft.state);
-      const updatedDraft = draftWithState(draft, state);
-      const mirrorSynced = await persistGitHubDetailSafely(updatedDraft, "reject");
-      return { ...draftToContent(updatedDraft), mirrorSynced };
+      let updatedDraft = draftWithState(draft, state);
+      let mirrorSynced = await persistGitHubDetailSafely(updatedDraft, "reject");
+      let rewriteQueued = false;
+      try {
+        await githubAutomation.dispatch("rewrite", { run_id: id });
+        rewriteQueued = true;
+      } catch (error) {
+        app.log.warn({ err: error, contentId: id }, "Rejected draft was saved, but rewrite dispatch failed.");
+        try {
+          const failedState = await githubAutomation.updateState(id, { rewriteStatus: "failed" }, actor.id, updatedDraft.state);
+          updatedDraft = draftWithState(updatedDraft, failedState);
+          mirrorSynced = (await persistGitHubDetailSafely(updatedDraft, "rewrite-dispatch-failed")) && mirrorSynced;
+        } catch (stateError) {
+          app.log.warn({ err: stateError, contentId: id }, "Rewrite failure state could not be saved.");
+        }
+      }
+      return { ...draftToContent(updatedDraft), mirrorSynced, rewriteQueued };
     }
     return system.contentService.reject(id, body.reason, actor);
   });

@@ -11,7 +11,7 @@ import {
   UserRound,
   Copy,
 } from "lucide-react";
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import type { ApiContentVersion } from "../../api/types";
 import { Button } from "../../components/Button";
@@ -38,16 +38,51 @@ const pipelineStageLabel: Record<string, string> = {
 export function ReviewPage() {
   const navigate = useNavigate();
   const { contentId } = useParams();
-  const { detail, connectionStatus, loadError, reload, approve: approveApi, reject: rejectApi } = useContentDetail(contentId);
+  const { detail, connectionStatus, loadError, reload, refresh, approve: approveApi, reject: rejectApi } = useContentDetail(contentId);
   const [tab, setTab] = useState<ReviewTab>("draft");
   const [activeOutline, setActiveOutline] = useState("summary");
   const [expandedQuality, setExpandedQuality] = useState("");
   const [checks, setChecks] = useState({ sources: false, ads: false });
   const [rejectOpen, setRejectOpen] = useState(false);
   const [decisionBusy, setDecisionBusy] = useState<"approve" | "reject" | null>(null);
+  const [rewritePending, setRewritePending] = useState(false);
   const [toast, setToast] = useState("");
   const finalChecksRef = useRef<HTMLElement>(null);
   const firstFinalCheckRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (detail?.content.rewriteStatus === "queued") setRewritePending(true);
+  }, [detail?.content.id, detail?.content.rewriteStatus]);
+
+  useEffect(() => {
+    if (!rewritePending) return;
+    let stopped = false;
+    let attempts = 0;
+    const poll = async () => {
+      attempts += 1;
+      try {
+        const next = await refresh();
+        if (stopped) return;
+        if (next.content.state === "review_ready") {
+          setRewritePending(false);
+          setToast("반려 의견을 반영한 새 버전이 완성됐어요. 다시 검토해주세요.");
+          window.setTimeout(() => setToast(""), 5000);
+        } else if (attempts >= 40) {
+          setRewritePending(false);
+          setToast("재작성 시간이 길어지고 있습니다. GitHub Actions의 Rewrite rejected draft 실행을 확인해주세요.");
+          window.setTimeout(() => setToast(""), 7000);
+        }
+      } catch {
+        if (attempts >= 40 && !stopped) setRewritePending(false);
+      }
+    };
+    void poll();
+    const interval = window.setInterval(() => void poll(), 15_000);
+    return () => {
+      stopped = true;
+      window.clearInterval(interval);
+    };
+  }, [refresh, rewritePending]);
 
   if (connectionStatus === "loading") {
     return (
@@ -158,9 +193,16 @@ export function ReviewPage() {
     try {
       const updated = await rejectApi(reason);
       setRejectOpen(false);
-      setToast(updated?.mirrorSynced === false
-        ? "반려는 저장됐지만 운영 DB 동기화가 지연되고 있습니다. 자동 재작성은 아직 실행되지 않습니다."
-        : "반려 의견을 저장했어요. 자동 재작성은 아직 실행되지 않습니다.");
+      setRewritePending(updated?.rewriteQueued === true);
+      if (updated?.rewriteQueued === false) {
+        setToast("반려는 저장됐지만 자동 재작성 요청에 실패했습니다. GitHub Actions에서 Rewrite rejected draft를 수동 실행해주세요.");
+      } else if (updated?.mirrorSynced === false) {
+        setToast("반려 의견을 저장하고 자동 재작성을 시작했어요. 운영 DB는 다음 조회에서 다시 동기화합니다.");
+      } else if (updated?.rewriteQueued === true) {
+        setToast("반려 의견을 저장하고 자동 재작성을 시작했어요. 완료되면 다시 검토 필요 상태로 돌아옵니다.");
+      } else {
+        setToast("반려 의견을 저장했어요.");
+      }
     } catch (error) {
       setToast(error instanceof Error ? error.message : "반려 처리에 실패했습니다.");
       throw error;

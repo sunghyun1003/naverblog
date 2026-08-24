@@ -20,6 +20,7 @@ test("GitHub Actions 실행 상태와 생성 원고를 읽는다", async () => {
     if (url.includes("/actions/workflows/collect.yml/runs")) return json({ workflow_runs: [{ id: 1, status: "completed", conclusion: "success", created_at: "2026-08-18T00:00:00Z", updated_at: "2026-08-18T00:01:00Z", html_url: "https://github.com/run/1" }] });
     if (url.includes("/actions/workflows/generate.yml/runs")) return json({ workflow_runs: [{ id: 2, status: "completed", conclusion: "success", created_at: "2026-08-18T01:00:00Z", updated_at: "2026-08-18T01:02:00Z", html_url: "https://github.com/run/2" }] });
     if (url.endsWith("/actions/workflows/generate.yml/dispatches")) return new Response(null, { status: 204 });
+    if (url.endsWith("/actions/workflows/rewrite.yml/dispatches")) return new Response(null, { status: 204 });
     if (url.includes("/git/trees/main")) return json({ truncated: false, tree: [
       { path: "output/drafts/2026-08-18/run-123/status.json", type: "blob" },
       { path: "output/drafts/2026-08-18/run-123/article.json", type: "blob" },
@@ -52,8 +53,65 @@ test("GitHub Actions 실행 상태와 생성 원고를 읽는다", async () => {
   assert.equal(trends.items[0]?.postdate, "2026-08-18");
 
   await service.dispatch("generate", { topic: "실손보험", strategy: "trend" });
-  const dispatch = requests.find((request) => request.method === "POST");
-  assert.match(dispatch?.body ?? "", /실손보험/);
+  await service.dispatch("rewrite", { run_id: "123" });
+  const dispatches = requests.filter((request) => request.method === "POST");
+  assert.match(dispatches[0]?.body ?? "", /실손보험/);
+  assert.match(dispatches[1]?.url ?? "", /rewrite\.yml\/dispatches$/);
+  assert.match(dispatches[1]?.body ?? "", /"run_id":"123"/);
+});
+
+test("재작성된 원고와 이전 버전을 함께 읽는다", async () => {
+  const mockFetch = (async (input: string | URL | Request) => {
+    const url = String(input);
+    if (url.includes("/git/trees/main")) return json({ truncated: false, tree: [
+      { path: "output/drafts/2026-08-24/run-987/status.json", type: "blob" },
+      { path: "output/drafts/2026-08-24/run-987/article.json", type: "blob" },
+      { path: "output/drafts/2026-08-24/run-987/article.md", type: "blob" },
+      { path: "output/drafts/2026-08-24/run-987/copy-package.txt", type: "blob" },
+      { path: "output/drafts/2026-08-24/run-987/sources.md", type: "blob" },
+      { path: "output/drafts/2026-08-24/run-987/revisions/v1/status.json", type: "blob" },
+      { path: "output/drafts/2026-08-24/run-987/revisions/v1/article.json", type: "blob" },
+      { path: "output/drafts/2026-08-24/run-987/revisions/v1/article.md", type: "blob" },
+      { path: "output/drafts/2026-08-24/run-987/revisions/v1/copy-package.txt", type: "blob" },
+    ] });
+    if (url.includes("dashboard/decisions/run-987.json")) return file({
+      schemaVersion: 1,
+      runId: "987",
+      reviewStatus: "pending",
+      publicationStatus: "none",
+      checks: { sources: false, advertising: false },
+      reason: null,
+      approvedAt: null,
+      rejectedAt: null,
+      scheduledAt: null,
+      publishedAt: null,
+      externalUrl: null,
+      revision: 2,
+      rewriteStatus: "completed",
+      rewrittenAt: "2026-08-24T02:00:00.000Z",
+      updatedAt: "2026-08-24T02:00:00.000Z",
+      updatedBy: "github-actions",
+    });
+    if (url.includes("revisions/v1/status.json")) return file({ generatedAt: "2026-08-24T00:00:00.000Z", updatedAt: "2026-08-24T00:05:00.000Z", revision: 1 });
+    if (url.includes("revisions/v1/article.json")) return file({ article: { title: "초기 원고" } });
+    if (url.includes("revisions/v1/article.md")) return file("# 초기 원고");
+    if (url.includes("revisions/v1/copy-package.txt")) return file("초기 복사본");
+    if (url.includes("/status.json")) return file({ generatedAt: "2026-08-24T00:00:00.000Z", updatedAt: "2026-08-24T02:00:00.000Z", revision: 2, status: "TONE_REVIEW_COMPLETE", toneSkillApplied: true });
+    if (url.includes("/article.json")) return file({ planning: { topic: "보험" }, seo: { primaryKeyword: "보험" }, article: { title: "수정 원고" }, sources: [] });
+    if (url.includes("/article.md")) return file("# 수정 원고");
+    if (url.includes("/copy-package.txt")) return file("수정 복사본");
+    if (url.includes("/sources.md")) return file("- 출처");
+    return json({ message: "Not Found" }, 404);
+  }) as typeof fetch;
+  const service = new GitHubAutomationService({ owner: "owner", repository: "repo", branch: "main", token: "token" }, mockFetch);
+
+  const draft = await service.getDraft("987");
+  assert.equal(draft.revision, 2);
+  assert.equal(draft.rewriteStatus, "completed");
+  assert.equal(draft.title, "수정 원고");
+  assert.equal(draft.revisions?.length, 1);
+  assert.equal(draft.revisions?.[0]?.title, "초기 원고");
+  assert.equal(draft.revisions?.[0]?.articleMarkdown, "# 초기 원고");
 });
 
 test("이미 읽은 원고 상태로 decision을 갱신할 때 원고를 다시 조회하지 않는다", async () => {

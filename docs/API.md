@@ -27,7 +27,7 @@
 | GET | `/api/contents/:id` | 버전·출처·주장·QA·작업 포함 상세 |
 | POST | `/api/contents/:id/pipeline` | 전체 자동화 실행 |
 | POST | `/api/contents/:id/approve` | 최종 확인 후 승인 |
-| POST | `/api/contents/:id/reject` | 반려와 사유 기록 |
+| POST | `/api/contents/:id/reject` | 반려와 사유 기록 후 기존 원고 자동 재작성 요청 |
 | POST | `/api/contents/:id/schedule` | 발행 예약 |
 | POST | `/api/contents/:id/publish` | 승인·예약된 원고 발행 |
 | GET | `/api/trends` | 수집된 트렌드 목록 |

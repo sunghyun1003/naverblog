@@ -284,6 +284,7 @@ test("서로 다른 GitHub 원고를 연속으로 반려한다", async (context)
     ["202", reviewDraft("202", "두 번째 검토 원고")],
   ]);
   const updatedRuns: string[] = [];
+  const rewrittenRuns: string[] = [];
   const githubAutomation = {
     getDraft: async (runId: string) => drafts.get(runId)!,
     updateState: async (
@@ -298,6 +299,10 @@ test("서로 다른 GitHub 원고를 연속으로 반려한다", async (context)
       drafts.set(runId, reviewDraft(runId, draft.title, state));
       updatedRuns.push(runId);
       return state;
+    },
+    dispatch: async (workflow: string, inputs: Record<string, string>) => {
+      assert.equal(workflow, "rewrite");
+      rewrittenRuns.push(inputs.run_id!);
     },
   } as unknown as GitHubAutomationService;
   const app = buildApp({ githubAutomation, databaseProvider: "memory" });
@@ -318,7 +323,10 @@ test("서로 다른 GitHub 원고를 연속으로 반려한다", async (context)
   assert.equal(second.statusCode, 200);
   assert.equal(first.json<{ state: string }>().state, "drafting");
   assert.equal(second.json<{ state: string }>().state, "drafting");
+  assert.equal(first.json<{ rewriteQueued: boolean }>().rewriteQueued, true);
+  assert.equal(second.json<{ rewriteQueued: boolean }>().rewriteQueued, true);
   assert.deepEqual(updatedRuns, ["101", "202"]);
+  assert.deepEqual(rewrittenRuns, ["101", "202"]);
 });
 
 test("GitHub 반려 저장 후 Neon 미러가 실패해도 성공을 반환한다", async (context) => {
@@ -341,6 +349,7 @@ test("GitHub 반려 저장 후 Neon 미러가 실패해도 성공을 반환한�
       draft = reviewDraft(draft.runId, draft.title, state);
       return state;
     },
+    dispatch: async () => undefined,
   } as unknown as GitHubAutomationService;
   const repository = new FailingMirrorRepository();
   const app = buildApp({
@@ -359,7 +368,41 @@ test("GitHub 반려 저장 후 Neon 미러가 실패해도 성공을 반환한�
   assert.equal(response.statusCode, 200);
   assert.equal(response.json<{ state: string }>().state, "drafting");
   assert.equal(response.json<{ mirrorSynced: boolean }>().mirrorSynced, false);
+  assert.equal(response.json<{ rewriteQueued: boolean }>().rewriteQueued, true);
   assert.equal(draft.state.reviewStatus, "rejected");
+});
+
+test("반려 재작성 실행 요청이 실패하면 원고에 실패 상태를 기록한다", async (context) => {
+  let draft = reviewDraft("304", "재작성 요청 실패 원고");
+  const githubAutomation = {
+    getDraft: async () => draft,
+    updateState: async (
+      _runId: string,
+      changes: Partial<DashboardDraftState>,
+      actor: string,
+      currentState?: DashboardDraftState,
+    ) => {
+      assert.equal(currentState, draft.state);
+      const state = changedState(draft, changes, actor);
+      draft = reviewDraft(draft.runId, draft.title, state);
+      return state;
+    },
+    dispatch: async () => { throw new Error("workflow unavailable"); },
+  } as unknown as GitHubAutomationService;
+  const app = buildApp({ githubAutomation, databaseProvider: "memory" });
+  context.after(() => app.close());
+
+  const response = await app.inject({
+    method: "POST",
+    url: "/api/contents/304/reject",
+    payload: { reason: "구체적인 사례를 추가해주세요." },
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.json<{ rewriteQueued: boolean }>().rewriteQueued, false);
+  assert.equal(response.json<{ rewriteStatus: string }>().rewriteStatus, "failed");
+  assert.equal(draft.state.reviewStatus, "rejected");
+  assert.equal(draft.state.rewriteStatus, "failed");
 });
 
 test("원고 상세 refresh는 캐시 대신 최신 GitHub 원고를 우선한다", async (context) => {

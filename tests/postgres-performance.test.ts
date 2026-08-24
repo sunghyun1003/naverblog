@@ -40,3 +40,28 @@ test("트렌드 목록은 가장 최근 수집 시각의 배치만 조회한다"
   assert.match(calls[0]!.sql, /collected_at=\(SELECT MAX\(collected_at\)/);
   assert.deepEqual(calls[0]!.values, ["carrot-company"]);
 });
+
+test("품질 검사 메시지는 PostgreSQL jsonb 값으로 직렬화한다", async () => {
+  const calls: Array<{ sql: string; values: unknown[] }> = [];
+  const pool = {
+    query: async (sql: string, values: unknown[]) => {
+      calls.push({ sql, values });
+      return { rows: [], rowCount: 0 };
+    },
+  } as unknown as Pool;
+  const repository = new PostgresAutomationRepository("carrot-company", pool);
+
+  await repository.saveQualityResults("content-1", [{
+    id: "quality-1",
+    contentId: "content-1",
+    versionId: "version-1",
+    category: "facts",
+    status: "warning",
+    score: 80,
+    messages: ["사실 확인이 필요합니다."],
+    checkedAt: "2026-08-24T00:00:00.000Z",
+  }]);
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0]!.values[6], '["사실 확인이 필요합니다."]');
+});

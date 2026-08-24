@@ -339,7 +339,7 @@ export class PostgresAutomationRepository implements AutomationRepository {
         `INSERT INTO qa_results (id, content_id, version_id, category, status, score, messages, checked_at)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
          ON CONFLICT (version_id, category) DO UPDATE SET status=EXCLUDED.status, score=EXCLUDED.score, messages=EXCLUDED.messages, checked_at=EXCLUDED.checked_at`,
-        [result.id, contentId, result.versionId, result.category, result.status, result.score, result.messages, result.checkedAt],
+        [result.id, contentId, result.versionId, result.category, result.status, result.score, JSON.stringify(result.messages), result.checkedAt],
       );
     }
     return results;

@@ -171,7 +171,9 @@ export function draftToDetail(draft: AutomationDraftDetail): ContentDetail {
     sources,
     claims,
     qualityResults: qualitySeeds.map(([category, status, score, message], index) => ({
-      id: `${draft.runId}:quality:${index + 1}`,
+      id: currentRevision === 1
+        ? `${draft.runId}:quality:${index + 1}`
+        : `${draft.runId}:quality:${currentRevision}:${index + 1}`,
       contentId: draft.runId,
       versionId,
       category,

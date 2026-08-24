@@ -104,6 +104,7 @@ test("반려 재작성 전후 버전과 반려 이력을 함께 보존한다", (
   assert.equal(detail.content.rewriteStatus, "completed");
   assert.deepEqual(detail.versions.map((version) => version.sequence), [1, 2]);
   assert.deepEqual(detail.versions.map((version) => version.title), ["초기 원고", "수정된 원고"]);
+  assert.equal(detail.qualityResults.every((result) => result.id.includes(":quality:2:")), true);
   assert.equal(detail.approvals.length, 1);
   assert.equal(detail.approvals[0]?.decision, "rejected");
   assert.equal(detail.approvals[0]?.versionId, "321:human-tone");

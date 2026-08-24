@@ -42,6 +42,7 @@ export function CreateContentDialog({ open, onClose, onCreate, busy = false }: C
           <span className="field__label">콘텐츠 주제</span>
           <input
             autoFocus
+            data-modal-initial-focus="true"
             aria-label="콘텐츠 주제"
             disabled={busy}
             value={title}

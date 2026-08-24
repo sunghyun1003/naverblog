@@ -54,6 +54,7 @@ export function RejectDialog({ open, busy = false, onClose, onReject }: { open: 
             aria-describedby="reject-reason-help"
             disabled={processing}
             autoFocus
+            data-modal-initial-focus="true"
           />
           <span className="field__helper" id="reject-reason-help">
             공백을 제외하고 5자 이상 입력해주세요. ({normalizedReason.length}/{maximumReasonLength})

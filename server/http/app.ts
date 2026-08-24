@@ -449,7 +449,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   });
 
   if (options.serveWeb) {
-    app.register(fastifyStatic, { root: path.resolve(process.cwd(), "dist"), wildcard: false });
+    app.register(fastifyStatic, { root: path.resolve(process.cwd(), "dist") });
     app.setNotFoundHandler((request, reply) => {
       if (request.method === "GET" && !request.url.startsWith("/api/") && request.url !== "/health") return reply.sendFile("index.html");
       return reply.status(404).send({ error: { code: "NOT_FOUND", message: "요청한 경로를 찾을 수 없습니다.", details: null } });

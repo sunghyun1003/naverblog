@@ -6,7 +6,7 @@ import { isDomainError } from "../domain/errors.js";
 import { userRoles, type Actor, type UserRole } from "../domain/types.js";
 import { randomId } from "../domain/utils.js";
 import { draftToContent, draftToDetail } from "../services/github-content-mapper.js";
-import type { GitHubAutomationService } from "../services/github-automation.js";
+import type { AutomationDraftDetail, DashboardDraftState, GitHubAutomationService } from "../services/github-automation.js";
 import { persistGitHubDraftDetail, persistGitHubDraftSummaries, persistGitHubTrends } from "../services/github-persistence.js";
 import type { SessionAuthService } from "../services/session-auth.js";
 import { createAutomationSystem, type AutomationSystem } from "../system.js";
@@ -68,6 +68,22 @@ function idempotencyKey(request: FastifyRequest, scope: string): string {
   return value?.trim() || `${scope}:${randomId()}`;
 }
 
+function draftWithState(draft: AutomationDraftDetail, state: DashboardDraftState): AutomationDraftDetail {
+  return {
+    ...draft,
+    state,
+    reviewStatus: state.reviewStatus,
+    publicationStatus: state.publicationStatus,
+    scheduledAt: state.scheduledAt,
+    publishedAt: state.publishedAt,
+    updatedAt: state.updatedAt,
+  };
+}
+
+function freshness(source: "github" | "postgres-cache" | "local", stale: boolean, asOf: string | null, mirrorSynced = true) {
+  return { source, stale, asOf, mirrorSynced };
+}
+
 export function buildApp(options: AppOptions = {}): FastifyInstance {
   const app = Fastify({ logger: options.logger ?? false });
   const system = options.system ?? createAutomationSystem();
@@ -78,38 +94,75 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   const persistGitHubData = Boolean(githubAutomation) && databaseProvider === "postgres";
 
   async function listGitHubContents(forceRefresh = false) {
-    if (persistGitHubData && !forceRefresh) {
-      const cached = await system.repository.listContents();
-      if (cached.length) return cached;
+    const cachedBeforeSync = persistGitHubData ? await system.repository.listContents() : [];
+    if (cachedBeforeSync.length && !forceRefresh) {
+      return {
+        items: cachedBeforeSync,
+        freshness: freshness("postgres-cache", false, cachedBeforeSync[0]?.updatedAt ?? null),
+      };
     }
     try {
-      const drafts = await githubAutomation!.listDrafts();
-      if (persistGitHubData) return persistGitHubDraftSummaries(system.repository, drafts);
-      return drafts.map(draftToContent);
+      const knownRunIds = new Set(cachedBeforeSync.map((content) => content.id));
+      const syncLimit = persistGitHubData ? (cachedBeforeSync.length ? 20 : 100) : 20;
+      const drafts = await githubAutomation!.listDrafts(syncLimit, knownRunIds);
+      if (persistGitHubData) {
+        if (drafts.length) await persistGitHubDraftSummaries(system.repository, drafts);
+        // GitHub 트리에서 새 실행 ID만 골라 읽어 API 호출량을 줄이고, Neon 전체 목록은 그대로 보존한다.
+        const allContents = drafts.length ? await system.repository.listContents() : cachedBeforeSync;
+        const listSource = cachedBeforeSync.length ? "postgres-cache" : "github";
+        const asOf = listSource === "github" ? new Date().toISOString() : allContents[0]?.updatedAt ?? null;
+        return { items: allContents, freshness: freshness(listSource, false, asOf) };
+      }
+      return { items: drafts.map(draftToContent), freshness: freshness("github", false, new Date().toISOString()) };
     } catch (error) {
       if (!persistGitHubData) throw error;
       const cached = await system.repository.listContents();
       if (!cached.length) throw error;
       app.log.warn({ err: error }, "GitHub 원고 목록 조회에 실패해 PostgreSQL 캐시를 사용합니다.");
-      return cached;
+      return { items: cached, freshness: freshness("postgres-cache", true, cached[0]?.updatedAt ?? null) };
     }
   }
 
-  async function getGitHubDetail(id: string) {
-    if (persistGitHubData) {
-      const cached = await system.repository.getContentDetail(id);
-      if (cached?.versions.length) return cached;
-    }
+  async function persistGitHubDetailSafely(draft: AutomationDraftDetail, operation: string): Promise<boolean> {
+    if (!persistGitHubData) return true;
     try {
-      const draft = await githubAutomation!.getDraft(id);
-      if (persistGitHubData) return persistGitHubDraftDetail(system.repository, draft);
-      return draftToDetail(draft);
+      await persistGitHubDraftDetail(system.repository, draft);
+      return true;
+    } catch (error) {
+      app.log.warn(
+        { err: error, contentId: draft.runId, operation },
+        "GitHub 원고 상태는 저장됐지만 PostgreSQL 미러 동기화에 실패했습니다.",
+      );
+      return false;
+    }
+  }
+
+  async function getGitHubDetail(id: string, forceRefresh = false) {
+    if (persistGitHubData && !forceRefresh) {
+      const cached = await system.repository.getContentDetail(id);
+      if (cached?.versions.length) {
+        return { ...cached, freshness: freshness("postgres-cache", false, cached.content.updatedAt) };
+      }
+    }
+    let draft: AutomationDraftDetail;
+    try {
+      draft = await githubAutomation!.getDraft(id);
     } catch (error) {
       if (!persistGitHubData) throw error;
       const cached = await system.repository.getContentDetail(id);
       if (!cached) throw error;
       app.log.warn({ err: error, contentId: id }, "GitHub 원고 조회에 실패해 PostgreSQL 캐시를 사용합니다.");
-      return cached;
+      return { ...cached, freshness: freshness("postgres-cache", true, cached.content.updatedAt) };
+    }
+    if (!persistGitHubData) {
+      return { ...draftToDetail(draft), freshness: freshness("github", false, new Date().toISOString()) };
+    }
+    try {
+      const detail = await persistGitHubDraftDetail(system.repository, draft);
+      return { ...detail, freshness: freshness("github", false, new Date().toISOString()) };
+    } catch (error) {
+      app.log.warn({ err: error, contentId: id }, "최신 GitHub 원고의 PostgreSQL 미러 동기화에 실패했습니다.");
+      return { ...draftToDetail(draft), freshness: freshness("github", false, new Date().toISOString(), false) };
     }
   }
 
@@ -209,7 +262,8 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
 
   app.get("/api/contents", async (request) => {
     const query = refreshQuerySchema.parse(request.query);
-    return { items: githubAutomation ? await listGitHubContents(query.refresh === "true") : await system.contentService.list() };
+    if (githubAutomation) return listGitHubContents(query.refresh === "true");
+    return { items: await system.contentService.list(), freshness: freshness("local", false, new Date().toISOString()) };
   });
   app.post("/api/contents", async (request, reply) => {
     if (githubAutomation) {
@@ -226,7 +280,8 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   });
   app.get("/api/contents/:id", async (request) => {
     const { id } = idParamsSchema.parse(request.params);
-    if (githubAutomation) return getGitHubDetail(id);
+    const query = refreshQuerySchema.parse(request.query);
+    if (githubAutomation) return getGitHubDetail(id, query.refresh === "true");
     return system.contentService.detail(id);
   });
   app.post("/api/contents/:id/pipeline", async (request, reply) => {
@@ -246,7 +301,19 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       if (draftToContent(draft).state !== "review_ready") {
         return reply.status(409).send({ error: { code: "CONTENT_NOT_REVIEW_READY", message: "검토 대기 상태의 원고만 승인할 수 있습니다.", details: null } });
       }
-      await githubAutomation.updateState(id, {
+      const failedQualityCategories = draftToDetail(draft).qualityResults
+        .filter((result) => result.status === "failed")
+        .map((result) => result.category);
+      if (!draft.toneSkillApplied || failedQualityCategories.length > 0) {
+        return reply.status(409).send({
+          error: {
+            code: "CONTENT_QUALITY_FAILED",
+            message: "품질 검사 실패 항목과 말투 보정을 해결한 뒤 승인할 수 있습니다.",
+            details: { failedCategories: failedQualityCategories },
+          },
+        });
+      }
+      const state = await githubAutomation.updateState(id, {
         reviewStatus: "approved",
         checks: body.checks,
         reason: null,
@@ -254,10 +321,10 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
         rejectedBy: null,
         approvedAt: new Date().toISOString(),
         rejectedAt: null,
-      }, actor.id);
-      const updatedDraft = await githubAutomation.getDraft(id);
-      if (persistGitHubData) await persistGitHubDraftDetail(system.repository, updatedDraft);
-      return draftToContent(updatedDraft);
+      }, actor.id, draft.state);
+      const updatedDraft = draftWithState(draft, state);
+      const mirrorSynced = await persistGitHubDetailSafely(updatedDraft, "approve");
+      return { ...draftToContent(updatedDraft), mirrorSynced };
     }
     return system.contentService.approve(id, body.checks, actor);
   });
@@ -270,17 +337,17 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       if (draftToContent(draft).state !== "review_ready") {
         return reply.status(409).send({ error: { code: "CONTENT_NOT_REVIEW_READY", message: "검토 대기 상태의 원고만 반려할 수 있습니다.", details: null } });
       }
-      await githubAutomation.updateState(id, {
+      const state = await githubAutomation.updateState(id, {
         reviewStatus: "rejected",
         reason: body.reason,
         approvedBy: null,
         rejectedBy: actor.id,
         rejectedAt: new Date().toISOString(),
         approvedAt: null,
-      }, actor.id);
-      const updatedDraft = await githubAutomation.getDraft(id);
-      if (persistGitHubData) await persistGitHubDraftDetail(system.repository, updatedDraft);
-      return draftToContent(updatedDraft);
+      }, actor.id, draft.state);
+      const updatedDraft = draftWithState(draft, state);
+      const mirrorSynced = await persistGitHubDetailSafely(updatedDraft, "reject");
+      return { ...draftToContent(updatedDraft), mirrorSynced };
     }
     return system.contentService.reject(id, body.reason, actor);
   });
@@ -290,11 +357,13 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     const actor = actorFrom(request, auth?.verifyCookie(request.headers.cookie)?.username);
     if (githubAutomation) {
       const draft = await githubAutomation.getDraft(id);
-      if (draft.reviewStatus !== "approved") return reply.status(409).send({ error: { code: "CONTENT_NOT_APPROVED", message: "승인된 원고만 예약할 수 있습니다.", details: null } });
-      const state = await githubAutomation.updateState(id, { publicationStatus: "scheduled", scheduledAt: body.scheduledAt }, actor.id);
-      const updatedDraft = await githubAutomation.getDraft(id);
-      if (persistGitHubData) await persistGitHubDraftDetail(system.repository, updatedDraft);
-      return { content: draftToContent(updatedDraft), publication: state };
+      if (draft.reviewStatus !== "approved" || draft.publicationStatus !== "none") {
+        return reply.status(409).send({ error: { code: "CONTENT_NOT_SCHEDULABLE", message: "승인 후 아직 예약·발행되지 않은 원고만 예약할 수 있습니다.", details: null } });
+      }
+      const state = await githubAutomation.updateState(id, { publicationStatus: "scheduled", scheduledAt: body.scheduledAt }, actor.id, draft.state);
+      const updatedDraft = draftWithState(draft, state);
+      const mirrorSynced = await persistGitHubDetailSafely(updatedDraft, "schedule");
+      return { content: draftToContent(updatedDraft), publication: state, mirrorSynced };
     }
     return system.contentService.schedule(id, body.scheduledAt, actor);
   });
@@ -308,10 +377,10 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
         return reply.status(409).send({ error: { code: "CONTENT_NOT_SCHEDULED", message: "승인 후 예약한 원고만 발행 완료로 처리할 수 있습니다.", details: null } });
       }
       const now = new Date().toISOString();
-      const state = await githubAutomation.updateState(id, { publicationStatus: "published", publishedAt: now, externalUrl: body.externalUrl }, actor.id);
-      const updatedDraft = await githubAutomation.getDraft(id);
-      if (persistGitHubData) await persistGitHubDraftDetail(system.repository, updatedDraft);
-      return { content: draftToContent(updatedDraft), publication: state };
+      const state = await githubAutomation.updateState(id, { publicationStatus: "published", publishedAt: now, externalUrl: body.externalUrl }, actor.id, draft.state);
+      const updatedDraft = draftWithState(draft, state);
+      const mirrorSynced = await persistGitHubDetailSafely(updatedDraft, "publish");
+      return { content: draftToContent(updatedDraft), publication: state, mirrorSynced };
     }
     return system.contentService.publish(id, actor);
   });

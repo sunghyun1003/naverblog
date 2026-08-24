@@ -1,4 +1,4 @@
-import type { ApiCapabilities, ApiContent, ApiContentDetail, ApiJob, ApiTrendSnapshot, ApiUser, ApiWorkflowRun } from "./types";
+import type { ApiCapabilities, ApiContent, ApiContentDetail, ApiContentList, ApiJob, ApiTrendSnapshot, ApiUser, ApiWorkflowRun } from "./types";
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "";
 
@@ -46,7 +46,7 @@ export function logout(): Promise<void> {
   return request("/api/auth/logout", { method: "POST" });
 }
 
-export function listContents(signal?: AbortSignal, refresh = false): Promise<{ items: ApiContent[] }> {
+export function listContents(signal?: AbortSignal, refresh = false): Promise<ApiContentList> {
   return request(`/api/contents${refresh ? "?refresh=true" : ""}`, { signal });
 }
 
@@ -55,7 +55,7 @@ export function getCapabilities(signal?: AbortSignal): Promise<ApiCapabilities> 
 }
 
 export function getContentDetail(contentId: string, signal?: AbortSignal): Promise<ApiContentDetail> {
-  return request(`/api/contents/${encodeURIComponent(contentId)}`, { signal });
+  return request(`/api/contents/${encodeURIComponent(contentId)}?refresh=true`, { signal });
 }
 
 export function createContent(input: { title: string; topic: string; strategy: "trend" | "original" }): Promise<ApiContent> {
@@ -73,10 +73,13 @@ export function runPipeline(contentId: string): Promise<ApiJob> {
   });
 }
 
-export function approveContent(contentId: string): Promise<ApiContent> {
+export function approveContent(
+  contentId: string,
+  checks: { sources: boolean; advertising: boolean },
+): Promise<ApiContent> {
   return request(`/api/contents/${encodeURIComponent(contentId)}/approve`, {
     method: "POST",
-    body: JSON.stringify({ checks: { sources: true, advertising: true } }),
+    body: JSON.stringify({ checks }),
   });
 }
 
@@ -106,14 +109,14 @@ export function getTrends(signal?: AbortSignal, refresh = false): Promise<ApiTre
   return request(`/api/trends${refresh ? "?refresh=true" : ""}`, { signal });
 }
 
-export function scheduleContent(contentId: string, scheduledAt: string): Promise<unknown> {
+export function scheduleContent(contentId: string, scheduledAt: string): Promise<{ mirrorSynced?: boolean }> {
   return request(`/api/contents/${encodeURIComponent(contentId)}/schedule`, {
     method: "POST",
     body: JSON.stringify({ scheduledAt }),
   });
 }
 
-export function markContentPublished(contentId: string, externalUrl: string): Promise<unknown> {
+export function markContentPublished(contentId: string, externalUrl: string): Promise<{ mirrorSynced?: boolean }> {
   return request(`/api/contents/${encodeURIComponent(contentId)}/publish`, {
     method: "POST",
     body: JSON.stringify({ externalUrl }),

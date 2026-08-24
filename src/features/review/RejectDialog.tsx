@@ -5,15 +5,16 @@ import { Modal } from "../../components/Modal";
 const minimumReasonLength = 5;
 const maximumReasonLength = 1000;
 
-export function RejectDialog({ open, onClose, onReject }: { open: boolean; onClose: () => void; onReject: (reason: string) => Promise<void> }) {
+export function RejectDialog({ open, busy = false, onClose, onReject }: { open: boolean; busy?: boolean; onClose: () => void; onReject: (reason: string) => Promise<void> }) {
   const [reason, setReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const normalizedReason = reason.trim();
   const validReason = normalizedReason.length >= minimumReasonLength && normalizedReason.length <= maximumReasonLength;
+  const processing = submitting || busy;
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!validReason || submitting) return;
+    if (!validReason || processing) return;
     setSubmitting(true);
     try {
       await onReject(normalizedReason);
@@ -28,14 +29,14 @@ export function RejectDialog({ open, onClose, onReject }: { open: boolean; onClo
   return (
     <Modal
       open={open}
-      onClose={onClose}
+      onClose={() => { if (!processing) onClose(); }}
       title="원고 반려"
-      description="수정이 필요한 이유를 작성하면 담당자에게 전달됩니다."
+      description="반려 의견을 저장합니다. 의견을 반영한 자동 재작성은 아직 실행되지 않습니다."
       footer={
         <>
-          <Button type="button" onClick={onClose} disabled={submitting}>취소</Button>
-          <Button type="submit" form="reject-form" variant="danger" disabled={!validReason || submitting}>
-            {submitting ? "반려 처리 중" : "반려하기"}
+          <Button type="button" onClick={onClose} disabled={processing}>취소</Button>
+          <Button type="submit" form="reject-form" variant="danger" disabled={!validReason || processing}>
+            {processing ? "반려 처리 중" : "반려하기"}
           </Button>
         </>
       }
@@ -51,7 +52,7 @@ export function RejectDialog({ open, onClose, onReject }: { open: boolean; onClo
             minLength={minimumReasonLength}
             maxLength={maximumReasonLength}
             aria-describedby="reject-reason-help"
-            disabled={submitting}
+            disabled={processing}
             autoFocus
           />
           <span className="field__helper" id="reject-reason-help">

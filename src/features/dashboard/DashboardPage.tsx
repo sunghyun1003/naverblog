@@ -8,12 +8,12 @@ import {
   Plus,
   Search,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "../../components/Button";
 import { StatusBadge } from "../../components/StatusBadge";
 import { contentStatusLabel } from "../../data/content";
-import type { ContentItem, ContentStatus } from "../../types/content";
+import type { ContentStatus } from "../../types/content";
 import { CreateContentDialog } from "./CreateContentDialog";
 import { useContents } from "./useContents";
 
@@ -31,21 +31,24 @@ const isHostedPreview = import.meta.env.VITE_PREVIEW_MODE === "true";
 
 export function DashboardPage() {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const { contents, setContents, connectionStatus, capabilities, creating, createAndRun } = useContents();
-  const [activeFilter, setActiveFilter] = useState<"all" | ContentStatus>("all");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { contents, connectionStatus, capabilities, freshness, creating, createAndRun } = useContents();
+  const requestedFilter = searchParams.get("filter");
+  const activeFilter: "all" | ContentStatus = requestedFilter && filters.some((filter) => filter.key === requestedFilter)
+    ? requestedFilter as ContentStatus
+    : "all";
   const [query, setQuery] = useState("");
   const [mineOnly, setMineOnly] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [toast, setToast] = useState("");
 
-  useEffect(() => {
-    const requestedFilter = searchParams.get("filter");
-    if (requestedFilter && filters.some((filter) => filter.key === requestedFilter)) {
-      setActiveFilter(requestedFilter as "all" | ContentStatus);
-    }
-  }, [searchParams]);
+  const setActiveFilter = (filter: "all" | ContentStatus) => {
+    const next = new URLSearchParams(searchParams);
+    if (filter === "all") next.delete("filter");
+    else next.set("filter", filter);
+    setSearchParams(next, { replace: true });
+  };
 
   const filteredContents = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase("ko");
@@ -59,6 +62,9 @@ export function DashboardPage() {
 
   const reviewCount = contents.filter((content) => content.status === "review").length;
   const scheduledCount = contents.filter((content) => content.status === "scheduled").length;
+  const freshnessLabel = freshness?.asOf
+    ? new Intl.DateTimeFormat("ko-KR", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(freshness.asOf))
+    : "확인 시각 없음";
   const recentActivities = contents.slice(0, 4).map((content) => ({
     id: content.id,
     title: content.title,
@@ -68,23 +74,14 @@ export function DashboardPage() {
   }));
 
   const handleCreate = async (title: string, strategy: "trend" | "original") => {
+    if (connectionStatus !== "connected") {
+      setToast("자동화 서버 연결을 확인한 뒤 다시 시도해주세요.");
+      window.setTimeout(() => setToast(""), 3600);
+      return;
+    }
     try {
-      if (connectionStatus === "connected") {
-        await createAndRun(title, strategy);
-        setToast("원고 생성 작업을 시작했어요. 완료되면 목록에 자동으로 표시됩니다.");
-      } else {
-        const newContent: ContentItem = {
-          id: `content-${Date.now()}`,
-          title,
-          status: "planning",
-          assignee: "carrot",
-          initials: "C",
-          updatedAt: "방금",
-          publishAt: null,
-        };
-        setContents((current) => [newContent, ...current]);
-        setToast("API가 연결되지 않아 화면에만 임시 기획을 만들었어요.");
-      }
+      await createAndRun(title, strategy);
+      setToast("원고 생성 작업을 시작했어요. 완료되면 목록에 자동으로 표시됩니다.");
       setCreateOpen(false);
       setActiveFilter("all");
     } catch (error) {
@@ -101,17 +98,21 @@ export function DashboardPage() {
             <h1>콘텐츠 운영</h1>
             <p>기획부터 발행까지 한곳에서 관리하세요.</p>
           </div>
-          <Button variant="brand" icon={<Plus size={18} />} onClick={() => setCreateOpen(true)}>
+          <Button variant="brand" icon={<Plus size={18} />} onClick={() => setCreateOpen(true)} disabled={connectionStatus !== "connected"}>
             콘텐츠 만들기
           </Button>
         </header>
 
-        <div className={`system-status system-status--${connectionStatus}`} role="status">
+        <div className={`system-status system-status--${freshness?.stale ? "offline" : connectionStatus}`} role="status">
           <span className="system-status__dot" />
           <div>
             <strong>
               {connectionStatus === "connected"
-                ? capabilities?.mode === "github-actions"
+                ? freshness?.stale
+                  ? "최신 원고 연결 실패 · 저장 데이터 표시 중"
+                  : freshness?.source === "postgres-cache"
+                    ? "운영 DB 목록 표시 중"
+                  : capabilities?.mode === "github-actions"
                   ? "GitHub Actions 자동화 연결됨"
                   : "로컬 검증 파이프라인 연결됨"
                 : connectionStatus === "connecting"
@@ -122,13 +123,17 @@ export function DashboardPage() {
             </strong>
             <small>
               {connectionStatus === "connected"
-                ? capabilities?.mode === "github-actions"
+                ? freshness?.stale
+                  ? `저장 데이터 기준 ${freshnessLabel} · 승인이나 반려 전 다시 접속해 최신 상태를 확인해주세요.`
+                  : freshness?.source === "postgres-cache"
+                    ? `최근 원고 갱신 ${freshnessLabel} · 새 원고는 확인했고, 상세 화면에서는 GitHub 최신 상태를 다시 검증합니다.`
+                  : capabilities?.mode === "github-actions"
                   ? "비공개 자동화 저장소 · 수집·생성·말투 보정 사용 가능"
                   : "모의 데이터로 생성·검수·승인 흐름을 확인할 수 있습니다."
                 : connectionStatus === "connecting"
                   ? "실제 콘텐츠와 자동화 상태를 확인하고 있습니다."
                   : isHostedPreview
-                  ? "샘플 데이터로 화면과 상호작용을 확인할 수 있습니다."
+                  ? "운영 데이터 API에 연결해야 콘텐츠를 조회하고 생성할 수 있습니다."
                   : "자동화 서버에 연결하지 못했습니다. 잠시 후 새로고침해 주세요."}
             </small>
           </div>
@@ -260,6 +265,7 @@ export function DashboardPage() {
               </div>
             </div>
           ))}
+          {!recentActivities.length && connectionStatus !== "connecting" ? <p className="activity-empty">최근 활동이 없습니다.</p> : null}
         </section>
       </aside>
 

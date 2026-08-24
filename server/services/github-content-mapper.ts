@@ -30,21 +30,49 @@ export function draftToContent(draft: AutomationDraftSummary): ContentRecord {
 export function draftToDetail(draft: AutomationDraftDetail): ContentDetail {
   const content = draftToContent(draft);
   const versionId = `${draft.runId}:human-tone`;
-  const sources = (draft.article.sources ?? []).map((source, index) => ({
-    id: `${draft.runId}:source:${index + 1}`,
-    contentId: draft.runId,
-    organization: "NAVER 블로그",
-    title: source.title ?? `출처 ${index + 1}`,
-    url: source.url ?? "",
-    sourceType: "trend" as const,
-    publishedAt: null,
-    collectedAt: draft.generatedAt,
-    trustGrade: "C" as const,
-  }));
+  const sourceByKey = new Map<string, ContentDetail["sources"][number]>();
+  const sourceByOriginalIndex: ContentDetail["sources"] = [];
+  for (const [index, source] of (draft.article.sources ?? []).entries()) {
+    const rawUrl = source.url?.trim() ?? "";
+    const url = rawUrl || `urn:github-draft:${draft.runId}:source:${index + 1}`;
+    const key = rawUrl ? rawUrl.toLowerCase().replace(/\/+$/, "") : url;
+    let normalized = sourceByKey.get(key);
+    if (!normalized) {
+      normalized = {
+        id: `${draft.runId}:source:${index + 1}`,
+        contentId: draft.runId,
+        organization: "NAVER 블로그",
+        title: source.title?.trim() || `출처 ${index + 1}`,
+        url,
+        sourceType: "trend" as const,
+        publishedAt: null,
+        collectedAt: draft.generatedAt,
+        trustGrade: "C" as const,
+      };
+      sourceByKey.set(key, normalized);
+    }
+    sourceByOriginalIndex.push(normalized);
+  }
+  if (!sourceByOriginalIndex.length && (draft.article.factChecks?.length ?? 0) > 0) {
+    const placeholder = {
+      id: `${draft.runId}:source:placeholder`,
+      contentId: draft.runId,
+      organization: "출처 확인 필요",
+      title: "원문 출처 확인 필요",
+      url: `urn:github-draft:${draft.runId}:source:placeholder`,
+      sourceType: "trend" as const,
+      publishedAt: null,
+      collectedAt: draft.generatedAt,
+      trustGrade: "C" as const,
+    };
+    sourceByKey.set(placeholder.url, placeholder);
+    sourceByOriginalIndex.push(placeholder);
+  }
+  const sources = [...sourceByKey.values()];
   const claims = (draft.article.factChecks ?? []).map((fact, index) => ({
     id: `${draft.runId}:claim:${index + 1}`,
     contentId: draft.runId,
-    sourceId: sources[Math.min(index, Math.max(0, sources.length - 1))]?.id ?? `${draft.runId}:source:0`,
+    sourceId: sourceByOriginalIndex[Math.min(index, sourceByOriginalIndex.length - 1)]!.id,
     statement: fact.claim ?? "검토 대상 주장",
     evidenceExcerpt: fact.verificationNote ?? "사람의 최종 검토가 필요합니다.",
     evidenceLocator: `article.factChecks.${index}`,

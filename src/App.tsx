@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useParams } from "react-router-dom";
 import { AppShell } from "./components/AppShell";
 import { PlaceholderPage } from "./components/PlaceholderPage";
 import { DashboardPage } from "./features/dashboard/DashboardPage";
@@ -10,6 +10,11 @@ import { TrendsPage } from "./features/operations/TrendsPage";
 import { SchedulePage } from "./features/operations/SchedulePage";
 import { SettingsPage } from "./features/operations/SettingsPage";
 import { BrandMark } from "./components/BrandMark";
+
+function KeyedReviewPage() {
+  const { contentId } = useParams();
+  return <ReviewPage key={contentId ?? "missing-content"} />;
+}
 
 export default function App() {
   const { user, loading } = useAuth();
@@ -32,7 +37,7 @@ export default function App() {
           element={<HomePage />}
         />
         <Route path="contents" element={<DashboardPage />} />
-        <Route path="contents/:contentId" element={<ReviewPage />} />
+        <Route path="contents/:contentId" element={<KeyedReviewPage />} />
         <Route
           path="trends"
           element={<TrendsPage />}

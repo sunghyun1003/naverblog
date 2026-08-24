@@ -1,3 +1,5 @@
+import { DomainError } from "../domain/errors.js";
+
 export interface GitHubAutomationConfig {
   owner: string;
   repository: string;
@@ -181,12 +183,16 @@ export class GitHubAutomationService {
     }, true);
   }
 
-  async listDrafts(limit = 20): Promise<AutomationDraftSummary[]> {
+  async listDrafts(limit = 20, knownRunIds: ReadonlySet<string> = new Set()): Promise<AutomationDraftSummary[]> {
     const tree = await this.tree();
     const statusPaths = tree
       .map((item) => item.path)
       .filter((file) => /^output\/drafts\/\d{4}-\d{2}-\d{2}\/run-\d+\/status\.json$/.test(file))
       .sort((left, right) => right.localeCompare(left))
+      .filter((statusPath) => {
+        const runId = statusPath.match(/\/run-(\d+)\/status\.json$/)?.[1];
+        return runId ? !knownRunIds.has(runId) : false;
+      })
       .slice(0, limit);
 
     return Promise.all(statusPaths.map(async (statusPath) => {
@@ -239,17 +245,27 @@ export class GitHubAutomationService {
     };
   }
 
-  async updateState(runId: string, changes: Partial<DashboardDraftState>, actor: string): Promise<DashboardDraftState> {
-    const draft = await this.getDraft(runId);
+  async updateState(
+    runId: string,
+    changes: Partial<DashboardDraftState>,
+    actor: string,
+    currentState?: DashboardDraftState,
+  ): Promise<DashboardDraftState> {
+    const previousState = currentState ?? (await this.getDraft(runId)).state;
     const state: DashboardDraftState = {
-      ...draft.state,
+      ...previousState,
       ...changes,
       schemaVersion: 1,
       runId,
       updatedAt: new Date().toISOString(),
       updatedBy: actor,
     };
-    await this.writeJson(`dashboard/decisions/run-${runId}.json`, state, `dashboard: update run ${runId}`);
+    await this.writeJson(
+      `dashboard/decisions/run-${runId}.json`,
+      state,
+      `dashboard: update run ${runId}`,
+      previousState,
+    );
     return state;
   }
 
@@ -309,13 +325,47 @@ export class GitHubAutomationService {
     return this.github(`/contents/${encodeRepositoryPath(path)}?ref=${encodeURIComponent(this.config.branch)}`);
   }
 
-  private async writeJson(path: string, value: unknown, message: string): Promise<void> {
+  private stateConflict(): DomainError {
+    return new DomainError(
+      "CONTENT_STATE_CONFLICT",
+      "다른 검수 작업이 먼저 처리되었습니다. 최신 상태를 불러온 뒤 다시 확인해주세요.",
+      409,
+    );
+  }
+
+  private sameStateRevision(left: DashboardDraftState, right: DashboardDraftState): boolean {
+    return left.runId === right.runId
+      && left.updatedAt === right.updatedAt
+      && left.reviewStatus === right.reviewStatus
+      && left.publicationStatus === right.publicationStatus;
+  }
+
+  private async writeJson(
+    path: string,
+    value: unknown,
+    message: string,
+    expectedState?: DashboardDraftState,
+  ): Promise<void> {
     const existing = await this.raw(`/contents/${encodeRepositoryPath(path)}?ref=${encodeURIComponent(this.config.branch)}`);
     let sha: string | undefined;
-    if (existing.ok) sha = ((await existing.json()) as GitHubFileResponse).sha;
-    else if (existing.status !== 404) throw await this.githubError(existing);
+    if (existing.ok) {
+      const file = (await existing.json()) as GitHubFileResponse;
+      sha = file.sha;
+      if (expectedState) {
+        const currentState = JSON.parse(
+          Buffer.from(file.content.replace(/\s/g, ""), "base64").toString("utf8"),
+        ) as DashboardDraftState;
+        if (!this.sameStateRevision(currentState, expectedState)) throw this.stateConflict();
+      }
+    } else if (existing.status === 404) {
+      if (expectedState && (expectedState.reviewStatus !== "pending" || expectedState.publicationStatus !== "none")) {
+        throw this.stateConflict();
+      }
+    } else {
+      throw await this.githubError(existing);
+    }
 
-    await this.github(`/contents/${encodeRepositoryPath(path)}`, {
+    const response = await this.raw(`/contents/${encodeRepositoryPath(path)}`, {
       method: "PUT",
       body: JSON.stringify({
         message,
@@ -324,6 +374,8 @@ export class GitHubAutomationService {
         ...(sha ? { sha } : {}),
       }),
     });
+    if (response.status === 409 || response.status === 422) throw this.stateConflict();
+    if (!response.ok) throw await this.githubError(response);
   }
 
   private async raw(path: string, init: RequestInit = {}): Promise<Response> {

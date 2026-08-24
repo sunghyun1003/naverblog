@@ -442,6 +442,12 @@
   margin-top: var(--space-10);
 }
 
+.activity-empty {
+  padding: var(--space-5) 0;
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
 .activity-item {
   display: grid;
   grid-template-columns: 30px 1fr;

@@ -1,11 +1,78 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildApp } from "../server/http/app.js";
+import { DomainError } from "../server/domain/errors.js";
 import type { TrendSignal } from "../server/domain/types.js";
 import { InMemoryAutomationRepository } from "../server/repositories/in-memory.js";
-import { GitHubAutomationService } from "../server/services/github-automation.js";
+import {
+  GitHubAutomationService,
+  type AutomationDraftDetail,
+  type DashboardDraftState,
+} from "../server/services/github-automation.js";
+import { persistGitHubDraftDetail } from "../server/services/github-persistence.js";
 import { createAutomationSystem } from "../server/system.js";
 import { testSystem } from "./helpers.js";
+
+function reviewDraft(runId: string, title = `검토 원고 ${runId}`, state?: DashboardDraftState): AutomationDraftDetail {
+  const generatedAt = "2026-08-24T00:00:00.000Z";
+  const currentState = state ?? {
+    schemaVersion: 1,
+    runId,
+    reviewStatus: "pending",
+    publicationStatus: "none",
+    checks: { sources: false, advertising: false },
+    reason: null,
+    approvedBy: null,
+    rejectedBy: null,
+    approvedAt: null,
+    rejectedAt: null,
+    scheduledAt: null,
+    publishedAt: null,
+    externalUrl: null,
+    updatedAt: generatedAt,
+    updatedBy: "system",
+  };
+  return {
+    runId,
+    title,
+    topic: "보험",
+    primaryKeyword: "보험",
+    generatedAt,
+    pipelineStatus: "TONE_REVIEW_COMPLETE",
+    toneSkillApplied: true,
+    updatedAt: currentState.updatedAt,
+    reviewStatus: currentState.reviewStatus,
+    publicationStatus: currentState.publicationStatus,
+    scheduledAt: currentState.scheduledAt,
+    publishedAt: currentState.publishedAt,
+    articleMarkdown: `# ${title}`,
+    copyPackage: title,
+    sourcesMarkdown: "- 출처",
+    article: {
+      article: { title },
+      planning: { topic: "보험" },
+      seo: { primaryKeyword: "보험" },
+      factChecks: [{ claim: "확인할 내용", status: "NEEDS_REVIEW", verificationNote: "사람이 확인합니다." }],
+      sources: [{ title: "참고 글", url: `https://blog.naver.com/example/${runId}` }],
+    },
+    state: currentState,
+  };
+}
+
+function changedState(
+  draft: AutomationDraftDetail,
+  changes: Partial<DashboardDraftState>,
+  actor: string,
+): DashboardDraftState {
+  return {
+    ...draft.state,
+    ...changes,
+    schemaVersion: 1,
+    runId: draft.runId,
+    updatedAt: "2026-08-24T01:00:00.000Z",
+    updatedBy: actor,
+  };
+}
 
 test("GitHub 운영 모드에서는 저장소 콘텐츠를 운영 데이터 저장소로 표시한다", async (context) => {
   const githubAutomation = new GitHubAutomationService({
@@ -77,7 +144,20 @@ test("Neon 캐시가 있으면 목록 화면은 GitHub 응답을 기다리지 �
   assert.equal(contents.statusCode, 200);
   assert.equal(trends.statusCode, 200);
   assert.equal(detail.statusCode, 200);
+  assert.equal(contents.json<{ freshness: { source: string; stale: boolean } }>().freshness.source, "postgres-cache");
+  assert.equal(contents.json<{ freshness: { source: string; stale: boolean } }>().freshness.stale, false);
+  assert.equal(detail.json<{ freshness: { source: string; stale: boolean } }>().freshness.stale, false);
   assert.equal(githubRequests, 0);
+
+  const forced = await app.inject({ method: "GET", url: "/api/contents?refresh=true" });
+  assert.equal(forced.statusCode, 200);
+  assert.equal(forced.json<{ freshness: { source: string; stale: boolean } }>().freshness.source, "postgres-cache");
+  assert.equal(forced.json<{ freshness: { source: string; stale: boolean } }>().freshness.stale, true);
+  const forcedDetail = await app.inject({ method: "GET", url: `/api/contents/${content.id}?refresh=true` });
+  assert.equal(forcedDetail.statusCode, 200);
+  assert.equal(forcedDetail.json<{ freshness: { source: string; stale: boolean } }>().freshness.source, "postgres-cache");
+  assert.equal(forcedDetail.json<{ freshness: { source: string; stale: boolean } }>().freshness.stale, true);
+  assert.equal(githubRequests, 2);
 });
 
 test("HTTP API로 생성부터 검수 상세 조회까지 실행한다", async (context) => {
@@ -195,5 +275,250 @@ test("GitHub 원고는 검토 대기 상태에서만 승인하거나 반려할 �
   });
   assert.equal(rejectScheduled.statusCode, 409);
   assert.equal(rejectScheduled.json<{ error: { code: string } }>().error.code, "CONTENT_NOT_REVIEW_READY");
+  assert.equal(updates, 0);
+});
+
+test("서로 다른 GitHub 원고를 연속으로 반려한다", async (context) => {
+  const drafts = new Map([
+    ["101", reviewDraft("101", "첫 번째 검토 원고")],
+    ["202", reviewDraft("202", "두 번째 검토 원고")],
+  ]);
+  const updatedRuns: string[] = [];
+  const githubAutomation = {
+    getDraft: async (runId: string) => drafts.get(runId)!,
+    updateState: async (
+      runId: string,
+      changes: Partial<DashboardDraftState>,
+      actor: string,
+      currentState?: DashboardDraftState,
+    ) => {
+      const draft = drafts.get(runId)!;
+      assert.equal(currentState, draft.state);
+      const state = changedState(draft, changes, actor);
+      drafts.set(runId, reviewDraft(runId, draft.title, state));
+      updatedRuns.push(runId);
+      return state;
+    },
+  } as unknown as GitHubAutomationService;
+  const app = buildApp({ githubAutomation, databaseProvider: "memory" });
+  context.after(() => app.close());
+
+  const first = await app.inject({
+    method: "POST",
+    url: "/api/contents/101/reject",
+    payload: { reason: "첫 번째 원고의 출처를 다시 확인해주세요." },
+  });
+  const second = await app.inject({
+    method: "POST",
+    url: "/api/contents/202/reject",
+    payload: { reason: "두 번째 원고의 표현을 다시 확인해주세요." },
+  });
+
+  assert.equal(first.statusCode, 200);
+  assert.equal(second.statusCode, 200);
+  assert.equal(first.json<{ state: string }>().state, "drafting");
+  assert.equal(second.json<{ state: string }>().state, "drafting");
+  assert.deepEqual(updatedRuns, ["101", "202"]);
+});
+
+test("GitHub 반려 저장 후 Neon 미러가 실패해도 성공을 반환한다", async (context) => {
+  class FailingMirrorRepository extends InMemoryAutomationRepository {
+    override async saveSources(): Promise<never> {
+      throw new Error("foreign key constraint");
+    }
+  }
+  let draft = reviewDraft("303", "미러 실패 검증 원고");
+  const githubAutomation = {
+    getDraft: async () => draft,
+    updateState: async (
+      _runId: string,
+      changes: Partial<DashboardDraftState>,
+      actor: string,
+      currentState?: DashboardDraftState,
+    ) => {
+      assert.equal(currentState, draft.state);
+      const state = changedState(draft, changes, actor);
+      draft = reviewDraft(draft.runId, draft.title, state);
+      return state;
+    },
+  } as unknown as GitHubAutomationService;
+  const repository = new FailingMirrorRepository();
+  const app = buildApp({
+    system: createAutomationSystem({ repository }),
+    githubAutomation,
+    databaseProvider: "postgres",
+  });
+  context.after(() => app.close());
+
+  const response = await app.inject({
+    method: "POST",
+    url: "/api/contents/303/reject",
+    payload: { reason: "근거 자료를 다시 확인해주세요." },
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.json<{ state: string }>().state, "drafting");
+  assert.equal(response.json<{ mirrorSynced: boolean }>().mirrorSynced, false);
+  assert.equal(draft.state.reviewStatus, "rejected");
+});
+
+test("원고 상세 refresh는 캐시 대신 최신 GitHub 원고를 우선한다", async (context) => {
+  const repository = new InMemoryAutomationRepository();
+  await persistGitHubDraftDetail(repository, reviewDraft("404", "캐시 원고"));
+  let githubRequests = 0;
+  const githubAutomation = {
+    getDraft: async () => {
+      githubRequests += 1;
+      return reviewDraft("404", "최신 GitHub 원고");
+    },
+  } as unknown as GitHubAutomationService;
+  const app = buildApp({
+    system: createAutomationSystem({ repository }),
+    githubAutomation,
+    databaseProvider: "postgres",
+  });
+  context.after(() => app.close());
+
+  const cached = await app.inject({ method: "GET", url: "/api/contents/404" });
+  const refreshed = await app.inject({ method: "GET", url: "/api/contents/404?refresh=true" });
+
+  assert.equal(cached.json<{ content: { title: string } }>().content.title, "캐시 원고");
+  assert.equal(refreshed.json<{ content: { title: string } }>().content.title, "최신 GitHub 원고");
+  assert.equal(cached.json<{ freshness: { stale: boolean } }>().freshness.stale, false);
+  assert.deepEqual(refreshed.json<{ freshness: { source: string; stale: boolean } }>().freshness.source, "github");
+  assert.equal(refreshed.json<{ freshness: { source: string; stale: boolean } }>().freshness.stale, false);
+  assert.equal(githubRequests, 1);
+});
+
+test("GitHub 최근 원고 동기화 후 Neon의 전체 원고 목록을 보존한다", async (context) => {
+  const repository = new InMemoryAutomationRepository();
+  await persistGitHubDraftDetail(repository, reviewDraft("901", "이전 원고"));
+  const latest = reviewDraft("902", "최근 원고");
+  let synchronizedKnownIds: ReadonlySet<string> | null = null;
+  const githubAutomation = {
+    listDrafts: async (_limit: number, knownRunIds: ReadonlySet<string>) => {
+      synchronizedKnownIds = knownRunIds;
+      return [latest];
+    },
+  } as unknown as GitHubAutomationService;
+  const app = buildApp({
+    system: createAutomationSystem({ repository }),
+    githubAutomation,
+    databaseProvider: "postgres",
+  });
+  context.after(() => app.close());
+
+  const response = await app.inject({ method: "GET", url: "/api/contents?refresh=true" });
+  assert.equal(response.statusCode, 200);
+  const body = response.json<{ items: Array<{ id: string }>; freshness: { source: string; stale: boolean } }>();
+  assert.deepEqual(body.items.map((item) => item.id).sort(), ["901", "902"]);
+  assert.equal(synchronizedKnownIds?.has("901"), true);
+  assert.equal(body.freshness.source, "postgres-cache");
+  assert.equal(body.freshness.stale, false);
+});
+
+test("이미 발행된 GitHub 원고는 다시 예약 상태로 되돌리지 않는다", async (context) => {
+  const pending = reviewDraft("505");
+  const publishedState: DashboardDraftState = {
+    ...pending.state,
+    reviewStatus: "approved",
+    publicationStatus: "published",
+    approvedAt: "2026-08-24T00:10:00.000Z",
+    publishedAt: "2026-08-24T00:30:00.000Z",
+  };
+  const published = reviewDraft("505", "발행 완료 원고", publishedState);
+  let updates = 0;
+  const githubAutomation = {
+    getDraft: async () => published,
+    updateState: async () => { updates += 1; },
+  } as unknown as GitHubAutomationService;
+  const app = buildApp({ githubAutomation, databaseProvider: "memory" });
+  context.after(() => app.close());
+
+  const response = await app.inject({
+    method: "POST",
+    url: "/api/contents/505/schedule",
+    payload: { scheduledAt: "2026-08-25T07:00:00+09:00" },
+  });
+
+  assert.equal(response.statusCode, 409);
+  assert.equal(response.json<{ error: { code: string } }>().error.code, "CONTENT_NOT_SCHEDULABLE");
+  assert.equal(updates, 0);
+});
+
+test("동일 GitHub 원고의 승인·반려 경합은 한 요청만 성공한다", async (context) => {
+  const draft = reviewDraft("606", "동시 검수 원고");
+  let claimed = false;
+  const githubAutomation = {
+    getDraft: async () => draft,
+    updateState: async (
+      _runId: string,
+      changes: Partial<DashboardDraftState>,
+      actor: string,
+    ) => {
+      if (claimed) {
+        throw new DomainError(
+          "CONTENT_STATE_CONFLICT",
+          "다른 검수 작업이 먼저 처리되었습니다. 최신 상태를 불러온 뒤 다시 확인해주세요.",
+          409,
+        );
+      }
+      claimed = true;
+      await Promise.resolve();
+      return changedState(draft, changes, actor);
+    },
+  } as unknown as GitHubAutomationService;
+  const app = buildApp({ githubAutomation, databaseProvider: "memory" });
+  context.after(() => app.close());
+
+  const [approved, rejected] = await Promise.all([
+    app.inject({
+      method: "POST",
+      url: "/api/contents/606/approve",
+      payload: { checks: { sources: true, advertising: true } },
+    }),
+    app.inject({
+      method: "POST",
+      url: "/api/contents/606/reject",
+      payload: { reason: "동시에 들어온 반려 요청입니다." },
+    }),
+  ]);
+
+  assert.deepEqual([approved.statusCode, rejected.statusCode].sort(), [200, 409]);
+  const conflict = approved.statusCode === 409 ? approved : rejected;
+  assert.equal(conflict.json<{ error: { code: string } }>().error.code, "CONTENT_STATE_CONFLICT");
+});
+
+test("말투 보정 또는 최신 품질 검사에 실패한 GitHub 원고는 승인하지 않는다", async (context) => {
+  const toneFailed = reviewDraft("707", "말투 보정 실패 원고");
+  toneFailed.toneSkillApplied = false;
+  const factsFailed = reviewDraft("808", "사실 품질 실패 원고");
+  factsFailed.article.factChecks = [];
+  const drafts = new Map([["707", toneFailed], ["808", factsFailed]]);
+  let updates = 0;
+  const githubAutomation = {
+    getDraft: async (runId: string) => drafts.get(runId)!,
+    updateState: async () => { updates += 1; },
+  } as unknown as GitHubAutomationService;
+  const app = buildApp({ githubAutomation, databaseProvider: "memory" });
+  context.after(() => app.close());
+
+  const toneResponse = await app.inject({
+    method: "POST",
+    url: "/api/contents/707/approve",
+    payload: { checks: { sources: true, advertising: true } },
+  });
+  const factsResponse = await app.inject({
+    method: "POST",
+    url: "/api/contents/808/approve",
+    payload: { checks: { sources: true, advertising: true } },
+  });
+
+  assert.equal(toneResponse.statusCode, 409);
+  assert.equal(factsResponse.statusCode, 409);
+  assert.equal(toneResponse.json<{ error: { code: string } }>().error.code, "CONTENT_QUALITY_FAILED");
+  assert.equal(factsResponse.json<{ error: { code: string } }>().error.code, "CONTENT_QUALITY_FAILED");
+  assert.deepEqual(toneResponse.json<{ error: { details: { failedCategories: string[] } } }>().error.details.failedCategories, ["tone"]);
+  assert.deepEqual(factsResponse.json<{ error: { details: { failedCategories: string[] } } }>().error.details.failedCategories, ["facts"]);
   assert.equal(updates, 0);
 });

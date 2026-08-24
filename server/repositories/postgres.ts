@@ -177,7 +177,13 @@ export class PostgresAutomationRepository implements AutomationRepository {
   }
 
   async listTrendSignals(): Promise<TrendSignal[]> {
-    const result = await this.pool.query("SELECT * FROM trend_signals WHERE team_id=$1 ORDER BY engagement_score DESC", [this.teamId]);
+    const result = await this.pool.query(
+      `SELECT * FROM trend_signals
+       WHERE team_id=$1
+         AND collected_at=(SELECT MAX(collected_at) FROM trend_signals WHERE team_id=$1)
+       ORDER BY engagement_score DESC`,
+      [this.teamId],
+    );
     return result.rows.map((row) => ({
       id: row.id, sourceType: row.source_type, title: row.title, url: row.canonical_url,
       publishedAt: row.published_at ? new Date(row.published_at).toISOString() : new Date(row.collected_at).toISOString(),

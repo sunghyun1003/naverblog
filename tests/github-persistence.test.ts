@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { InMemoryAutomationRepository } from "../server/repositories/in-memory.js";
 import type { AutomationDraftDetail } from "../server/services/github-automation.js";
+import { draftToDetail } from "../server/services/github-content-mapper.js";
 import { persistGitHubDraftDetail, persistGitHubTrends } from "../server/services/github-persistence.js";
 
 const generatedAt = "2026-08-23T22:00:00.000Z";
@@ -66,6 +67,48 @@ test("GitHub 원고를 영속 저장소에 중복 없이 동기화한다", async
   assert.equal(detail.approvals.length, 1);
   assert.equal(detail.publications.length, 1);
   assert.equal(detail.auditEvents.length, 1);
+});
+
+test("출처가 없는 사실 검증 항목에는 실제 placeholder 출처를 연결한다", () => {
+  const input = draft();
+  input.article.sources = [];
+  input.article.factChecks = [
+    { claim: "첫 번째 주장", status: "NEEDS_REVIEW" },
+    { claim: "두 번째 주장", status: "NEEDS_REVIEW" },
+  ];
+
+  const detail = draftToDetail(input);
+  const sourceIds = new Set(detail.sources.map((source) => source.id));
+
+  assert.equal(detail.sources.length, 1);
+  assert.match(detail.sources[0]!.url, /^urn:github-draft:/);
+  assert.equal(detail.claims.length, 2);
+  assert.equal(detail.claims.every((claim) => sourceIds.has(claim.sourceId)), true);
+});
+
+test("중복·빈 URL 출처를 정규화하고 모든 주장에 저장 가능한 출처를 연결한다", () => {
+  const input = draft();
+  input.article.sources = [
+    { title: "중복 출처 A", url: "https://blog.naver.com/example/duplicate" },
+    { title: "중복 출처 B", url: "https://blog.naver.com/example/duplicate/" },
+    { title: "주소 없는 출처", url: "" },
+  ];
+  input.article.factChecks = [
+    { claim: "첫 번째 주장" },
+    { claim: "두 번째 주장" },
+    { claim: "세 번째 주장" },
+    { claim: "네 번째 주장" },
+  ];
+
+  const detail = draftToDetail(input);
+  const sourceIds = new Set(detail.sources.map((source) => source.id));
+  const sourceUrls = detail.sources.map((source) => source.url);
+
+  assert.equal(detail.sources.length, 2);
+  assert.equal(new Set(sourceUrls).size, sourceUrls.length);
+  assert.equal(sourceUrls.every(Boolean), true);
+  assert.equal(detail.claims.every((claim) => sourceIds.has(claim.sourceId)), true);
+  assert.equal(detail.claims[0]!.sourceId, detail.claims[1]!.sourceId);
 });
 
 test("GitHub 승인과 반려 이력을 서로 다른 감사 기록으로 보존한다", async () => {

@@ -22,6 +22,19 @@ export interface ApiContent {
   updatedAt: string;
   scheduledAt: string | null;
   publishedAt: string | null;
+  mirrorSynced?: boolean;
+}
+
+export interface ApiFreshness {
+  source: "github" | "postgres-cache" | "local";
+  stale: boolean;
+  asOf: string | null;
+  mirrorSynced?: boolean;
+}
+
+export interface ApiContentList {
+  items: ApiContent[];
+  freshness?: ApiFreshness;
 }
 
 export interface ApiJobStep {
@@ -78,6 +91,7 @@ export interface ApiContentDetail {
   approvals: unknown[];
   publications: unknown[];
   auditEvents: Array<{ id: string; action: string; createdAt: string }>;
+  freshness?: ApiFreshness;
 }
 
 export interface ApiCapabilities {

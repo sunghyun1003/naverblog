@@ -437,9 +437,11 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
         bestRecentRank: null,
         observedDays: 1,
         similarityTopDays: 0,
+        bestSearchTrend: null,
         scoreBreakdown: null,
       })),
       unavailableMetrics: { views: "NAVER API HUB 미제공", likes: "NAVER API HUB 미제공", comments: "NAVER API HUB 미제공" },
+      searchTrend: { status: "unavailable", reason: "저장된 검색 트렌드 없음" },
     };
   }
 
@@ -488,14 +490,25 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
         bestRecentRank: index + 1,
         observedDays: Math.min(7, index + 1),
         similarityTopDays: Math.min(7, index + 1),
+        bestSearchTrend: {
+          query: trend.topicKey,
+          category: trend.topicKey,
+          baselineAverage: 45,
+          recentAverage: 54,
+          direction: "rising",
+          changePercent: 20,
+          momentumScore: 15,
+        },
         scoreBreakdown: {
-          similarityRank: Math.max(1, 40 - index * 3),
+          similarityRank: Math.max(1, 35 - index * 3),
           queryBreadth: 5,
-          freshness: 20,
+          freshness: 15,
           persistence: Math.min(20, index * 4),
+          searchTrend: 15,
           total: trend.relevanceScore,
         },
       })),
+      searchTrend: { status: "ok", windowDays: 28, recentDays: 7, baselineDays: 21, requestCount: trends.length },
     };
   });
 

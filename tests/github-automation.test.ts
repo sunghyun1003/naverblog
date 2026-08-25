@@ -36,7 +36,8 @@ test("GitHub Actions 실행 상태와 생성 원고를 읽는다", async () => {
       itemCount: 1,
       collectionStrategy: { sorts: ["sim", "date"], resultsPerQuery: 20, historyWindowDays: 28, rankMeaning: "API 정확도순" },
       unavailableMetrics: { views: "NAVER API HUB 미제공", likes: "NAVER API HUB 미제공", comments: "NAVER API HUB 미제공" },
-      items: [{ title: "실손보험", link: "https://blog.naver.com/example/1", description: "확인법", bloggerName: "보험 블로그", postDate: "2026-08-18", candidateScore: 90, matchedQueries: ["실손보험"], bestSimilarityRank: 2, bestRecentRank: 4, observedDays: 3, similarityTopDays: 2, scoreBreakdown: { similarityRank: 38, queryBreadth: 10, freshness: 20, persistence: 8, total: 76 } }],
+      searchTrend: { status: "ok", startDate: "2026-07-22", endDate: "2026-08-18", windowDays: 28, recentDays: 7, baselineDays: 21, requestCount: 1 },
+      items: [{ title: "실손보험", link: "https://blog.naver.com/example/1", description: "확인법", bloggerName: "보험 블로그", postDate: "2026-08-18", candidateScore: 90, matchedQueries: ["실손보험"], bestSimilarityRank: 2, bestRecentRank: 4, observedDays: 3, similarityTopDays: 2, bestSearchTrend: { query: "실손보험", direction: "rising", changePercent: 25, momentumScore: 15 }, scoreBreakdown: { similarityRank: 35, queryBreadth: 10, freshness: 15, persistence: 8, searchTrend: 15, total: 83 } }],
     });
     if (url.includes("dashboard/decisions/run-123.json")) return json({ message: "Not Found" }, 404);
     return json({ message: "Not Found" }, 404);
@@ -58,6 +59,8 @@ test("GitHub Actions 실행 상태와 생성 원고를 읽는다", async () => {
   assert.equal(trends.items[0]?.observedDays, 3);
   assert.equal(trends.requestCount, 2);
   assert.equal(trends.unavailableMetrics?.views, "NAVER API HUB 미제공");
+  assert.equal(trends.searchTrend?.status, "ok");
+  assert.equal(trends.items[0]?.bestSearchTrend?.direction, "rising");
 
   await service.dispatch("generate", { topic: "실손보험", strategy: "trend" });
   await service.dispatch("rewrite", { run_id: "123" });

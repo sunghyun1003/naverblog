@@ -5,6 +5,14 @@ import type { ApiTrendSnapshot } from "../../api/types";
 import { Button } from "../../components/Button";
 import { PageLoadingState } from "../../components/PageLoadingState";
 
+function searchTrendLabel(item: ApiTrendSnapshot["items"][number]) {
+  const trend = item.bestSearchTrend;
+  if (!trend || trend.direction === "insufficient") return null;
+  if (trend.direction === "rising") return `검색 상승 ${trend.changePercent != null ? `+${trend.changePercent}%` : ""}`.trim();
+  if (trend.direction === "falling") return `검색 하락 ${trend.changePercent != null ? `${trend.changePercent}%` : ""}`.trim();
+  return "검색 유지";
+}
+
 export function TrendsPage() {
   const [snapshot, setSnapshot] = useState<ApiTrendSnapshot | null>(null);
   const [query, setQuery] = useState("");
@@ -52,7 +60,7 @@ export function TrendsPage() {
   return (
     <div className="operations-page">
       <header className="operations-heading">
-        <div><h1>소재 후보 수집</h1><p>정확도순 상위 노출, 최신성, 여러 검색어 반복 노출과 최근 4주 재등장을 함께 확인하세요.</p></div>
+        <div><h1>소재 후보 수집</h1><p>정확도순 상위 노출, 최신성, 최근 4주 재등장과 검색 관심도 방향을 함께 확인하세요.</p></div>
         <div className="operations-actions"><Button onClick={() => void refresh()} icon={<RefreshCw size={17} />} disabled={loading || refreshing}>{refreshing ? "최신화 중..." : "새로고침"}</Button><Button variant="brand" onClick={() => void collect()} disabled={busy || loading || refreshing}>{busy ? "요청 중..." : "지금 수집"}</Button></div>
       </header>
       {message ? <div className="operations-notice" role="status">{message}</div> : null}
@@ -63,7 +71,9 @@ export function TrendsPage() {
           <div className="operations-notice" role={snapshot.source === "postgres-cache" ? "alert" : undefined}>
             {snapshot.source === "postgres-cache"
               ? `GitHub 최신 조회가 지연되어 ${snapshot.collectionDate}에 저장된 수집 결과를 표시합니다.`
-              : "선별 점수는 검색 API 정확도순 위치·검색어 반복 노출·최신성·최근 4주 재등장을 조합합니다. 조회수·공감·댓글은 공식 API 미제공 항목입니다."}
+              : snapshot.searchTrend?.status === "ok"
+                ? "선별 점수는 정확도순 위치·반복 노출·최신성·4주 재등장·검색 관심도 방향을 조합합니다. 검색 관심도는 최근 7일과 직전 21일의 상대 추이이며 절대 검색량이 아닙니다."
+                : "검색어 트렌드는 아직 연결되지 않았습니다. 정확도순 위치·반복 노출·최신성·4주 재등장으로 선별하며 조회수·공감·댓글은 공식 API 미제공 항목입니다."}
           </div>
           <section className="snapshot-summary">
             <div><small>수집일</small><strong>{snapshot.collectionDate}</strong></div>
@@ -72,18 +82,20 @@ export function TrendsPage() {
           </section>
           <div className="operations-toolbar"><label className="search-field"><Search size={18} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="제목과 내용으로 검색" /></label></div>
           <section className="trend-list" aria-label="수집 콘텐츠">
-            {items.map((item) => (
-              <a key={item.link} href={item.link} target="_blank" rel="noreferrer">
+            {items.map((item) => {
+              const trendLabel = searchTrendLabel(item);
+              return <a key={item.link} href={item.link} target="_blank" rel="noreferrer">
                 <div><strong>{item.title}</strong><p>{item.description}</p><small>{item.bloggername} · {item.postdate} · {item.matchedQueries.join(", ")}</small></div>
                 <span className="trend-signals" title="정확도순 위치는 NAVER API HUB 블로그 검색 결과이며 통합검색 화면 순위와 동일하다고 보장되지 않습니다.">
                   <small>{item.bestSimilarityRank ? `정확도 ${item.bestSimilarityRank}위` : "정확도 순위 없음"}</small>
                   {item.bestRecentRank ? <small>최신 {item.bestRecentRank}위</small> : null}
                   <small>4주간 {item.observedDays ?? 1}일 포착</small>
+                  {trendLabel ? <small className={`trend-signal--${item.bestSearchTrend?.direction}`}>{trendLabel}</small> : null}
                   <b>선별 {Math.round(item.candidateScore)}</b>
                   <ExternalLink size={16} />
                 </span>
-              </a>
-            ))}
+              </a>;
+            })}
             {!items.length ? <div className="operations-empty">표시할 수집 결과가 없습니다.</div> : null}
           </section>
         </>

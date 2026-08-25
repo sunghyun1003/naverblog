@@ -129,11 +129,21 @@ export interface ApiTrendItem {
   bestRecentRank: number | null;
   observedDays: number;
   similarityTopDays: number;
+  bestSearchTrend: {
+    query?: string;
+    category?: string;
+    baselineAverage?: number | null;
+    recentAverage?: number | null;
+    direction?: "rising" | "stable" | "falling" | "insufficient";
+    changePercent?: number | null;
+    momentumScore?: number;
+  } | null;
   scoreBreakdown: {
     freshness?: number;
     queryBreadth?: number;
     similarityRank?: number;
     persistence?: number;
+    searchTrend?: number;
   } | null;
 }
 
@@ -151,5 +161,18 @@ export interface ApiTrendSnapshot {
     rankMeaning?: string;
   } | null;
   unavailableMetrics?: Record<string, string> | null;
+  searchTrend?: {
+    status?: "ok" | "unavailable";
+    source?: string;
+    startDate?: string;
+    endDate?: string;
+    windowDays?: number;
+    recentDays?: number;
+    baselineDays?: number;
+    requestCount?: number;
+    ratioMeaning?: string;
+    directionMeaning?: string;
+    reason?: string;
+  } | null;
   items: ApiTrendItem[];
 }

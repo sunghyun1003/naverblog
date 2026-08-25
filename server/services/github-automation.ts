@@ -139,6 +139,19 @@ interface CollectedTrendSnapshot {
     rankMeaning?: string;
   };
   unavailableMetrics?: Record<string, string>;
+  searchTrend?: {
+    status?: "ok" | "unavailable";
+    source?: string;
+    startDate?: string;
+    endDate?: string;
+    windowDays?: number;
+    recentDays?: number;
+    baselineDays?: number;
+    requestCount?: number;
+    ratioMeaning?: string;
+    directionMeaning?: string;
+    reason?: string;
+  };
   items?: Array<{
     title?: string;
     link?: string;
@@ -151,11 +164,21 @@ interface CollectedTrendSnapshot {
     bestRecentRank?: number | null;
     observedDays?: number;
     similarityTopDays?: number;
+    bestSearchTrend?: {
+      query?: string;
+      category?: string;
+      baselineAverage?: number | null;
+      recentAverage?: number | null;
+      direction?: "rising" | "stable" | "falling" | "insufficient";
+      changePercent?: number | null;
+      momentumScore?: number;
+    } | null;
     scoreBreakdown?: {
       freshness?: number;
       queryBreadth?: number;
       similarityRank?: number;
       persistence?: number;
+      searchTrend?: number;
     };
   }>;
 }
@@ -304,6 +327,7 @@ export class GitHubAutomationService {
       bestRecentRank: item.bestRecentRank ?? null,
       observedDays: item.observedDays ?? 1,
       similarityTopDays: item.similarityTopDays ?? 0,
+      bestSearchTrend: item.bestSearchTrend ?? null,
       scoreBreakdown: item.scoreBreakdown ?? null,
     }));
     return {
@@ -315,6 +339,7 @@ export class GitHubAutomationService {
       source: snapshot.source ?? "NAVER_SEARCH_BLOG_API",
       collectionStrategy: snapshot.collectionStrategy ?? null,
       unavailableMetrics: snapshot.unavailableMetrics ?? null,
+      searchTrend: snapshot.searchTrend ?? null,
       items,
     };
   }

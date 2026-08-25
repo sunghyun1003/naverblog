@@ -130,7 +130,15 @@ interface CollectedTrendSnapshot {
   collectedAt?: string;
   collectionDate?: string;
   queryCount?: number;
+  requestCount?: number;
   itemCount?: number;
+  collectionStrategy?: {
+    sorts?: string[];
+    resultsPerQuery?: number;
+    historyWindowDays?: number;
+    rankMeaning?: string;
+  };
+  unavailableMetrics?: Record<string, string>;
   items?: Array<{
     title?: string;
     link?: string;
@@ -139,6 +147,16 @@ interface CollectedTrendSnapshot {
     postDate?: string;
     candidateScore?: number;
     matchedQueries?: string[];
+    bestSimilarityRank?: number | null;
+    bestRecentRank?: number | null;
+    observedDays?: number;
+    similarityTopDays?: number;
+    scoreBreakdown?: {
+      freshness?: number;
+      queryBreadth?: number;
+      similarityRank?: number;
+      persistence?: number;
+    };
   }>;
 }
 
@@ -282,13 +300,21 @@ export class GitHubAutomationService {
       postdate: item.postDate ?? "",
       candidateScore: item.candidateScore ?? 0,
       matchedQueries: item.matchedQueries ?? [],
+      bestSimilarityRank: item.bestSimilarityRank ?? null,
+      bestRecentRank: item.bestRecentRank ?? null,
+      observedDays: item.observedDays ?? 1,
+      similarityTopDays: item.similarityTopDays ?? 0,
+      scoreBreakdown: item.scoreBreakdown ?? null,
     }));
     return {
       collectionDate: snapshot.collectionDate ?? "",
       collectedAt: snapshot.collectedAt ?? "",
       queryCount: snapshot.queryCount ?? 0,
+      requestCount: snapshot.requestCount ?? 0,
       itemCount: snapshot.itemCount ?? items.length,
       source: snapshot.source ?? "NAVER_SEARCH_BLOG_API",
+      collectionStrategy: snapshot.collectionStrategy ?? null,
+      unavailableMetrics: snapshot.unavailableMetrics ?? null,
       items,
     };
   }

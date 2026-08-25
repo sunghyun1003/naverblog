@@ -52,7 +52,7 @@ export function TrendsPage() {
   return (
     <div className="operations-page">
       <header className="operations-heading">
-        <div><h1>소재 후보 수집</h1><p>네이버 검색 API에서 수집한 최근 보험 콘텐츠 메타데이터를 확인하세요.</p></div>
+        <div><h1>소재 후보 수집</h1><p>정확도순 상위 노출, 최신성, 여러 검색어 반복 노출과 최근 4주 재등장을 함께 확인하세요.</p></div>
         <div className="operations-actions"><Button onClick={() => void refresh()} icon={<RefreshCw size={17} />} disabled={loading || refreshing}>{refreshing ? "최신화 중..." : "새로고침"}</Button><Button variant="brand" onClick={() => void collect()} disabled={busy || loading || refreshing}>{busy ? "요청 중..." : "지금 수집"}</Button></div>
       </header>
       {message ? <div className="operations-notice" role="status">{message}</div> : null}
@@ -63,7 +63,7 @@ export function TrendsPage() {
           <div className="operations-notice" role={snapshot.source === "postgres-cache" ? "alert" : undefined}>
             {snapshot.source === "postgres-cache"
               ? `GitHub 최신 조회가 지연되어 ${snapshot.collectionDate}에 저장된 수집 결과를 표시합니다.`
-              : "후보 점수는 여러 검색어에서 반복 노출된 횟수와 최신성으로 계산합니다. 조회수·공감·댓글을 뜻하지 않습니다."}
+              : "선별 점수는 검색 API 정확도순 위치·검색어 반복 노출·최신성·최근 4주 재등장을 조합합니다. 조회수·공감·댓글은 공식 API 미제공 항목입니다."}
           </div>
           <section className="snapshot-summary">
             <div><small>수집일</small><strong>{snapshot.collectionDate}</strong></div>
@@ -75,7 +75,13 @@ export function TrendsPage() {
             {items.map((item) => (
               <a key={item.link} href={item.link} target="_blank" rel="noreferrer">
                 <div><strong>{item.title}</strong><p>{item.description}</p><small>{item.bloggername} · {item.postdate} · {item.matchedQueries.join(", ")}</small></div>
-                <span title="반복 노출과 최신성으로 계산한 내부 후보 점수"><b>{Math.round(item.candidateScore)}</b><ExternalLink size={16} /></span>
+                <span className="trend-signals" title="정확도순 위치는 NAVER API HUB 블로그 검색 결과이며 통합검색 화면 순위와 동일하다고 보장되지 않습니다.">
+                  <small>{item.bestSimilarityRank ? `정확도 ${item.bestSimilarityRank}위` : "정확도 순위 없음"}</small>
+                  {item.bestRecentRank ? <small>최신 {item.bestRecentRank}위</small> : null}
+                  <small>4주간 {item.observedDays ?? 1}일 포착</small>
+                  <b>선별 {Math.round(item.candidateScore)}</b>
+                  <ExternalLink size={16} />
+                </span>
               </a>
             ))}
             {!items.length ? <div className="operations-empty">표시할 수집 결과가 없습니다.</div> : null}

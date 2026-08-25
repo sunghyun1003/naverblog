@@ -433,7 +433,13 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
         postdate: trend.publishedAt.slice(0, 10),
         candidateScore: trend.relevanceScore,
         matchedQueries: [trend.topicKey],
+        bestSimilarityRank: null,
+        bestRecentRank: null,
+        observedDays: 1,
+        similarityTopDays: 0,
+        scoreBreakdown: null,
       })),
+      unavailableMetrics: { views: "NAVER API HUB 미제공", likes: "NAVER API HUB 미제공", comments: "NAVER API HUB 미제공" },
     };
   }
 
@@ -470,7 +476,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       queryCount: new Set(trends.map((trend) => trend.topicKey)).size,
       itemCount: trends.length,
       source: "local-mock",
-      items: trends.map((trend) => ({
+      items: trends.map((trend, index) => ({
         title: trend.title,
         link: trend.url,
         description: `${trend.sourceType}에서 수집한 로컬 검증용 콘텐츠입니다.`,
@@ -478,6 +484,17 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
         postdate: trend.publishedAt.slice(0, 10),
         candidateScore: Math.round((trend.engagementScore + trend.relevanceScore + trend.trustScore) / 3),
         matchedQueries: [trend.topicKey],
+        bestSimilarityRank: index + 1,
+        bestRecentRank: index + 1,
+        observedDays: Math.min(7, index + 1),
+        similarityTopDays: Math.min(7, index + 1),
+        scoreBreakdown: {
+          similarityRank: Math.max(1, 40 - index * 3),
+          queryBreadth: 5,
+          freshness: 20,
+          persistence: Math.min(20, index * 4),
+          total: trend.relevanceScore,
+        },
       })),
     };
   });

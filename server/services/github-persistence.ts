@@ -11,6 +11,8 @@ export interface CollectedTrendsForPersistence {
     postdate: string;
     candidateScore: number;
     matchedQueries: string[];
+    bestSimilarityRank?: number | null;
+    observedDays?: number;
   }>;
 }
 
@@ -70,7 +72,7 @@ export async function persistGitHubTrends(
     title: item.title,
     url: item.link || `urn:naverblog:trend:${index + 1}`,
     publishedAt: normalizedPostDate(item.postdate, collectedAt),
-    engagementScore: normalizedScore(item.candidateScore),
+    engagementScore: 0,
     relevanceScore: normalizedScore(item.candidateScore),
     trustScore: 40,
     topicKey: item.matchedQueries[0] ?? "보험",

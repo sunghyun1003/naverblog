@@ -125,13 +125,31 @@ export interface ApiTrendItem {
   postdate: string;
   candidateScore: number;
   matchedQueries: string[];
+  bestSimilarityRank: number | null;
+  bestRecentRank: number | null;
+  observedDays: number;
+  similarityTopDays: number;
+  scoreBreakdown: {
+    freshness?: number;
+    queryBreadth?: number;
+    similarityRank?: number;
+    persistence?: number;
+  } | null;
 }
 
 export interface ApiTrendSnapshot {
   collectionDate: string;
   collectedAt: string;
   queryCount: number;
+  requestCount?: number;
   itemCount: number;
   source: string;
+  collectionStrategy?: {
+    sorts?: string[];
+    resultsPerQuery?: number;
+    historyWindowDays?: number;
+    rankMeaning?: string;
+  } | null;
+  unavailableMetrics?: Record<string, string> | null;
   items: ApiTrendItem[];
 }

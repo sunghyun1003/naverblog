@@ -50,6 +50,7 @@ export interface AutomationDraftSummary {
   generatedAt: string;
   pipelineStatus: string;
   toneSkillApplied: boolean;
+  toneVerdict?: "PASS" | "REWRITE_REQUIRED" | null;
   updatedAt: string;
   reviewStatus: DashboardReviewStatus;
   publicationStatus: DashboardPublicationStatus;
@@ -111,6 +112,7 @@ interface GeneratedStatus {
   revision?: number;
   status?: string;
   toneSkillApplied?: boolean;
+  toneVerdict?: "PASS" | "REWRITE_REQUIRED" | null;
 }
 
 interface WorkflowRunsResponse {
@@ -380,6 +382,7 @@ export class GitHubAutomationService {
       generatedAt,
       pipelineStatus: status.status ?? "UNKNOWN",
       toneSkillApplied: status.toneSkillApplied === true,
+      toneVerdict: status.toneVerdict ?? null,
       updatedAt,
       reviewStatus: state.reviewStatus,
       publicationStatus: state.publicationStatus,

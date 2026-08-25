@@ -25,7 +25,7 @@ test("GitHub Actions 실행 상태와 생성 원고를 읽는다", async () => {
       { path: "output/drafts/2026-08-18/run-123/status.json", type: "blob" },
       { path: "output/drafts/2026-08-18/run-123/article.json", type: "blob" },
     ] });
-    if (url.includes("status.json")) return file({ generatedAt: "2026-08-18T01:02:00Z", status: "TONE_REVIEW_COMPLETE", toneSkillApplied: true });
+    if (url.includes("status.json")) return file({ generatedAt: "2026-08-18T01:02:00Z", status: "TONE_REVIEW_COMPLETE", toneSkillApplied: true, toneVerdict: "PASS" });
     if (url.includes("article.json")) return file({ planning: { topic: "실손보험" }, seo: { primaryKeyword: "실손보험" }, article: { title: "실손보험 확인법" }, sources: [] });
     if (url.includes("data/latest.json")) return file({
       source: "NAVER_SEARCH_BLOG_API",
@@ -49,6 +49,7 @@ test("GitHub Actions 실행 상태와 생성 원고를 읽는다", async () => {
   const drafts = await service.listDrafts();
   assert.equal(drafts[0]?.title, "실손보험 확인법");
   assert.equal(drafts[0]?.toneSkillApplied, true);
+  assert.equal(drafts[0]?.toneVerdict, "PASS");
   const knownDrafts = await service.listDrafts(20, new Set(["123"]));
   assert.deepEqual(knownDrafts, []);
 

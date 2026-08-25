@@ -16,6 +16,7 @@ function draft(): AutomationDraftDetail {
     generatedAt,
     pipelineStatus: "TONE_REVIEW_COMPLETE",
     toneSkillApplied: true,
+    toneVerdict: "PASS",
     updatedAt: "2026-08-23T22:11:00.000Z",
     reviewStatus: "approved",
     publicationStatus: "scheduled",
@@ -125,6 +126,27 @@ test("출처가 없는 사실 검증 항목에는 실제 placeholder 출처를 �
   assert.match(detail.sources[0]!.url, /^urn:github-draft:/);
   assert.equal(detail.claims.length, 2);
   assert.equal(detail.claims.every((claim) => sourceIds.has(claim.sourceId)), true);
+});
+
+test("말투 재작성 후에도 이슈가 남은 원고는 승인 대기가 아니라 작성중으로 보존한다", () => {
+  const input = draft();
+  input.pipelineStatus = "TONE_REVIEW_REQUIRED";
+  input.toneVerdict = "REWRITE_REQUIRED";
+  input.reviewStatus = "pending";
+  input.publicationStatus = "none";
+  input.scheduledAt = null;
+  input.state.reviewStatus = "pending";
+  input.state.publicationStatus = "none";
+  input.state.scheduledAt = null;
+
+  const detail = draftToDetail(input);
+  const toneQuality = detail.qualityResults.find((result) => result.category === "tone");
+  const toneStep = detail.jobs[0]?.steps.find((step) => step.stage === "humanize_tone");
+
+  assert.equal(detail.content.state, "drafting");
+  assert.equal(toneQuality?.status, "failed");
+  assert.equal(toneStep?.status, "failed");
+  assert.equal(detail.jobs[0]?.status, "failed");
 });
 
 test("중복·빈 URL 출처를 정규화하고 모든 주장에 저장 가능한 출처를 연결한다", () => {

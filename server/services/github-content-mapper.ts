@@ -35,6 +35,8 @@ export function draftToDetail(draft: AutomationDraftDetail): ContentDetail {
     ? `${draft.runId}:human-tone`
     : `${draft.runId}:human-tone:${revision}`;
   const versionId = versionIdForRevision(currentRevision);
+  const tonePassed = draft.toneVerdict === "PASS"
+    || (draft.toneVerdict == null && draft.pipelineStatus === "TONE_REVIEW_COMPLETE" && draft.toneSkillApplied);
   const sourceByKey = new Map<string, ContentDetail["sources"][number]>();
   const sourceByOriginalIndex: ContentDetail["sources"] = [];
   for (const [index, source] of (draft.article.sources ?? []).entries()) {
@@ -89,7 +91,7 @@ export function draftToDetail(draft: AutomationDraftDetail): ContentDetail {
     ["facts", claims.length > 0 ? "warning" : "failed", claims.length > 0 ? 80 : 0, `사실 확인 항목 ${claims.length}건. 사람이 원문과 대조해야 합니다.`],
     ["seo", "passed", 90, `핵심 키워드: ${draft.primaryKeyword}`],
     ["geo", "passed", 90, "직접 답변, 질문 구조와 출처 목록이 생성됐습니다."],
-    ["tone", draft.toneSkillApplied ? "passed" : "failed", draft.toneSkillApplied ? 100 : 0, draft.toneSkillApplied ? "demi Humanizer 피드백과 재작성이 적용됐습니다." : "말투 보정이 적용되지 않았습니다."],
+    ["tone", tonePassed ? "passed" : "failed", tonePassed ? 100 : 0, tonePassed ? "demi Humanizer 재작성과 최종 PASS 검수가 완료됐습니다." : "자동 재작성 후에도 말투 이슈가 남아 추가 검토가 필요합니다."],
     ["advertising", "warning", 70, "보험 광고 표현은 사람이 최종 확인해야 합니다."],
   ] as const;
   const approvalCreatedAt = draft.state.reviewStatus === "approved"
@@ -163,6 +165,7 @@ export function draftToDetail(draft: AutomationDraftDetail): ContentDetail {
       metadata: {
         skillName: "demi",
         toneSkillApplied: draft.toneSkillApplied,
+        toneVerdict: draft.toneVerdict,
         revision: currentRevision,
         diffSummary: ["Humanizer 33개 패턴 진단", "피드백 반영 재작성", "사실·출처 보존 자체 감사"],
         copyPackage: draft.copyPackage,
@@ -186,18 +189,18 @@ export function draftToDetail(draft: AutomationDraftDetail): ContentDetail {
       id: draft.runId,
       contentId: draft.runId,
       idempotencyKey: `github-run:${draft.runId}`,
-      status: "succeeded",
+      status: tonePassed ? "succeeded" : "failed",
       steps: pipelineStages.map((stage) => ({
         stage,
-        status: "succeeded",
+        status: stage === "humanize_tone" && !tonePassed ? "failed" : "succeeded",
         startedAt: draft.generatedAt,
         completedAt: draft.generatedAt,
         outputVersionId: stage === "humanize_tone" ? versionId : null,
-        error: null,
+        error: stage === "humanize_tone" && !tonePassed ? "자동 재작성 후에도 말투 이슈가 남았습니다." : null,
       })),
       startedAt: draft.generatedAt,
       completedAt: draft.generatedAt,
-      error: null,
+      error: tonePassed ? null : "사람 말투 추가 검토가 필요합니다.",
       createdAt: draft.generatedAt,
     }],
     approvals,

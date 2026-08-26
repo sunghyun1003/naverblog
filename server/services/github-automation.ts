@@ -74,8 +74,31 @@ export interface AutomationDraftDetail extends AutomationDraftSummary {
   sourcesMarkdown: string;
   article: GeneratedArticle;
   evidencePackage?: GeneratedEvidencePackage | null;
+  discoveryQuality?: GeneratedDiscoveryQuality | null;
   state: DashboardDraftState;
   revisions?: AutomationDraftRevision[];
+}
+
+export interface GeneratedDiscoveryQualityCheck {
+  id: string;
+  label: string;
+  points: number;
+  critical: boolean;
+  passed: boolean;
+  detail: string;
+}
+
+export interface GeneratedDiscoveryQualitySection {
+  score: number;
+  status: "passed" | "warning" | "failed";
+  checks: GeneratedDiscoveryQualityCheck[];
+}
+
+export interface GeneratedDiscoveryQuality {
+  schemaVersion: number;
+  checkedAt: string;
+  seo: GeneratedDiscoveryQualitySection;
+  geo: GeneratedDiscoveryQualitySection;
 }
 
 export interface WorkflowRunSummary {
@@ -344,13 +367,14 @@ export class GitHubAutomationService {
     const revisionStatusPaths = paths
       .filter((file) => file.startsWith(`${basePath}/revisions/v`) && file.endsWith("/status.json"))
       .sort((left, right) => left.localeCompare(right, undefined, { numeric: true }));
-    const [status, article, articleMarkdown, copyPackage, sourcesMarkdown, evidencePackage, state] = await Promise.all([
+    const [status, article, articleMarkdown, copyPackage, sourcesMarkdown, evidencePackage, discoveryQuality, state] = await Promise.all([
       this.readJson<GeneratedStatus>(statusPath),
       this.readJson<GeneratedArticle>(`${basePath}/article.json`),
       this.readText(`${basePath}/article.md`),
       this.readText(`${basePath}/copy-package.txt`),
       this.readText(`${basePath}/sources.md`),
       this.readOptionalJson<GeneratedEvidencePackage>(`${basePath}/evidence-package.json`),
+      this.readOptionalJson<GeneratedDiscoveryQuality>(`${basePath}/discovery-quality.json`),
       this.readState(runId),
     ]);
     const revisions = await Promise.all(revisionStatusPaths.map(async (revisionStatusPath) => {
@@ -370,7 +394,7 @@ export class GitHubAutomationService {
         createdAt: revisionStatus.updatedAt ?? revisionStatus.generatedAt ?? status.generatedAt ?? new Date(0).toISOString(),
       };
     }));
-    return { ...this.summary(runId, status, article, state), articleMarkdown, copyPackage, sourcesMarkdown, article, evidencePackage, state, revisions };
+    return { ...this.summary(runId, status, article, state), articleMarkdown, copyPackage, sourcesMarkdown, article, evidencePackage, discoveryQuality, state, revisions };
   }
 
   async getTrends() {

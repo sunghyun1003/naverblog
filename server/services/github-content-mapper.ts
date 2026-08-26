@@ -1,5 +1,13 @@
 import { pipelineStages, type ContentDetail, type ContentRecord, type ContentState } from "../domain/types.js";
-import type { AutomationDraftDetail, AutomationDraftSummary } from "./github-automation.js";
+import type { AutomationDraftDetail, AutomationDraftSummary, GeneratedDiscoveryQualitySection } from "./github-automation.js";
+
+function discoveryQualitySummary(label: string, result: GeneratedDiscoveryQualitySection | null | undefined): string {
+  if (!result) return `${label} 상세 검사가 도입되기 전에 생성된 원고입니다. 다음 재작성 또는 신규 생성부터 실제 점수가 표시됩니다.`;
+  const failed = result.checks.filter((check) => !check.passed);
+  const passedCount = result.checks.length - failed.length;
+  if (!failed.length) return `${result.checks.length}개 기준을 모두 통과했습니다.`;
+  return `${result.checks.length}개 중 ${passedCount}개 통과. 보완: ${failed.map((check) => `${check.label}(${check.detail})`).join(" · ")}`;
+}
 
 function sourceKey(url: string): string {
   return url.toLowerCase().replace(/\/+$/, "");
@@ -138,12 +146,14 @@ export function draftToDetail(draft: AutomationDraftDetail): ContentDetail {
   const factsScore = claims.length === 0 ? 0 : evidenceClaims.length
     ? Math.round((supportedEvidenceClaims / evidenceClaims.length) * 100)
     : 80;
+  const seoQuality = draft.discoveryQuality?.seo;
+  const geoQuality = draft.discoveryQuality?.geo;
   const qualitySeeds = [
     ["facts", factsStatus, factsScore, draft.evidencePackage
       ? `공식 출처 ${draft.evidencePackage.sources.length}개, 검증 주장 ${supportedEvidenceClaims}개, 미해결 주장 ${unresolvedEvidenceClaims}개, 추가 확인 ${evidenceGaps.length}개입니다.`
       : `사실 확인 항목 ${claims.length}건. 사람이 원문과 대조해야 합니다.`],
-    ["seo", "passed", 90, `핵심 키워드: ${draft.primaryKeyword}`],
-    ["geo", "passed", 90, "직접 답변, 질문 구조와 출처 목록이 생성됐습니다."],
+    ["seo", seoQuality?.status ?? "warning", seoQuality?.score ?? 60, discoveryQualitySummary("SEO", seoQuality)],
+    ["geo", geoQuality?.status ?? "warning", geoQuality?.score ?? 60, discoveryQualitySummary("GEO", geoQuality)],
     ["tone", tonePassed ? "passed" : "failed", tonePassed ? 100 : 0, tonePassed ? "demi Humanizer 재작성과 최종 PASS 검수가 완료됐습니다." : "자동 재작성 후에도 말투 이슈가 남아 추가 검토가 필요합니다."],
     ["advertising", "warning", 70, "보험 광고 표현은 사람이 최종 확인해야 합니다."],
   ] as const;

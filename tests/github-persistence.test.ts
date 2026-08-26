@@ -32,6 +32,26 @@ function draft(): AutomationDraftDetail {
       factChecks: [{ claim: "약관 확인이 필요하다", status: "NEEDS_REVIEW", verificationNote: "사람이 확인한다." }],
       sources: [{ title: "참고 글", url: "https://blog.naver.com/example/1" }],
     },
+    discoveryQuality: {
+      schemaVersion: 1,
+      checkedAt: generatedAt,
+      seo: {
+        score: 88,
+        status: "passed",
+        checks: [
+          { id: "title", label: "제목 길이와 키워드", points: 20, critical: true, passed: true, detail: "제목 기준 통과" },
+          { id: "frequency", label: "키워드 반복 밀도", points: 15, critical: false, passed: true, detail: "정확 일치 2회" },
+        ],
+      },
+      geo: {
+        score: 76,
+        status: "warning",
+        checks: [
+          { id: "direct", label: "첫 화면 직접 답변", points: 20, critical: true, passed: true, detail: "2문장" },
+          { id: "faq", label: "추가 질문 FAQ", points: 15, critical: false, passed: false, detail: "FAQ 2개" },
+        ],
+      },
+    },
     state: {
       schemaVersion: 1,
       runId: "321",
@@ -147,6 +167,19 @@ test("말투 재작성 후에도 이슈가 남은 원고는 승인 대기가 아
   assert.equal(toneQuality?.status, "failed");
   assert.equal(toneStep?.status, "failed");
   assert.equal(detail.jobs[0]?.status, "failed");
+});
+
+test("SEO·GEO 검수는 고정 점수가 아니라 자동화 레포의 실제 검사 결과를 사용한다", () => {
+  const detail = draftToDetail(draft());
+  const seo = detail.qualityResults.find((result) => result.category === "seo");
+  const geo = detail.qualityResults.find((result) => result.category === "geo");
+
+  assert.equal(seo?.score, 88);
+  assert.equal(seo?.status, "passed");
+  assert.match(seo?.messages[0] ?? "", /2개 기준을 모두 통과/);
+  assert.equal(geo?.score, 76);
+  assert.equal(geo?.status, "warning");
+  assert.match(geo?.messages[0] ?? "", /추가 질문 FAQ/);
 });
 
 test("중복·빈 URL 출처를 정규화하고 모든 주장에 저장 가능한 출처를 연결한다", () => {

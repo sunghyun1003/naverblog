@@ -75,6 +75,9 @@ export interface AutomationDraftDetail extends AutomationDraftSummary {
   article: GeneratedArticle;
   evidencePackage?: GeneratedEvidencePackage | null;
   discoveryQuality?: GeneratedDiscoveryQuality | null;
+  advertisingQuality?: GeneratedAdvertisingQuality | null;
+  toneReview?: GeneratedToneReview | null;
+  toneAttempts?: GeneratedToneAttempts | null;
   state: DashboardDraftState;
   revisions?: AutomationDraftRevision[];
 }
@@ -99,6 +102,61 @@ export interface GeneratedDiscoveryQuality {
   checkedAt: string;
   seo: GeneratedDiscoveryQualitySection;
   geo: GeneratedDiscoveryQualitySection;
+}
+
+export interface GeneratedAdvertisingQualityRisk {
+  id: string;
+  label: string;
+  severity: "critical" | "high";
+  penalty: number;
+  excerpts: string[];
+  guidance: string;
+}
+
+export interface GeneratedAdvertisingQuality {
+  schemaVersion: number;
+  checkedAt: string;
+  status: "warning" | "failed";
+  score: number;
+  automatedCheckPassed: boolean;
+  humanReviewRequired: true;
+  summary: string;
+  risks: GeneratedAdvertisingQualityRisk[];
+  notice: string;
+}
+
+export interface GeneratedToneReview {
+  verdict: "PASS" | "REWRITE_REQUIRED";
+  summary: string;
+  issues: Array<{
+    severity: "HIGH" | "MEDIUM" | "LOW";
+    excerpt: string;
+    feedback: string;
+    suggestedDirection: string;
+  }>;
+  rewriteInstructions: string[];
+}
+
+export interface GeneratedToneAttempts {
+  schemaVersion: number;
+  completedAt: string;
+  maxRewriteAttempts: number;
+  rewriteAttemptsPerformed: number;
+  finalVerdict: "PASS" | "REWRITE_REQUIRED";
+  latestVerdict?: "PASS" | "REWRITE_REQUIRED";
+  selectedReviewIndex?: number;
+  selectedScore?: number;
+  exhausted: boolean;
+  attempts: Array<{
+    reviewIndex: number;
+    stage: string;
+    verdict: "PASS" | "REWRITE_REQUIRED";
+    summary: string;
+    score?: number;
+    issueCounts: { high: number; medium: number; low: number };
+    feedbackFile: string;
+    articleFile: string;
+  }>;
 }
 
 export interface WorkflowRunSummary {
@@ -367,7 +425,7 @@ export class GitHubAutomationService {
     const revisionStatusPaths = paths
       .filter((file) => file.startsWith(`${basePath}/revisions/v`) && file.endsWith("/status.json"))
       .sort((left, right) => left.localeCompare(right, undefined, { numeric: true }));
-    const [status, article, articleMarkdown, copyPackage, sourcesMarkdown, evidencePackage, discoveryQuality, state] = await Promise.all([
+    const [status, article, articleMarkdown, copyPackage, sourcesMarkdown, evidencePackage, discoveryQuality, advertisingQuality, toneReview, toneAttempts, state] = await Promise.all([
       this.readJson<GeneratedStatus>(statusPath),
       this.readJson<GeneratedArticle>(`${basePath}/article.json`),
       this.readText(`${basePath}/article.md`),
@@ -375,6 +433,9 @@ export class GitHubAutomationService {
       this.readText(`${basePath}/sources.md`),
       this.readOptionalJson<GeneratedEvidencePackage>(`${basePath}/evidence-package.json`),
       this.readOptionalJson<GeneratedDiscoveryQuality>(`${basePath}/discovery-quality.json`),
+      this.readOptionalJson<GeneratedAdvertisingQuality>(`${basePath}/advertising-quality.json`),
+      this.readOptionalJson<GeneratedToneReview>(`${basePath}/tone-review.json`),
+      this.readOptionalJson<GeneratedToneAttempts>(`${basePath}/tone-attempts.json`),
       this.readState(runId),
     ]);
     const revisions = await Promise.all(revisionStatusPaths.map(async (revisionStatusPath) => {
@@ -394,7 +455,7 @@ export class GitHubAutomationService {
         createdAt: revisionStatus.updatedAt ?? revisionStatus.generatedAt ?? status.generatedAt ?? new Date(0).toISOString(),
       };
     }));
-    return { ...this.summary(runId, status, article, state), articleMarkdown, copyPackage, sourcesMarkdown, article, evidencePackage, discoveryQuality, state, revisions };
+    return { ...this.summary(runId, status, article, state), articleMarkdown, copyPackage, sourcesMarkdown, article, evidencePackage, discoveryQuality, advertisingQuality, toneReview, toneAttempts, state, revisions };
   }
 
   async getTrends() {

@@ -52,6 +52,42 @@ function draft(): AutomationDraftDetail {
         ],
       },
     },
+    advertisingQuality: {
+      schemaVersion: 1,
+      checkedAt: generatedAt,
+      status: "warning",
+      score: 92,
+      automatedCheckPassed: true,
+      humanReviewRequired: true,
+      summary: "자동 점검 위험 1건을 확인한 뒤 사람이 최종 승인해야 합니다.",
+      risks: [{
+        id: "direct_solicitation",
+        label: "직접 가입·상담 유도",
+        severity: "high",
+        penalty: 8,
+        excerpts: ["가입 신청"],
+        guidance: "정보 제공 글과 영업성 행동 유도를 분리하세요.",
+      }],
+      notice: "자동 사전 점검이며 보험 광고 심의 통과를 의미하지 않습니다.",
+    },
+    toneReview: {
+      verdict: "PASS",
+      summary: "반복 표현을 줄여 자연스러운 정보형 문장으로 정리했습니다.",
+      issues: [],
+      rewriteInstructions: [],
+    },
+    toneAttempts: {
+      schemaVersion: 1,
+      completedAt: generatedAt,
+      maxRewriteAttempts: 2,
+      rewriteAttemptsPerformed: 1,
+      finalVerdict: "PASS",
+      latestVerdict: "PASS",
+      selectedReviewIndex: 1,
+      selectedScore: 0,
+      exhausted: false,
+      attempts: [],
+    },
     state: {
       schemaVersion: 1,
       runId: "321",
@@ -392,4 +428,25 @@ test("내부 후보 점수는 관련성으로 환산하고 미제공 참여도�
   assert.equal(trends[0]?.relevanceScore, 100);
   assert.ok((trends[1]?.relevanceScore ?? 0) < 100);
   assert.ok((trends[1]?.relevanceScore ?? 0) > 0);
+});
+
+test("보험 광고 검사는 고정 점수 대신 자동 사전 점검 결과를 사용한다", () => {
+  const detail = draftToDetail(draft());
+  const advertising = detail.qualityResults.find((result) => result.category === "advertising");
+
+  assert.equal(advertising?.score, 92);
+  assert.equal(advertising?.status, "warning");
+  assert.match(advertising?.messages[0] ?? "", /직접 가입·상담 유도/);
+  assert.match(advertising?.messages[0] ?? "", /심의 통과를 의미하지 않습니다/);
+});
+
+test("사람 말투 검사는 실제 재작성 횟수와 최종 피드백을 표시한다", () => {
+  const detail = draftToDetail(draft());
+  const tone = detail.qualityResults.find((result) => result.category === "tone");
+  const metadata = detail.versions.at(-1)?.metadata;
+
+  assert.equal(tone?.status, "passed");
+  assert.match(tone?.messages[0] ?? "", /자동 재작성 1회/);
+  assert.match(tone?.messages[0] ?? "", /반복 표현을 줄여/);
+  assert.equal((metadata?.toneAttempts as { selectedReviewIndex?: number })?.selectedReviewIndex, 1);
 });

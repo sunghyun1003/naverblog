@@ -148,14 +148,33 @@ export function draftToDetail(draft: AutomationDraftDetail): ContentDetail {
     : 80;
   const seoQuality = draft.discoveryQuality?.seo;
   const geoQuality = draft.discoveryQuality?.geo;
+  const advertisingQuality = draft.advertisingQuality;
+  const advertisingMessage = advertisingQuality
+    ? [
+        advertisingQuality.summary,
+        ...advertisingQuality.risks.map((risk) => `${risk.label}: ${risk.guidance}`),
+        advertisingQuality.notice,
+      ].join(" ")
+    : "이 원고에는 이전 버전의 고정 안내만 있습니다. 새 원고 생성 또는 재작성 후 실제 광고 위험 검사가 적용됩니다.";
+  const toneIssueCounts = (draft.toneReview?.issues ?? []).reduce((counts, issue) => {
+    counts[issue.severity.toLowerCase() as "high" | "medium" | "low"] += 1;
+    return counts;
+  }, { high: 0, medium: 0, low: 0 });
+  const toneMessage = draft.toneReview && draft.toneAttempts
+    ? tonePassed
+      ? `사람 말투 검수 PASS. 자동 재작성 ${draft.toneAttempts.rewriteAttemptsPerformed}회 후 통과했습니다. ${draft.toneReview.summary}`
+      : `자동 재작성 ${draft.toneAttempts.rewriteAttemptsPerformed}/${draft.toneAttempts.maxRewriteAttempts}회 후에도 보완이 필요합니다. 남은 문제: HIGH ${toneIssueCounts.high}건, MEDIUM ${toneIssueCounts.medium}건, LOW ${toneIssueCounts.low}건. ${draft.toneReview.summary}`
+    : tonePassed
+      ? "사람 말투 보정과 최종 PASS 검수가 완료됐습니다."
+      : "자동 재작성 후에도 말투 문제가 남아 추가 검토가 필요합니다.";
   const qualitySeeds = [
     ["facts", factsStatus, factsScore, draft.evidencePackage
       ? `공식 출처 ${draft.evidencePackage.sources.length}개, 검증 주장 ${supportedEvidenceClaims}개, 미해결 주장 ${unresolvedEvidenceClaims}개, 추가 확인 ${evidenceGaps.length}개입니다.`
       : `사실 확인 항목 ${claims.length}건. 사람이 원문과 대조해야 합니다.`],
     ["seo", seoQuality?.status ?? "warning", seoQuality?.score ?? 60, discoveryQualitySummary("SEO", seoQuality)],
     ["geo", geoQuality?.status ?? "warning", geoQuality?.score ?? 60, discoveryQualitySummary("GEO", geoQuality)],
-    ["tone", tonePassed ? "passed" : "failed", tonePassed ? 100 : 0, tonePassed ? "demi Humanizer 재작성과 최종 PASS 검수가 완료됐습니다." : "자동 재작성 후에도 말투 이슈가 남아 추가 검토가 필요합니다."],
-    ["advertising", "warning", 70, "보험 광고 표현은 사람이 최종 확인해야 합니다."],
+    ["tone", tonePassed ? "passed" : "failed", tonePassed ? 100 : 0, toneMessage],
+    ["advertising", advertisingQuality?.status ?? "warning", advertisingQuality?.score ?? 60, advertisingMessage],
   ] as const;
   const approvalCreatedAt = draft.state.reviewStatus === "approved"
     ? draft.state.approvedAt
@@ -229,6 +248,8 @@ export function draftToDetail(draft: AutomationDraftDetail): ContentDetail {
         skillName: "demi",
         toneSkillApplied: draft.toneSkillApplied,
         toneVerdict: draft.toneVerdict,
+        toneReview: draft.toneReview ?? null,
+        toneAttempts: draft.toneAttempts ?? null,
         evidenceReview: draft.evidencePackage ?? null,
         revision: currentRevision,
         diffSummary: ["Humanizer 33개 패턴 진단", "피드백 반영 재작성", "사실·출처 보존 자체 감사"],

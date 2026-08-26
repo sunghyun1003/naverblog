@@ -19,6 +19,7 @@ import { PageLoadingState } from "../../components/PageLoadingState";
 import { StatusBadge } from "../../components/StatusBadge";
 import type { ContentStatus } from "../../types/content";
 import { RejectDialog } from "./RejectDialog";
+import { EvidenceReviewPanel, evidenceReviewFrom } from "./EvidenceReviewPanel";
 import { useContentDetail } from "./useContentDetail";
 
 type ReviewTab = "draft" | "sources" | "history";
@@ -139,6 +140,7 @@ export function ReviewPage() {
   }));
   const latestJob = detail.jobs[0] ?? null;
   const latestVersion = detail.versions.at(-1) ?? null;
+  const evidenceReview = evidenceReviewFrom(latestVersion);
   const effectiveQualityItems = detail.qualityResults.map((result) => {
         const definition = {
           facts: { label: "사실 근거", icon: CheckCircle2, tone: "positive" },
@@ -261,7 +263,7 @@ export function ReviewPage() {
           </div>
 
           {tab === "draft" ? <ArticleDraft title={latestVersion?.title} body={latestVersion?.body} /> : null}
-          {tab === "sources" ? <EvidenceView sourceItems={currentSources} /> : null}
+          {tab === "sources" ? <EvidenceReviewPanel evidence={evidenceReview} sources={detail.sources} claims={detail.claims} /> : null}
           {tab === "history" ? <HistoryView versions={detail.versions} /> : null}
         </section>
 
@@ -372,21 +374,6 @@ function renderGeneratedBlocks(body: string): ReactNode[] {
 function ArticleDraft({ title, body }: { title?: string; body?: string }) {
   if (!body?.trim()) return <div className="review-content-empty">저장된 원고 본문이 없습니다.</div>;
   return <article className="article-draft article-draft--generated" aria-label={`${title ?? "생성된 원고"} 본문`}>{renderGeneratedBlocks(body)}</article>;
-}
-
-function EvidenceView({ sourceItems }: { sourceItems: Array<{ organization: string; date: string; note: string; url: string }> }) {
-  return (
-    <div className="evidence-view" id="sources">
-      <header><h2>근거와 주장 연결</h2><p>원고의 중요한 사실 문장이 어떤 공식 자료에 근거하는지 확인하세요.</p></header>
-      {sourceItems.map((source, index) => (
-        <section key={`${source.organization}-${source.url}`}>
-          <span className="evidence-index">{index + 1}</span>
-          <div><h3>{source.organization} · {source.note}</h3><p>수집일 {source.date} · 원문 확인 필요</p><blockquote>금융 사실과 보험 광고 표현은 발행 전에 원문과 대조해야 합니다.</blockquote>{source.url ? <a href={source.url} target="_blank" rel="noreferrer">원문 열기 <ExternalLink size={14} /></a> : null}</div>
-        </section>
-      ))}
-      {!sourceItems.length ? <div className="review-content-empty">저장된 근거 자료가 없습니다.</div> : null}
-    </div>
-  );
 }
 
 function HistoryView({ versions }: { versions: ApiContentVersion[] }) {

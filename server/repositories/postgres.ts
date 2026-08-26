@@ -197,7 +197,9 @@ export class PostgresAutomationRepository implements AutomationRepository {
       await this.pool.query(
         `INSERT INTO sources (id, content_id, organization, title, canonical_url, source_type, published_at, collected_at, trust_grade)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-         ON CONFLICT (content_id, canonical_url) DO UPDATE SET title=EXCLUDED.title, collected_at=EXCLUDED.collected_at, trust_grade=EXCLUDED.trust_grade`,
+         ON CONFLICT (content_id, canonical_url) DO UPDATE SET
+           organization=EXCLUDED.organization, title=EXCLUDED.title, source_type=EXCLUDED.source_type,
+           published_at=EXCLUDED.published_at, collected_at=EXCLUDED.collected_at, trust_grade=EXCLUDED.trust_grade`,
         [source.id, contentId, source.organization, source.title, source.url, source.sourceType, source.publishedAt, source.collectedAt, source.trustGrade],
       );
     }

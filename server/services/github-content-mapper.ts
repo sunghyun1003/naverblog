@@ -1,6 +1,10 @@
 import { pipelineStages, type ContentDetail, type ContentRecord, type ContentState } from "../domain/types.js";
 import type { AutomationDraftDetail, AutomationDraftSummary } from "./github-automation.js";
 
+function sourceKey(url: string): string {
+  return url.toLowerCase().replace(/\/+$/, "");
+}
+
 function contentState(draft: AutomationDraftSummary): ContentState {
   if (draft.publicationStatus === "published") return "published";
   if (draft.publicationStatus === "scheduled") return "scheduled";
@@ -38,29 +42,52 @@ export function draftToDetail(draft: AutomationDraftDetail): ContentDetail {
   const tonePassed = draft.toneVerdict === "PASS"
     || (draft.toneVerdict == null && draft.pipelineStatus === "TONE_REVIEW_COMPLETE" && draft.toneSkillApplied);
   const sourceByKey = new Map<string, ContentDetail["sources"][number]>();
+  const sourceByEvidenceId = new Map<string, ContentDetail["sources"][number]>();
+  const evidenceClaimById = new Map((draft.evidencePackage?.claims ?? []).map((claim) => [claim.id, claim]));
+  const evidenceSourceByUrl = new Map((draft.evidencePackage?.sources ?? []).map((source) => [sourceKey(source.url), source]));
   const sourceByOriginalIndex: ContentDetail["sources"] = [];
   for (const [index, source] of (draft.article.sources ?? []).entries()) {
     const rawUrl = source.url?.trim() ?? "";
     const url = rawUrl || `urn:github-draft:${draft.runId}:source:${index + 1}`;
-    const key = rawUrl ? rawUrl.toLowerCase().replace(/\/+$/, "") : url;
+    const key = rawUrl ? sourceKey(rawUrl) : url;
+    const evidenceSource = evidenceSourceByUrl.get(key);
     let normalized = sourceByKey.get(key);
     if (!normalized) {
+      const isOfficial = source.sourceType === "OFFICIAL" || evidenceSource !== undefined;
       normalized = {
         id: `${draft.runId}:source:${index + 1}`,
         contentId: draft.runId,
-        organization: "NAVER 블로그",
-        title: source.title?.trim() || `출처 ${index + 1}`,
+        organization: evidenceSource?.institution ?? (isOfficial ? "공식 기관" : "NAVER 블로그"),
+        title: evidenceSource?.title ?? (source.title?.trim() || `출처 ${index + 1}`),
         url,
-        sourceType: "trend" as const,
-        publishedAt: null,
+        sourceType: isOfficial ? "official" as const : "trend" as const,
+        publishedAt: evidenceSource?.publishedOrEffectiveDate ?? null,
         collectedAt: draft.generatedAt,
-        trustGrade: "C" as const,
+        trustGrade: evidenceSource?.authorityTier === 1 ? "A" as const : isOfficial ? "B" as const : "C" as const,
       };
       sourceByKey.set(key, normalized);
     }
+    if (evidenceSource) sourceByEvidenceId.set(evidenceSource.id, normalized);
     sourceByOriginalIndex.push(normalized);
   }
-  if (!sourceByOriginalIndex.length && (draft.article.factChecks?.length ?? 0) > 0) {
+  for (const evidenceSource of draft.evidencePackage?.sources ?? []) {
+    if (sourceByEvidenceId.has(evidenceSource.id)) continue;
+    const key = sourceKey(evidenceSource.url);
+    const normalized = sourceByKey.get(key) ?? {
+        id: `${draft.runId}:evidence-source:${evidenceSource.id}`,
+        contentId: draft.runId,
+        organization: evidenceSource.institution,
+        title: evidenceSource.title,
+        url: evidenceSource.url,
+        sourceType: "official" as const,
+        publishedAt: evidenceSource.publishedOrEffectiveDate,
+        collectedAt: draft.generatedAt,
+        trustGrade: evidenceSource.authorityTier === 1 ? "A" as const : "B" as const,
+      };
+    sourceByKey.set(key, normalized);
+    sourceByEvidenceId.set(evidenceSource.id, normalized);
+  }
+  if (sourceByKey.size === 0 && (draft.article.factChecks?.length ?? 0) > 0) {
     const placeholder = {
       id: `${draft.runId}:source:placeholder`,
       contentId: draft.runId,
@@ -76,19 +103,45 @@ export function draftToDetail(draft: AutomationDraftDetail): ContentDetail {
     sourceByOriginalIndex.push(placeholder);
   }
   const sources = [...sourceByKey.values()];
-  const claims = (draft.article.factChecks ?? []).map((fact, index) => ({
-    id: `${draft.runId}:claim:${index + 1}`,
-    contentId: draft.runId,
-    sourceId: sourceByOriginalIndex[Math.min(index, sourceByOriginalIndex.length - 1)]!.id,
-    statement: fact.claim ?? "검토 대상 주장",
-    evidenceExcerpt: fact.verificationNote ?? "사람의 최종 검토가 필요합니다.",
-    evidenceLocator: `article.factChecks.${index}`,
-    effectiveDate: null,
-    verificationStatus: fact.status === "VERIFIED" ? "verified" as const : "needs_review" as const,
-    createdAt: draft.generatedAt,
-  }));
+  const claims = (draft.article.factChecks ?? []).map((fact, index) => {
+    const linkedEvidenceClaims = (fact.evidenceIds ?? []).map((id) => evidenceClaimById.get(id)).filter((claim) => claim !== undefined);
+    const linkedEvidenceSourceIds = [...new Set(linkedEvidenceClaims.flatMap((claim) => claim.sourceIds))];
+    const primaryEvidenceSource = linkedEvidenceSourceIds.map((id) => sourceByEvidenceId.get(id)).find((source) => source !== undefined);
+    const fallbackSource = sourceByOriginalIndex[Math.min(index, sourceByOriginalIndex.length - 1)] ?? sources[0]!;
+    const evidenceNotes = linkedEvidenceClaims.map((claim) => claim.scopeNote).filter(Boolean);
+    const effectiveDate = linkedEvidenceSourceIds
+      .map((id) => sourceByEvidenceId.get(id)?.publishedAt)
+      .find((date): date is string => Boolean(date)) ?? null;
+    return {
+      id: `${draft.runId}:claim:${index + 1}`,
+      contentId: draft.runId,
+      sourceId: (primaryEvidenceSource ?? fallbackSource).id,
+      statement: fact.claim ?? "검토 대상 주장",
+      evidenceExcerpt: evidenceNotes.join(" ") || fact.verificationNote || "사람의 최종 검토가 필요합니다.",
+      evidenceLocator: (fact.evidenceIds ?? []).length ? `evidence-package.claims:${fact.evidenceIds!.join(",")}` : `article.factChecks.${index}`,
+      effectiveDate,
+      verificationStatus: ["SUPPORTED", "CROSS_VERIFIED"].includes(fact.verificationStatus ?? "") || fact.status === "VERIFIED"
+        ? "verified" as const
+        : "needs_review" as const,
+      createdAt: draft.generatedAt,
+    };
+  });
+  const evidenceClaims = draft.evidencePackage?.claims ?? [];
+  const supportedEvidenceClaims = evidenceClaims.filter((claim) => ["SUPPORTED", "CROSS_VERIFIED"].includes(claim.verificationStatus)).length;
+  const unresolvedEvidenceClaims = evidenceClaims.length - supportedEvidenceClaims;
+  const evidenceGaps = draft.evidencePackage?.gaps ?? [];
+  const factsStatus = claims.length === 0
+    ? "failed" as const
+    : unresolvedEvidenceClaims > 0 || evidenceGaps.length > 0
+      ? "warning" as const
+      : "passed" as const;
+  const factsScore = claims.length === 0 ? 0 : evidenceClaims.length
+    ? Math.round((supportedEvidenceClaims / evidenceClaims.length) * 100)
+    : 80;
   const qualitySeeds = [
-    ["facts", claims.length > 0 ? "warning" : "failed", claims.length > 0 ? 80 : 0, `사실 확인 항목 ${claims.length}건. 사람이 원문과 대조해야 합니다.`],
+    ["facts", factsStatus, factsScore, draft.evidencePackage
+      ? `공식 출처 ${draft.evidencePackage.sources.length}개, 검증 주장 ${supportedEvidenceClaims}개, 미해결 주장 ${unresolvedEvidenceClaims}개, 추가 확인 ${evidenceGaps.length}개입니다.`
+      : `사실 확인 항목 ${claims.length}건. 사람이 원문과 대조해야 합니다.`],
     ["seo", "passed", 90, `핵심 키워드: ${draft.primaryKeyword}`],
     ["geo", "passed", 90, "직접 답변, 질문 구조와 출처 목록이 생성됐습니다."],
     ["tone", tonePassed ? "passed" : "failed", tonePassed ? 100 : 0, tonePassed ? "demi Humanizer 재작성과 최종 PASS 검수가 완료됐습니다." : "자동 재작성 후에도 말투 이슈가 남아 추가 검토가 필요합니다."],
@@ -166,6 +219,7 @@ export function draftToDetail(draft: AutomationDraftDetail): ContentDetail {
         skillName: "demi",
         toneSkillApplied: draft.toneSkillApplied,
         toneVerdict: draft.toneVerdict,
+        evidenceReview: draft.evidencePackage ?? null,
         revision: currentRevision,
         diffSummary: ["Humanizer 33개 패턴 진단", "피드백 반영 재작성", "사실·출처 보존 자체 감사"],
         copyPackage: draft.copyPackage,

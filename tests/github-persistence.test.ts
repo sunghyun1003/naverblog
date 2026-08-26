@@ -174,6 +174,106 @@ test("중복·빈 URL 출처를 정규화하고 모든 주장에 저장 가능�
   assert.equal(detail.claims[0]!.sourceId, detail.claims[1]!.sourceId);
 });
 
+test("공식 근거 패키지를 출처·주장·원고 버전 메타데이터에 연결한다", () => {
+  const input = draft();
+  input.article.sources = [
+    { title: "자동차손해배상 보장법", url: "https://www.law.go.kr/example", sourceType: "OFFICIAL", evidenceIds: ["E1"] },
+    { title: "참고 블로그", url: "https://blog.naver.com/example/1", sourceType: "TREND_REFERENCE", evidenceIds: [] },
+  ];
+  input.article.factChecks = [{
+    claim: "자동차보유자는 의무보험에 가입해야 한다.",
+    status: "GENERAL_GUIDANCE",
+    verificationNote: "법령 원문 확인",
+    evidenceIds: ["E1"],
+    verificationStatus: "SUPPORTED",
+  }];
+  input.evidencePackage = {
+    schemaVersion: 1,
+    topic: "자동차보험 갱신",
+    contentBrief: {
+      primaryIntent: "정보탐색형",
+      secondaryIntent: "비교형",
+      audienceMoment: "갱신 직전",
+      readerProblem: "무엇을 확인할지 모른다.",
+      contentPromise: "확인 순서를 알 수 있다.",
+      differentiation: "가격 대신 조건을 비교한다.",
+      outlineLogic: ["기간", "운전자", "담보", "최종 조건"],
+      prohibitedAngles: ["최저가 보장", "특정 상품 권유"],
+    },
+    researchQuestions: [{ id: "Q1", question: "가입 의무는 무엇인가?", claimType: "law_or_regulation", whyNeeded: "법적 기준" }],
+    sources: [{
+      id: "S1",
+      institution: "국가법령정보센터",
+      authorityTier: 1,
+      sourceType: "law",
+      title: "자동차손해배상 보장법",
+      url: "https://www.law.go.kr/example",
+      publishedOrEffectiveDate: "2025-10-01",
+      supportSummary: "의무보험 가입 범위를 규정한다.",
+    }],
+    claims: [{
+      id: "E1",
+      claim: "자동차보유자는 의무보험에 가입해야 한다.",
+      claimType: "law_or_regulation",
+      sourceIds: ["S1"],
+      verificationStatus: "SUPPORTED",
+      scopeNote: "구체적인 금액은 시행령을 추가 확인한다.",
+    }],
+    gaps: [{ questionId: "Q1", reason: "과태료 금액은 확인하지 않았다.", draftHandling: "omit" }],
+  };
+
+  const detail = draftToDetail(input);
+  const officialSource = detail.sources.find((source) => source.sourceType === "official");
+  const factQuality = detail.qualityResults.find((result) => result.category === "facts");
+  const evidenceReview = detail.versions.at(-1)?.metadata.evidenceReview as { claims?: unknown[] } | undefined;
+
+  assert.equal(officialSource?.organization, "국가법령정보센터");
+  assert.equal(officialSource?.trustGrade, "A");
+  assert.equal(detail.claims[0]?.sourceId, officialSource?.id);
+  assert.equal(detail.claims[0]?.verificationStatus, "verified");
+  assert.match(detail.claims[0]?.evidenceLocator ?? "", /E1/);
+  assert.equal(evidenceReview?.claims?.length, 1);
+  assert.equal(factQuality?.status, "warning");
+  assert.match(factQuality?.messages[0] ?? "", /추가 확인 1개/);
+});
+
+test("같은 공식 URL을 공유하는 근거 ID도 하나의 저장 출처에 안전하게 연결한다", () => {
+  const input = draft();
+  input.article.sources = [];
+  input.article.factChecks = [{
+    claim: "두 기관 자료가 같은 공식 원문을 가리킨다.",
+    evidenceIds: ["E2"],
+    verificationStatus: "CROSS_VERIFIED",
+  }];
+  input.evidencePackage = {
+    schemaVersion: 1,
+    topic: "중복 원문 검증",
+    contentBrief: {
+      primaryIntent: "정보탐색형",
+      secondaryIntent: "비교형",
+      audienceMoment: "갱신 직전",
+      readerProblem: "공식 기준을 확인하기 어렵다.",
+      contentPromise: "원문 기준을 확인할 수 있다.",
+      differentiation: "공식 자료만 사용한다.",
+      outlineLogic: ["원문 확인"],
+      prohibitedAngles: [],
+    },
+    researchQuestions: [],
+    sources: [
+      { id: "S1", institution: "기관 A", authorityTier: 1, sourceType: "law", title: "공식 원문", url: "https://example.com/source", publishedOrEffectiveDate: null, supportSummary: "기준 확인" },
+      { id: "S2", institution: "기관 B", authorityTier: 2, sourceType: "comparison", title: "공식 원문", url: "https://example.com/source/", publishedOrEffectiveDate: null, supportSummary: "교차 확인" },
+    ],
+    claims: [{ id: "E2", claim: "두 기관 자료가 같은 공식 원문을 가리킨다.", claimType: "official_guidance", sourceIds: ["S2"], verificationStatus: "CROSS_VERIFIED", scopeNote: "" }],
+    gaps: [],
+  };
+
+  const detail = draftToDetail(input);
+
+  assert.equal(detail.sources.length, 1);
+  assert.equal(detail.claims[0]?.sourceId, detail.sources[0]?.id);
+  assert.equal(detail.claims[0]?.verificationStatus, "verified");
+});
+
 test("GitHub 승인과 반려 이력을 서로 다른 감사 기록으로 보존한다", async () => {
   const repository = new InMemoryAutomationRepository();
   await persistGitHubDraftDetail(repository, draft());

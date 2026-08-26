@@ -71,8 +71,58 @@ export interface ApiSource {
   organization: string;
   title: string;
   url: string;
+  sourceType: "official" | "trend";
+  publishedAt: string | null;
   trustGrade: "A" | "B" | "C";
   collectedAt: string;
+}
+
+export interface ApiClaim {
+  id: string;
+  sourceId: string;
+  statement: string;
+  evidenceExcerpt: string;
+  evidenceLocator: string;
+  effectiveDate: string | null;
+  verificationStatus: "verified" | "needs_review" | "rejected";
+}
+
+export interface ApiEvidenceReview {
+  schemaVersion: number;
+  topic: string;
+  contentBrief: {
+    primaryIntent: string;
+    secondaryIntent: string;
+    audienceMoment: string;
+    readerProblem: string;
+    contentPromise: string;
+    differentiation: string;
+    outlineLogic: string[];
+    prohibitedAngles: string[];
+  };
+  sources: Array<{
+    id: string;
+    institution: string;
+    authorityTier: 1 | 2;
+    sourceType: string;
+    title: string;
+    url: string;
+    publishedOrEffectiveDate: string | null;
+    supportSummary: string;
+  }>;
+  claims: Array<{
+    id: string;
+    claim: string;
+    claimType: string;
+    sourceIds: string[];
+    verificationStatus: "SUPPORTED" | "CROSS_VERIFIED" | "CONDITIONAL" | "UNRESOLVED";
+    scopeNote: string;
+  }>;
+  gaps: Array<{
+    questionId: string;
+    reason: string;
+    draftHandling: "omit" | "qualify" | "human_review";
+  }>;
 }
 
 export interface ApiQualityResult {
@@ -87,7 +137,7 @@ export interface ApiContentDetail {
   content: ApiContent;
   versions: ApiContentVersion[];
   sources: ApiSource[];
-  claims: Array<{ id: string; statement: string; verificationStatus: string }>;
+  claims: ApiClaim[];
   qualityResults: ApiQualityResult[];
   jobs: ApiJob[];
   approvals: unknown[];

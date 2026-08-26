@@ -73,6 +73,7 @@ export interface AutomationDraftDetail extends AutomationDraftSummary {
   copyPackage: string;
   sourcesMarkdown: string;
   article: GeneratedArticle;
+  evidencePackage?: GeneratedEvidencePackage | null;
   state: DashboardDraftState;
   revisions?: AutomationDraftRevision[];
 }
@@ -98,12 +99,68 @@ interface GitHubFileResponse {
   sha: string;
 }
 
-interface GeneratedArticle {
+export interface GeneratedArticle {
   planning?: { topic?: string };
   seo?: { primaryKeyword?: string };
   article?: { title?: string };
-  factChecks?: Array<{ claim?: string; status?: string; verificationNote?: string }>;
-  sources?: Array<{ title?: string; url?: string; usedFor?: string }>;
+  factChecks?: Array<{
+    claim?: string;
+    status?: string;
+    verificationNote?: string;
+    evidenceIds?: string[];
+    verificationStatus?: "SUPPORTED" | "CROSS_VERIFIED" | "CONDITIONAL" | "UNRESOLVED";
+  }>;
+  sources?: Array<{
+    title?: string;
+    url?: string;
+    usedFor?: string;
+    sourceType?: "OFFICIAL" | "TREND_REFERENCE";
+    evidenceIds?: string[];
+  }>;
+}
+
+export interface GeneratedEvidencePackage {
+  schemaVersion: number;
+  topic: string;
+  contentBrief: {
+    primaryIntent: string;
+    secondaryIntent: string;
+    audienceMoment: string;
+    readerProblem: string;
+    contentPromise: string;
+    differentiation: string;
+    outlineLogic: string[];
+    prohibitedAngles: string[];
+  };
+  researchQuestions: Array<{
+    id: string;
+    question: string;
+    claimType: string;
+    whyNeeded: string;
+  }>;
+  sources: Array<{
+    id: string;
+    institution: string;
+    authorityTier: 1 | 2;
+    sourceType: string;
+    title: string;
+    url: string;
+    publishedOrEffectiveDate: string | null;
+    supportSummary: string;
+  }>;
+  claims: Array<{
+    id: string;
+    claim: string;
+    claimType: string;
+    sourceIds: string[];
+    verificationStatus: "SUPPORTED" | "CROSS_VERIFIED" | "CONDITIONAL" | "UNRESOLVED";
+    scopeNote: string;
+  }>;
+  gaps: Array<{
+    questionId: string;
+    reason: string;
+    draftHandling: "omit" | "qualify" | "human_review";
+  }>;
 }
 
 interface GeneratedStatus {
@@ -287,12 +344,13 @@ export class GitHubAutomationService {
     const revisionStatusPaths = paths
       .filter((file) => file.startsWith(`${basePath}/revisions/v`) && file.endsWith("/status.json"))
       .sort((left, right) => left.localeCompare(right, undefined, { numeric: true }));
-    const [status, article, articleMarkdown, copyPackage, sourcesMarkdown, state] = await Promise.all([
+    const [status, article, articleMarkdown, copyPackage, sourcesMarkdown, evidencePackage, state] = await Promise.all([
       this.readJson<GeneratedStatus>(statusPath),
       this.readJson<GeneratedArticle>(`${basePath}/article.json`),
       this.readText(`${basePath}/article.md`),
       this.readText(`${basePath}/copy-package.txt`),
       this.readText(`${basePath}/sources.md`),
+      this.readOptionalJson<GeneratedEvidencePackage>(`${basePath}/evidence-package.json`),
       this.readState(runId),
     ]);
     const revisions = await Promise.all(revisionStatusPaths.map(async (revisionStatusPath) => {
@@ -312,7 +370,7 @@ export class GitHubAutomationService {
         createdAt: revisionStatus.updatedAt ?? revisionStatus.generatedAt ?? status.generatedAt ?? new Date(0).toISOString(),
       };
     }));
-    return { ...this.summary(runId, status, article, state), articleMarkdown, copyPackage, sourcesMarkdown, article, state, revisions };
+    return { ...this.summary(runId, status, article, state), articleMarkdown, copyPackage, sourcesMarkdown, article, evidencePackage, state, revisions };
   }
 
   async getTrends() {

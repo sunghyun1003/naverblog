@@ -76,6 +76,7 @@ export interface AutomationDraftDetail extends AutomationDraftSummary {
   evidencePackage?: GeneratedEvidencePackage | null;
   discoveryQuality?: GeneratedDiscoveryQuality | null;
   advertisingQuality?: GeneratedAdvertisingQuality | null;
+  editorialQuality?: GeneratedEditorialQuality | null;
   toneReview?: GeneratedToneReview | null;
   toneAttempts?: GeneratedToneAttempts | null;
   state: DashboardDraftState;
@@ -123,6 +124,14 @@ export interface GeneratedAdvertisingQuality {
   summary: string;
   risks: GeneratedAdvertisingQualityRisk[];
   notice: string;
+}
+
+export interface GeneratedEditorialQuality {
+  schemaVersion: number;
+  checkedAt: string;
+  score: number;
+  status: "passed" | "warning" | "failed";
+  checks: GeneratedDiscoveryQualityCheck[];
 }
 
 export interface GeneratedToneReview {
@@ -433,7 +442,7 @@ export class GitHubAutomationService {
     const revisionStatusPaths = paths
       .filter((file) => file.startsWith(`${basePath}/revisions/v`) && file.endsWith("/status.json"))
       .sort((left, right) => left.localeCompare(right, undefined, { numeric: true }));
-    const [status, article, articleMarkdown, copyPackage, sourcesMarkdown, evidencePackage, discoveryQuality, advertisingQuality, toneReview, toneAttempts, state] = await Promise.all([
+    const [status, article, articleMarkdown, copyPackage, sourcesMarkdown, evidencePackage, discoveryQuality, advertisingQuality, editorialQuality, toneReview, toneAttempts, state] = await Promise.all([
       this.readJson<GeneratedStatus>(statusPath),
       this.readJson<GeneratedArticle>(`${basePath}/article.json`),
       this.readText(`${basePath}/article.md`),
@@ -442,6 +451,7 @@ export class GitHubAutomationService {
       this.readOptionalJson<GeneratedEvidencePackage>(`${basePath}/evidence-package.json`),
       this.readOptionalJson<GeneratedDiscoveryQuality>(`${basePath}/discovery-quality.json`),
       this.readOptionalJson<GeneratedAdvertisingQuality>(`${basePath}/advertising-quality.json`),
+      this.readOptionalJson<GeneratedEditorialQuality>(`${basePath}/editorial-quality.json`),
       this.readOptionalJson<GeneratedToneReview>(`${basePath}/tone-review.json`),
       this.readOptionalJson<GeneratedToneAttempts>(`${basePath}/tone-attempts.json`),
       this.readState(runId),
@@ -463,7 +473,7 @@ export class GitHubAutomationService {
         createdAt: revisionStatus.updatedAt ?? revisionStatus.generatedAt ?? status.generatedAt ?? new Date(0).toISOString(),
       };
     }));
-    return { ...this.summary(runId, status, article, state), articleMarkdown, copyPackage, sourcesMarkdown, article, evidencePackage, discoveryQuality, advertisingQuality, toneReview, toneAttempts, state, revisions };
+    return { ...this.summary(runId, status, article, state), articleMarkdown, copyPackage, sourcesMarkdown, article, evidencePackage, discoveryQuality, advertisingQuality, editorialQuality, toneReview, toneAttempts, state, revisions };
   }
 
   async getTrends() {

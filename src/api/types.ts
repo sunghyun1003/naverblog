@@ -127,7 +127,7 @@ export interface ApiEvidenceReview {
 
 export interface ApiQualityResult {
   id: string;
-  category: "facts" | "seo" | "geo" | "tone" | "advertising";
+  category: "facts" | "seo" | "geo" | "tone" | "advertising" | "editorial";
   status: "passed" | "warning" | "failed";
   score: number;
   messages: string[];

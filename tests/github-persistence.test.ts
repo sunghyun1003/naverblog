@@ -73,6 +73,13 @@ function draft(): AutomationDraftDetail {
       }],
       notice: "자동 사전 점검이며 보험 광고 심의 통과를 의미하지 않습니다.",
     },
+    editorialQuality: {
+      schemaVersion: 1,
+      checkedAt: generatedAt,
+      score: 100,
+      status: "passed",
+      checks: [{ id: "format_variety", label: "전개 형식 다양성", points: 15, critical: true, passed: true, detail: "서로 다른 전개 형식 4종" }],
+    },
     toneReview: {
       verdict: "PASS",
       summary: "반복 표현을 줄여 자연스러운 정보형 문장으로 정리했습니다.",
@@ -123,7 +130,7 @@ test("GitHub 원고를 영속 저장소에 중복 없이 동기화한다", async
   assert.equal(detail.sources.length, 1);
   assert.equal(detail.claims.length, 1);
   assert.equal(detail.jobs.length, 1);
-  assert.equal(detail.qualityResults.length, 5);
+  assert.equal(detail.qualityResults.length, 6);
   assert.equal(detail.approvals.length, 1);
   assert.equal(detail.publications.length, 1);
   assert.equal(detail.auditEvents.length, 1);

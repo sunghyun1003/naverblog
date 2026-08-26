@@ -148,6 +148,7 @@ export function draftToDetail(draft: AutomationDraftDetail): ContentDetail {
     : 80;
   const seoQuality = draft.discoveryQuality?.seo;
   const geoQuality = draft.discoveryQuality?.geo;
+  const editorialQuality = draft.editorialQuality;
   const advertisingQuality = draft.advertisingQuality;
   const advertisingMessage = advertisingQuality
     ? [
@@ -173,6 +174,7 @@ export function draftToDetail(draft: AutomationDraftDetail): ContentDetail {
       : `사실 확인 항목 ${claims.length}건. 사람이 원문과 대조해야 합니다.`],
     ["seo", seoQuality?.status ?? "warning", seoQuality?.score ?? 60, discoveryQualitySummary("SEO", seoQuality)],
     ["geo", geoQuality?.status ?? "warning", geoQuality?.score ?? 60, discoveryQualitySummary("GEO", geoQuality)],
+    ["editorial", editorialQuality?.status ?? "warning", editorialQuality?.score ?? 60, discoveryQualitySummary("편집 품질", editorialQuality)],
     ["tone", tonePassed ? "passed" : "failed", tonePassed ? 100 : 0, toneMessage],
     ["advertising", advertisingQuality?.status ?? "warning", advertisingQuality?.score ?? 60, advertisingMessage],
   ] as const;
@@ -251,6 +253,7 @@ export function draftToDetail(draft: AutomationDraftDetail): ContentDetail {
         toneReview: draft.toneReview ?? null,
         toneAttempts: draft.toneAttempts ?? null,
         visualPlan: draft.article.article?.visualPlan ?? [],
+        editorialQuality: draft.editorialQuality ?? null,
         evidenceReview: draft.evidencePackage ?? null,
         revision: currentRevision,
         diffSummary: ["Humanizer 33개 패턴 진단", "피드백 반영 재작성", "사실·출처 보존 자체 감사"],

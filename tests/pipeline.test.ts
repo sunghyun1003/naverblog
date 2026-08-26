@@ -27,7 +27,7 @@ test("전체 콘텐츠 자동화 파이프라인이 검토 대기까지 실행�
   assert.deepEqual(detail.versions.map((version) => version.stage), ["brief", "draft", "seo", "geo", "human_tone"]);
   assert.equal(detail.sources.length, 3);
   assert.equal(detail.claims.length, 3);
-  assert.equal(detail.qualityResults.length, 5);
+  assert.equal(detail.qualityResults.length, 6);
   assert.equal(detail.qualityResults.some((result) => result.category === "advertising" && result.status === "warning"), true);
   assert.equal(detail.auditEvents.some((event) => event.action === "pipeline.succeeded"), true);
 });

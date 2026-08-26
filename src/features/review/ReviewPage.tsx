@@ -7,6 +7,7 @@ import {
   FileCheck2,
   Globe2,
   Images,
+  LayoutTemplate,
   SearchCheck,
   ShieldAlert,
   UserRound,
@@ -181,6 +182,7 @@ export function ReviewPage() {
           facts: { label: "사실 근거", icon: CheckCircle2, tone: "positive" },
           seo: { label: "SEO 점검", icon: SearchCheck, tone: "info" },
           geo: { label: "GEO 점검", icon: Globe2, tone: "info" },
+          editorial: { label: "편집 품질", icon: LayoutTemplate, tone: "positive" },
           tone: { label: "사람 말투", icon: UserRound, tone: "positive" },
           advertising: { label: "광고 위험", icon: ShieldAlert, tone: "warning" },
         }[result.category];

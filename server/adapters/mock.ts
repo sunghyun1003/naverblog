@@ -157,6 +157,7 @@ class MockQualityReviewer implements QualityReviewer {
       { category: "geo", status: "passed", score: 94, messages: ["직접 답변·FAQ·출처 안내 포함"] },
       { category: "tone", status: "passed", score: 90, messages: ["사람 말투 보정 결과와 보호 문구 확인"] },
       { category: "advertising", status: "warning", score: 78, messages: ["사람이 비교 표현을 최종 확인해야 합니다."] },
+      { category: "editorial", status: "passed", score: 92, messages: ["본문 형식과 시각 자료 계획이 균형 있게 구성됐습니다."] },
     ];
     return values.map((value) => ({ id: this.id(), ...base, ...value }));
   }

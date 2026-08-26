@@ -11,7 +11,7 @@ import {
   UserRound,
   Copy,
 } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import type { ApiContentVersion } from "../../api/types";
 import { Button } from "../../components/Button";
@@ -357,17 +357,28 @@ function renderGeneratedBlocks(body: string): ReactNode[] {
   return body.split("\n\n").flatMap((block, index) => {
     const text = block.trim();
     if (!text) return [];
-    if (text.startsWith("### ")) return [<h4 key={index}>{text.slice(4)}</h4>];
+    if (text.startsWith("### ")) return [<h4 key={index}>{renderInlineBold(text.slice(4), `h4-${index}`)}</h4>];
     if (text.startsWith("## ")) {
       const id = sectionIds[Math.min(sectionIndex++, sectionIds.length - 1)];
-      return [<h3 id={id} key={index}>{text.slice(3)}</h3>];
+      return [<h3 id={id} key={index}>{renderInlineBold(text.slice(3), `h3-${index}`)}</h3>];
     }
-    if (text.startsWith("# ")) return [<h2 id="summary" key={index}>{text.slice(2)}</h2>];
+    if (text.startsWith("# ")) return [<h2 id="summary" key={index}>{renderInlineBold(text.slice(2), `h2-${index}`)}</h2>];
     if (text.startsWith("- ")) {
-      return [<ul key={index}>{text.split("\n").map((line) => <li key={line}>{line.replace(/^-\s*/, "")}</li>)}</ul>];
+      return [<ul key={index}>{text.split("\n").map((line, lineIndex) => <li key={`${lineIndex}-${line}`}>{renderInlineBold(line.replace(/^-\s*/, ""), `li-${index}-${lineIndex}`)}</li>)}</ul>];
     }
-    if (text.startsWith("> ")) return [<p className="article-note" key={index}>{text.slice(2)}</p>];
-    return [<p key={index}>{text}</p>];
+    if (text.startsWith("> ")) return [<p className="article-note" key={index}>{renderInlineBold(text.slice(2), `note-${index}`)}</p>];
+    return [<p key={index}>{renderInlineBold(text, `p-${index}`)}</p>];
+  });
+}
+
+const inlineBoldPattern = /(\*\*[^*]+\*\*)/g;
+
+function renderInlineBold(text: string, keyPrefix: string): ReactNode[] {
+  return text.split(inlineBoldPattern).filter(Boolean).map((part, index) => {
+    const key = `${keyPrefix}-${index}`;
+    return part.startsWith("**") && part.endsWith("**")
+      ? <strong key={key}>{part.slice(2, -2)}</strong>
+      : <Fragment key={key}>{part}</Fragment>;
   });
 }
 

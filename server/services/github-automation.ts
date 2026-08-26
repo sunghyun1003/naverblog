@@ -183,7 +183,15 @@ interface GitHubFileResponse {
 export interface GeneratedArticle {
   planning?: { topic?: string };
   seo?: { primaryKeyword?: string };
-  article?: { title?: string };
+  article?: {
+    title?: string;
+    visualPlan?: Array<{
+      afterSection?: number;
+      purpose?: "concept" | "comparison" | "checklist" | "process";
+      brief?: string;
+      altText?: string;
+    }>;
+  };
   factChecks?: Array<{
     claim?: string;
     status?: string;

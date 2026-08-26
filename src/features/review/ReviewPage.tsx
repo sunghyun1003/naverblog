@@ -6,6 +6,7 @@ import {
   ExternalLink,
   FileCheck2,
   Globe2,
+  Images,
   SearchCheck,
   ShieldAlert,
   UserRound,
@@ -23,6 +24,40 @@ import { EvidenceReviewPanel, evidenceReviewFrom } from "./EvidenceReviewPanel";
 import { useContentDetail } from "./useContentDetail";
 
 type ReviewTab = "draft" | "sources" | "history";
+
+interface VisualPlanItem {
+  afterSection: number;
+  purpose: "concept" | "comparison" | "checklist" | "process";
+  brief: string;
+  altText: string;
+}
+
+const visualPurposeLabel: Record<VisualPlanItem["purpose"], string> = {
+  concept: "개념 설명",
+  comparison: "비교",
+  checklist: "체크리스트",
+  process: "절차",
+};
+
+function visualPlanFrom(version: ApiContentVersion | null): VisualPlanItem[] {
+  const value = version?.metadata.visualPlan;
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const candidate = item as Record<string, unknown>;
+    const purpose = candidate.purpose;
+    if (!Number.isInteger(candidate.afterSection)
+      || !["concept", "comparison", "checklist", "process"].includes(String(purpose))
+      || typeof candidate.brief !== "string"
+      || typeof candidate.altText !== "string") return [];
+    return [{
+      afterSection: candidate.afterSection as number,
+      purpose: purpose as VisualPlanItem["purpose"],
+      brief: candidate.brief,
+      altText: candidate.altText,
+    }];
+  });
+}
 
 const pipelineStageLabel: Record<string, string> = {
   collect_trends: "트렌드 수집",
@@ -160,6 +195,7 @@ export function ReviewPage() {
   const toneDiffSummary = Array.isArray(latestVersion?.metadata.diffSummary)
     ? latestVersion.metadata.diffSummary.filter((item): item is string => typeof item === "string")
     : [];
+  const visualPlan = visualPlanFrom(latestVersion);
   const copyPackage = typeof latestVersion?.metadata.copyPackage === "string" ? latestVersion.metadata.copyPackage : latestVersion?.body ?? "";
   const jumpTo = (id: string) => {
     setActiveOutline(id);
@@ -326,6 +362,21 @@ export function ReviewPage() {
                 <p className="review-empty-inline">저장된 말투 보정 변경 요약이 없습니다.</p>
               )}
             </div>
+          </section>
+
+          <section className="inspector-section">
+            <h3>시각 자료 계획</h3>
+            {visualPlan.length ? (
+              <ol className="visual-plan-list">
+                {visualPlan.map((visual, index) => (
+                  <li key={`${visual.afterSection}-${visual.purpose}-${index}`}>
+                    <span><Images size={16} />{visualPurposeLabel[visual.purpose]} · 본문 {visual.afterSection}절 뒤</span>
+                    <p>{visual.brief}</p>
+                    <small>대체 텍스트: {visual.altText}</small>
+                  </li>
+                ))}
+              </ol>
+            ) : <p className="review-empty-inline">저장된 시각 자료 계획이 없습니다.</p>}
           </section>
 
           <section className="inspector-section">

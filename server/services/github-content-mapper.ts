@@ -250,6 +250,7 @@ export function draftToDetail(draft: AutomationDraftDetail): ContentDetail {
         toneVerdict: draft.toneVerdict,
         toneReview: draft.toneReview ?? null,
         toneAttempts: draft.toneAttempts ?? null,
+        visualPlan: draft.article.article?.visualPlan ?? [],
         evidenceReview: draft.evidencePackage ?? null,
         revision: currentRevision,
         diffSummary: ["Humanizer 33개 패턴 진단", "피드백 반영 재작성", "사실·출처 보존 자체 감사"],

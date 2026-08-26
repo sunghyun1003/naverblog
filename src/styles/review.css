@@ -482,6 +482,43 @@
   line-height: 18px;
 }
 
+.visual-plan-list {
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-2);
+  overflow: hidden;
+  background: var(--color-bg-default);
+}
+
+.visual-plan-list li {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-3);
+}
+
+.visual-plan-list li + li {
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+.visual-plan-list span {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-text-primary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.visual-plan-list p,
+.visual-plan-list small {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.visual-plan-list small {
+  color: var(--color-text-muted);
+}
+
 .source-list button {
   width: 100%;
   min-height: 43px;

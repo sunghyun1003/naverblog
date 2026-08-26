@@ -28,7 +28,10 @@ function draft(): AutomationDraftDetail {
     article: {
       planning: { topic: "실손보험 전환" },
       seo: { primaryKeyword: "실손보험 전환" },
-      article: { title: "실손보험 전환 체크리스트" },
+      article: {
+        title: "실손보험 전환 체크리스트",
+        visualPlan: [{ afterSection: 2, purpose: "comparison", brief: "두 조건을 표로 비교", altText: "보험 조건 비교표" }],
+      },
       factChecks: [{ claim: "약관 확인이 필요하다", status: "NEEDS_REVIEW", verificationNote: "사람이 확인한다." }],
       sources: [{ title: "참고 글", url: "https://blog.naver.com/example/1" }],
     },
@@ -449,4 +452,5 @@ test("사람 말투 검사는 실제 재작성 횟수와 최종 피드백을 표
   assert.match(tone?.messages[0] ?? "", /자동 재작성 1회/);
   assert.match(tone?.messages[0] ?? "", /반복 표현을 줄여/);
   assert.equal((metadata?.toneAttempts as { selectedReviewIndex?: number })?.selectedReviewIndex, 1);
+  assert.deepEqual(metadata?.visualPlan, [{ afterSection: 2, purpose: "comparison", brief: "두 조건을 표로 비교", altText: "보험 조건 비교표" }]);
 });

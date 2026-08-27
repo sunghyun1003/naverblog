@@ -41,7 +41,7 @@ test("트렌드 목록은 가장 최근 수집 시각의 배치만 조회한다"
   assert.deepEqual(calls[0]!.values, ["carrot-company"]);
 });
 
-test("품질 검사 메시지는 PostgreSQL jsonb 값으로 직렬화한다", async () => {
+test("품질 검사 결과 전체를 PostgreSQL 한 번의 쿼리로 저장한다", async () => {
   const calls: Array<{ sql: string; values: unknown[] }> = [];
   const pool = {
     query: async (sql: string, values: unknown[]) => {
@@ -51,17 +51,33 @@ test("품질 검사 메시지는 PostgreSQL jsonb 값으로 직렬화한다", as
   } as unknown as Pool;
   const repository = new PostgresAutomationRepository("carrot-company", pool);
 
-  await repository.saveQualityResults("content-1", [{
-    id: "quality-1",
-    contentId: "content-1",
-    versionId: "version-1",
-    category: "facts",
-    status: "warning",
-    score: 80,
-    messages: ["사실 확인이 필요합니다."],
-    checkedAt: "2026-08-24T00:00:00.000Z",
-  }]);
+  await repository.saveQualityResults("content-1", [
+    {
+      id: "quality-1",
+      contentId: "content-1",
+      versionId: "version-1",
+      category: "facts",
+      status: "warning",
+      score: 80,
+      messages: ["사실 확인이 필요합니다."],
+      checkedAt: "2026-08-24T00:00:00.000Z",
+    },
+    {
+      id: "quality-2",
+      contentId: "content-1",
+      versionId: "version-1",
+      category: "editorial",
+      status: "passed",
+      score: 100,
+      messages: ["편집 구성이 균형 잡혔습니다."],
+      checkedAt: "2026-08-24T00:00:00.000Z",
+    },
+  ]);
 
   assert.equal(calls.length, 1);
-  assert.equal(calls[0]!.values[6], '["사실 확인이 필요합니다."]');
+  assert.match(calls[0]!.sql, /jsonb_to_recordset/);
+  const rows = JSON.parse(String(calls[0]!.values[0]));
+  assert.equal(rows.length, 2);
+  assert.deepEqual(rows[0].messages, ["사실 확인이 필요합니다."]);
+  assert.equal(rows[1].category, "editorial");
 });

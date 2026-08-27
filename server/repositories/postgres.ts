@@ -336,14 +336,27 @@ export class PostgresAutomationRepository implements AutomationRepository {
   }
 
   async saveQualityResults(contentId: string, results: QualityResult[]): Promise<QualityResult[]> {
-    for (const result of results) {
-      await this.pool.query(
-        `INSERT INTO qa_results (id, content_id, version_id, category, status, score, messages, checked_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-         ON CONFLICT (version_id, category) DO UPDATE SET status=EXCLUDED.status, score=EXCLUDED.score, messages=EXCLUDED.messages, checked_at=EXCLUDED.checked_at`,
-        [result.id, contentId, result.versionId, result.category, result.status, result.score, JSON.stringify(result.messages), result.checkedAt],
-      );
-    }
+    if (!results.length) return results;
+    const rows = results.map((result) => ({
+      id: result.id,
+      version_id: result.versionId,
+      category: result.category,
+      status: result.status,
+      score: result.score,
+      messages: result.messages,
+      checked_at: result.checkedAt,
+    }));
+    await this.pool.query(
+      `INSERT INTO qa_results (id, content_id, version_id, category, status, score, messages, checked_at)
+       SELECT incoming.id, $2, incoming.version_id, incoming.category, incoming.status,
+         incoming.score, incoming.messages, incoming.checked_at::timestamptz
+       FROM jsonb_to_recordset($1::jsonb) AS incoming(
+         id text, version_id text, category text, status text, score numeric, messages jsonb, checked_at text
+       )
+       ON CONFLICT (version_id, category) DO UPDATE SET
+         status=EXCLUDED.status, score=EXCLUDED.score, messages=EXCLUDED.messages, checked_at=EXCLUDED.checked_at`,
+      [JSON.stringify(rows), contentId],
+    );
     return results;
   }
 

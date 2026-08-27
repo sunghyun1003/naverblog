@@ -13,6 +13,21 @@ function searchTrendLabel(item: ApiTrendSnapshot["items"][number]) {
   return "검색 유지";
 }
 
+function scoreBreakdownLabel(item: ApiTrendSnapshot["items"][number]) {
+  const score = item.scoreBreakdown;
+  if (!score) return null;
+  const parts = [
+    ["정확도", score.similarityRank],
+    ["관련성", score.keywordRelevance],
+    ["검색 수요", score.relativeDemand],
+    ["최근 추이", score.trendMomentum],
+    ["4주 재등장", score.fourWeekPersistence],
+    ["최신성", score.freshness],
+    ["검색의도", score.intentFit],
+  ].filter((entry): entry is [string, number] => typeof entry[1] === "number");
+  return parts.length ? parts.map(([label, value]) => `${label} ${value}`).join(" · ") : null;
+}
+
 export function TrendsPage() {
   const [snapshot, setSnapshot] = useState<ApiTrendSnapshot | null>(null);
   const [query, setQuery] = useState("");
@@ -84,8 +99,9 @@ export function TrendsPage() {
           <section className="trend-list" aria-label="수집 콘텐츠">
             {items.map((item) => {
               const trendLabel = searchTrendLabel(item);
+              const breakdownLabel = scoreBreakdownLabel(item);
               return <a key={item.link} href={item.link} target="_blank" rel="noreferrer">
-                <div><strong>{item.title}</strong><p>{item.description}</p><small>{item.bloggername} · {item.postdate} · {item.matchedQueries.join(", ")}</small></div>
+                <div><strong>{item.title}</strong><p>{item.description}</p><small>{item.bloggername} · {item.postdate} · {item.matchedQueries.join(", ")}</small>{breakdownLabel ? <small className="trend-score-breakdown">{breakdownLabel}</small> : null}</div>
                 <span className="trend-signals" title="정확도순 위치는 NAVER API HUB 블로그 검색 결과이며 통합검색 화면 순위와 동일하다고 보장되지 않습니다.">
                   <small>{item.bestSimilarityRank ? `정확도 ${item.bestSimilarityRank}위` : "정확도 순위 없음"}</small>
                   {item.bestRecentRank ? <small>최신 {item.bestRecentRank}위</small> : null}

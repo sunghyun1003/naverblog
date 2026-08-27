@@ -189,11 +189,14 @@ export interface ApiTrendItem {
     momentumScore?: number;
   } | null;
   scoreBreakdown: {
+    total?: number;
     freshness?: number;
-    queryBreadth?: number;
     similarityRank?: number;
-    persistence?: number;
-    searchTrend?: number;
+    keywordRelevance?: number;
+    relativeDemand?: number;
+    trendMomentum?: number;
+    fourWeekPersistence?: number;
+    intentFit?: number;
   } | null;
 }
 

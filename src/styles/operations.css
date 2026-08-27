@@ -32,6 +32,7 @@
 .trend-list strong { font-size: 15px; line-height: 22px; }
 .trend-list p { margin: 5px 0; overflow: hidden; color: var(--color-text-secondary); font-size: 13px; line-height: 19px; text-overflow: ellipsis; white-space: nowrap; }
 .trend-list small { color: var(--color-text-muted); font-size: 12px; }
+.trend-list .trend-score-breakdown { display: block; margin-top: 6px; color: var(--color-text-secondary); line-height: 18px; }
 .trend-list > a > span { display: flex; align-items: center; gap: var(--space-3); color: var(--color-text-muted); }
 .trend-list b { color: var(--color-brand); font-size: 14px; }
 .trend-signals { flex-wrap: wrap; justify-content: flex-end; min-width: 250px; }

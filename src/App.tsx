@@ -31,7 +31,7 @@ export default function App() {
   return (
     <Routes>
       <Route element={<AppShell />}>
-        <Route index element={<Navigate to="/contents" replace />} />
+        <Route index element={<Navigate to="/home" replace />} />
         <Route
           path="home"
           element={<HomePage />}
@@ -55,7 +55,7 @@ export default function App() {
           element={<SettingsPage />}
         />
       </Route>
-      <Route path="*" element={<Navigate to="/contents" replace />} />
+      <Route path="*" element={<Navigate to="/home" replace />} />
     </Routes>
   );
 }

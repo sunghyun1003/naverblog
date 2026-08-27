@@ -7,11 +7,11 @@ const labels: Record<string, string> = {
   ai: "Codex 원고 생성",
   naverSearch: "네이버 블로그 수집",
   automation: "GitHub Actions",
-  publisher: "네이버 발행 패키지",
+  publisher: "네이버 복사용 발행 패키지",
   database: "운영 데이터 저장",
-  youtube: "YouTube 수집",
-  slack: "Slack 알림",
 };
+
+const integrationOrder = ["ai", "naverSearch", "publisher", "database", "automation"];
 
 export function SettingsPage() {
   const [capabilities, setCapabilities] = useState<ApiCapabilities | null>(null);
@@ -24,7 +24,10 @@ export function SettingsPage() {
         <header><h2>자동화 연결</h2><p>민감한 값은 화면에서 수정하지 않고 Google Secret Manager에서 관리합니다.</p></header>
         {loading ? <PageLoadingState label="연동 상태를 확인하는 중입니다." compact /> : (
           <div className="settings-list">
-            {Object.entries(capabilities?.integrations ?? {}).map(([name, value]) => (
+            {integrationOrder.flatMap((name) => {
+              const value = capabilities?.integrations[name];
+              return value ? [[name, value] as const] : [];
+            }).map(([name, value]) => (
               <div key={name}><div><strong>{labels[name] ?? name}</strong><small>{value.provider}</small></div><span className={value.configured ? "setting-state setting-state--on" : "setting-state"}>{value.configured ? "연결됨" : "미연동"}</span></div>
             ))}
           </div>

@@ -86,8 +86,10 @@ test("GitHub 운영 모드에서는 저장소 콘텐츠를 운영 데이터 저�
 
   const response = await app.inject({ method: "GET", url: "/api/system/capabilities" });
   assert.equal(response.statusCode, 200);
-  const capabilities = response.json<{ integrations: { database: { configured: boolean; provider: string } } }>();
+  const capabilities = response.json<{ integrations: Record<string, { configured: boolean; provider: string }> }>();
   assert.deepEqual(capabilities.integrations.database, { configured: true, provider: "github-contents" });
+  assert.equal("youtube" in capabilities.integrations, false);
+  assert.equal("slack" in capabilities.integrations, false);
 });
 
 test("Neon 동기화가 실패해도 GitHub 트렌드는 화면에 반환한다", async (context) => {

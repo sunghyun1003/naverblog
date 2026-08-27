@@ -30,7 +30,7 @@ class MockTrendCollector implements TrendCollector {
     return [
       ["naver_blog", `${topic}, 사람들이 가장 헷갈리는 기준`, "https://example.test/naver/trend-1", 86, 91, 55],
       ["community", `${topic} 실제 질문 모음`, "https://example.test/community/trend-2", 92, 88, 48],
-      ["youtube", `${topic} 핵심만 정리`, "https://example.test/youtube/trend-3", 79, 85, 52],
+      ["naver_blog", `${topic} 확인 기준 정리`, "https://example.test/naver/trend-3", 79, 85, 52],
     ].map(([sourceType, title, url, engagementScore, relevanceScore, trustScore]) => ({
       id: this.id(),
       sourceType: sourceType as TrendSignal["sourceType"],

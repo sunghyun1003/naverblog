@@ -248,8 +248,6 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     integrations: {
       ai: { configured: Boolean(githubAutomation), provider: githubAutomation ? "codex-oauth" : "mock" },
       naverSearch: { configured: Boolean(githubAutomation), provider: githubAutomation ? "naver-api" : "mock" },
-      youtube: { configured: false, provider: "mock" },
-      slack: { configured: false, provider: "mock" },
       publisher: { configured: Boolean(githubAutomation), provider: githubAutomation ? "copy-package" : "mock" },
       database: {
         configured: Boolean(githubAutomation) || databaseProvider === "postgres",

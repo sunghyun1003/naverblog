@@ -39,6 +39,15 @@ jobs:
 
       - uses: google-github-actions/setup-gcloud@v3
 
+      - name: 데이터베이스 마이그레이션·검증
+        env:
+          DATABASE_TEAM_ID: carrot-company
+        run: |
+          DATABASE_URL="$(gcloud secrets versions access latest --secret=dashboard-database-direct-url --project "${{ vars.GCP_PROJECT_ID }}")"
+          export DATABASE_URL
+          npm run db:migrate
+          npm run db:verify
+
       - name: Artifact Registry 로그인
         run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
 

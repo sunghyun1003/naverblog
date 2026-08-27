@@ -30,3 +30,10 @@ test("DB 검증은 편집 품질 스키마와 적용 기록을 확인한다", as
   assert.match(source, /002_editorial_quality\.sql/);
   assert.match(source, /qualityCategories/);
 });
+
+test("Cloud Run은 실제 풀링 DB의 편집 품질 스키마를 시작 시 확인한다", async () => {
+  const source = await readFile(new URL("../server/bootstrap.ts", import.meta.url), "utf8");
+  assert.match(source, /qa_results_category_check/);
+  assert.match(source, /002_editorial_quality\.sql/);
+  assert.match(source, /definition\.includes\("editorial"\)/);
+});

@@ -19,6 +19,9 @@ test("Neon 마이그레이션과 Cloud Run 배포가 직렬화되고 배포 전�
   assert.match(deployment, /DATABASE_TEAM_ID=carrot-company/);
   assert.match(deployment, /DATABASE_URL=dashboard-database-url:latest/);
   assert.match(deployment, /dashboard-database-direct-url/);
+  assert.match(deployment, /latest --secret=dashboard-database-url/);
+  assert.match(deployment, /DIRECT_DATABASE_URL/);
+  assert.match(deployment, /POOLED_DATABASE_URL/);
   const migrationIndex = deployment.indexOf("npm run db:migrate");
   const verificationIndex = deployment.indexOf("npm run db:verify");
   const deploymentIndex = deployment.indexOf("gcloud run deploy");

@@ -43,9 +43,14 @@ jobs:
         env:
           DATABASE_TEAM_ID: carrot-company
         run: |
-          DATABASE_URL="$(gcloud secrets versions access latest --secret=dashboard-database-direct-url --project "${{ vars.GCP_PROJECT_ID }}")"
+          DIRECT_DATABASE_URL="$(gcloud secrets versions access latest --secret=dashboard-database-direct-url --project "${{ vars.GCP_PROJECT_ID }}")"
+          POOLED_DATABASE_URL="$(gcloud secrets versions access latest --secret=dashboard-database-url --project "${{ vars.GCP_PROJECT_ID }}")"
+          DATABASE_URL="$DIRECT_DATABASE_URL"
           export DATABASE_URL
           npm run db:migrate
+          npm run db:verify
+          DATABASE_URL="$POOLED_DATABASE_URL"
+          export DATABASE_URL
           npm run db:verify
 
       - name: Artifact Registry 로그인

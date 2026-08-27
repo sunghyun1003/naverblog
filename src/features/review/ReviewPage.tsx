@@ -189,11 +189,13 @@ export function ReviewPage() {
         return {
           id: result.category,
           label: `${definition.label} ${result.score}점`,
+          status: result.status,
           icon: definition.icon,
           tone: result.status === "warning" || result.status === "failed" ? "warning" : definition.tone,
           detail: result.messages.join(" "),
         };
       });
+  const failedQualityItems = effectiveQualityItems.filter((item) => item.status === "failed");
   const toneDiffSummary = Array.isArray(latestVersion?.metadata.diffSummary)
     ? latestVersion.metadata.diffSummary.filter((item): item is string => typeof item === "string")
     : [];
@@ -211,6 +213,14 @@ export function ReviewPage() {
       window.setTimeout(() => firstFinalCheckRef.current?.focus(), 350);
       setToast("최종 확인 두 항목을 체크해야 승인할 수 있습니다.");
       window.setTimeout(() => setToast(""), 3200);
+      return;
+    }
+    if (failedQualityItems.length > 0) {
+      const firstFailure = failedQualityItems[0];
+      setExpandedQuality(firstFailure.id);
+      document.getElementById(`quality-${firstFailure.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+      setToast(`자동 검수 실패 ${failedQualityItems.length}건을 먼저 보완해야 승인할 수 있습니다.`);
+      window.setTimeout(() => setToast(""), 4200);
       return;
     }
     setDecisionBusy("approve");
@@ -322,6 +332,9 @@ export function ReviewPage() {
               <span>광고성 표현을 확인했어요</span>
             </label>
             {!finalChecksComplete && status === "review" ? <p>실제 승인 처리는 두 항목을 모두 확인한 뒤 가능합니다.</p> : null}
+            {failedQualityItems.length > 0 && status === "review" ? (
+              <p role="alert">자동 검수 실패 {failedQualityItems.length}건을 보완한 뒤 승인할 수 있습니다.</p>
+            ) : null}
           </section>
           {latestJob ? (
             <section className="pipeline-progress" aria-label="자동화 단계">
@@ -340,7 +353,7 @@ export function ReviewPage() {
             {effectiveQualityItems.map(({ id, label, tone, icon: Icon, detail: qualityDetail }) => {
               const expanded = expandedQuality === id;
               return (
-                <div className="quality-item" key={id}>
+                <div className="quality-item" id={`quality-${id}`} key={id}>
                   <button type="button" aria-expanded={expanded} onClick={() => setExpandedQuality(expanded ? "" : id)}>
                     <Icon className={`quality-icon quality-icon--${tone}`} size={20} />
                     <span>{label}</span>

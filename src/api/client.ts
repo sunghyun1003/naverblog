@@ -90,6 +90,15 @@ export function rejectContent(contentId: string, reason: string): Promise<ApiCon
   });
 }
 
+export function generateContentImages(contentId: string): Promise<{ accepted: boolean }> {
+  return request(`/api/contents/${encodeURIComponent(contentId)}/images/generate`, { method: "POST" });
+}
+
+export function contentImageUrl(contentId: string, assetId: string, version?: string): string {
+  const base = `${apiBaseUrl}/api/contents/${encodeURIComponent(contentId)}/images/${encodeURIComponent(assetId)}`;
+  return version ? `${base}?v=${encodeURIComponent(version)}` : base;
+}
+
 export function collectTrends(): Promise<{ accepted: boolean }> {
   return request("/api/automation/collect", { method: "POST" });
 }

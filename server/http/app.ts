@@ -35,6 +35,7 @@ const generationSchema = z.object({
   strategy: z.enum(["trend", "original"]).default("trend"),
 });
 const idParamsSchema = z.object({ id: z.string().min(1) });
+const imageParamsSchema = z.object({ id: z.string().min(1), assetId: z.string().regex(/^[a-z0-9-]+$/) });
 const refreshQuerySchema = z.object({ refresh: z.enum(["true", "false"]).default("false") });
 
 export interface AppOptions {
@@ -298,6 +299,16 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     if (githubAutomation) return getGitHubDetail(id, query.refresh === "true");
     return system.contentService.detail(id);
   });
+  app.get("/api/contents/:id/images/:assetId", async (request, reply) => {
+    const { id, assetId } = imageParamsSchema.parse(request.params);
+    if (!githubAutomation) return reply.status(404).send({ error: { code: "IMAGE_NOT_FOUND", message: "생성된 이미지를 찾을 수 없습니다.", details: null } });
+    const image = await githubAutomation.getDraftImage(id, assetId);
+    return reply
+      .header("Content-Type", image.contentType)
+      .header("Cache-Control", "private, max-age=300")
+      .header("ETag", `"${image.etag}"`)
+      .send(image.body);
+  });
   app.post("/api/contents/:id/pipeline", async (request, reply) => {
     const { id } = idParamsSchema.parse(request.params);
     const job = await system.contentService.runPipeline(id, idempotencyKey(request, `pipeline:${id}`), actorFrom(request, auth?.verifyCookie(request.headers.cookie)?.username));
@@ -338,9 +349,26 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       }, actor.id, draft.state);
       const updatedDraft = draftWithState(draft, state);
       const mirrorSynced = await persistGitHubDetailSafely(updatedDraft, "approve");
-      return { ...draftToContent(updatedDraft), mirrorSynced };
+      let imagesQueued = false;
+      try {
+        await githubAutomation.dispatch("images", { run_id: id });
+        imagesQueued = true;
+      } catch (error) {
+        app.log.warn({ err: error, contentId: id }, "Draft was approved, but image generation dispatch failed.");
+      }
+      return { ...draftToContent(updatedDraft), mirrorSynced, imagesQueued };
     }
     return system.contentService.approve(id, body.checks, actor);
+  });
+  app.post("/api/contents/:id/images/generate", async (request, reply) => {
+    const { id } = idParamsSchema.parse(request.params);
+    if (!githubAutomation) return reply.status(409).send({ error: { code: "AUTOMATION_UNAVAILABLE", message: "이미지 자동화가 연결되지 않았습니다.", details: null } });
+    const draft = await githubAutomation.getDraft(id);
+    if (draft.reviewStatus !== "approved") {
+      return reply.status(409).send({ error: { code: "CONTENT_NOT_APPROVED", message: "승인 완료된 원고만 이미지를 생성할 수 있습니다.", details: null } });
+    }
+    await githubAutomation.dispatch("images", { run_id: id });
+    return reply.status(202).send({ accepted: true });
   });
   app.post("/api/contents/:id/reject", async (request, reply) => {
     const { id } = idParamsSchema.parse(request.params);

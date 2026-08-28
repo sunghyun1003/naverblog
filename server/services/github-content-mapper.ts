@@ -253,6 +253,7 @@ export function draftToDetail(draft: AutomationDraftDetail): ContentDetail {
         toneReview: draft.toneReview ?? null,
         toneAttempts: draft.toneAttempts ?? null,
         visualPlan: draft.article.article?.visualPlan ?? [],
+        imagePackage: draft.imageManifest ?? draft.imageStatus ?? null,
         editorialQuality: draft.editorialQuality ?? null,
         evidenceReview: draft.evidencePackage ?? null,
         revision: currentRevision,

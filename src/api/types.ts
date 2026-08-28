@@ -23,8 +23,49 @@ export interface ApiContent {
   scheduledAt: string | null;
   publishedAt: string | null;
   mirrorSynced?: boolean;
+  imagesQueued?: boolean;
   rewriteQueued?: boolean;
   rewriteStatus?: "queued" | "completed" | "failed" | null;
+}
+
+export interface ApiGeneratedImageAsset {
+  id: string;
+  role: "hero" | "inline";
+  kind: "ai_generated";
+  path: string;
+  afterSection: number;
+  purpose: "concept" | "comparison" | "checklist" | "process";
+  altText: string;
+  width: number;
+  height: number;
+  bytes: number;
+  sha256: string;
+}
+
+export interface ApiGeneratedImagePackage {
+  schemaVersion: number;
+  status: "ready" | "failed";
+  generatedAt?: string;
+  updatedAt?: string;
+  runId: string;
+  sourceRevision?: number;
+  styleProfileId?: string;
+  technicalQualityPassed?: boolean;
+  humanReviewRequired?: boolean;
+  visualQuality?: {
+    overallPassed: boolean;
+    summary: string;
+    assets: Array<{
+      id: string;
+      passed: boolean;
+      scores: { realism: number; composition: number; relevance: number; artifactControl: number };
+      defects: string[];
+      recommendation: string;
+    }>;
+  };
+  message?: string;
+  checks?: Array<{ id: string; label: string; passed: boolean; detail: string }>;
+  assets?: ApiGeneratedImageAsset[];
 }
 
 export interface ApiFreshness {

@@ -79,8 +79,56 @@ export interface AutomationDraftDetail extends AutomationDraftSummary {
   editorialQuality?: GeneratedEditorialQuality | null;
   toneReview?: GeneratedToneReview | null;
   toneAttempts?: GeneratedToneAttempts | null;
+  imageManifest?: GeneratedImageManifest | null;
+  imageStatus?: GeneratedImageStatus | null;
   state: DashboardDraftState;
   revisions?: AutomationDraftRevision[];
+}
+
+export interface GeneratedImageAsset {
+  id: string;
+  role: "hero" | "inline";
+  kind: "ai_generated";
+  path: string;
+  afterSection: number;
+  purpose: "concept" | "comparison" | "checklist" | "process";
+  altText: string;
+  width: number;
+  height: number;
+  bytes: number;
+  sha256: string;
+}
+
+export interface GeneratedImageManifest {
+  schemaVersion: number;
+  status: "ready" | "failed";
+  generatedAt: string;
+  runId: string;
+  sourceRevision: number;
+  styleProfileId: string;
+  technicalQualityPassed: boolean;
+  humanReviewRequired: true;
+  visualQuality: {
+    overallPassed: boolean;
+    summary: string;
+    assets: Array<{
+      id: string;
+      passed: boolean;
+      scores: { realism: number; composition: number; relevance: number; artifactControl: number };
+      defects: string[];
+      recommendation: string;
+    }>;
+  };
+  checks: Array<{ id: string; label: string; passed: boolean; detail: string }>;
+  assets: GeneratedImageAsset[];
+}
+
+export interface GeneratedImageStatus {
+  schemaVersion: number;
+  status: "failed";
+  updatedAt: string;
+  runId: string;
+  message: string;
 }
 
 export interface GeneratedDiscoveryQualityCheck {
@@ -351,6 +399,16 @@ function encodeRepositoryPath(value: string): string {
   return value.split("/").map(encodeURIComponent).join("/");
 }
 
+function pathHasTraversal(value: string): boolean {
+  return value.includes("..") || value.includes("/") || value.includes("\\");
+}
+
+function imageContentType(value: string): string {
+  if (/\.png$/i.test(value)) return "image/png";
+  if (/\.webp$/i.test(value)) return "image/webp";
+  return "image/jpeg";
+}
+
 function defaultState(runId: string, generatedAt: string): DashboardDraftState {
   return {
     schemaVersion: 1,
@@ -404,7 +462,7 @@ export class GitHubAutomationService {
     return responses.flat().sort((left, right) => right.createdAt.localeCompare(left.createdAt));
   }
 
-  async dispatch(workflow: "collect" | "generate" | "rewrite", inputs: Record<string, string> = {}): Promise<void> {
+  async dispatch(workflow: "collect" | "generate" | "rewrite" | "images", inputs: Record<string, string> = {}): Promise<void> {
     await this.github(`/actions/workflows/${workflow}.yml/dispatches`, {
       method: "POST",
       body: JSON.stringify({ ref: this.config.branch, ...(Object.keys(inputs).length ? { inputs } : {}) }),
@@ -445,7 +503,7 @@ export class GitHubAutomationService {
     const revisionStatusPaths = paths
       .filter((file) => file.startsWith(`${basePath}/revisions/v`) && file.endsWith("/status.json"))
       .sort((left, right) => left.localeCompare(right, undefined, { numeric: true }));
-    const [status, article, articleMarkdown, copyPackage, sourcesMarkdown, evidencePackage, discoveryQuality, advertisingQuality, editorialQuality, toneReview, toneAttempts, state] = await Promise.all([
+    const [status, article, articleMarkdown, copyPackage, sourcesMarkdown, evidencePackage, discoveryQuality, advertisingQuality, editorialQuality, toneReview, toneAttempts, imageManifest, imageStatus, state] = await Promise.all([
       this.readJson<GeneratedStatus>(statusPath),
       this.readJson<GeneratedArticle>(`${basePath}/article.json`),
       this.readText(`${basePath}/article.md`),
@@ -457,6 +515,12 @@ export class GitHubAutomationService {
       this.readOptionalJson<GeneratedEditorialQuality>(`${basePath}/editorial-quality.json`),
       this.readOptionalJson<GeneratedToneReview>(`${basePath}/tone-review.json`),
       this.readOptionalJson<GeneratedToneAttempts>(`${basePath}/tone-attempts.json`),
+      paths.includes(`${basePath}/images/manifest.json`)
+        ? this.readOptionalJson<GeneratedImageManifest>(`${basePath}/images/manifest.json`)
+        : Promise.resolve(null),
+      paths.includes(`${basePath}/images/status.json`)
+        ? this.readOptionalJson<GeneratedImageStatus>(`${basePath}/images/status.json`)
+        : Promise.resolve(null),
       this.readState(runId),
     ]);
     const revisions = await Promise.all(revisionStatusPaths.map(async (revisionStatusPath) => {
@@ -476,7 +540,27 @@ export class GitHubAutomationService {
         createdAt: revisionStatus.updatedAt ?? revisionStatus.generatedAt ?? status.generatedAt ?? new Date(0).toISOString(),
       };
     }));
-    return { ...this.summary(runId, status, article, state), articleMarkdown, copyPackage, sourcesMarkdown, article, evidencePackage, discoveryQuality, advertisingQuality, editorialQuality, toneReview, toneAttempts, state, revisions };
+    return { ...this.summary(runId, status, article, state), articleMarkdown, copyPackage, sourcesMarkdown, article, evidencePackage, discoveryQuality, advertisingQuality, editorialQuality, toneReview, toneAttempts, imageManifest, imageStatus, state, revisions };
+  }
+
+  async getDraftImage(runId: string, assetId: string): Promise<{ body: Buffer; contentType: string; etag: string }> {
+    if (!/^\d+$/.test(runId) || !/^[a-z0-9-]+$/.test(assetId)) {
+      throw new DomainError("IMAGE_NOT_FOUND", "이미지 경로가 올바르지 않습니다.", 404);
+    }
+    const tree = await this.tree();
+    const statusPath = tree.map((item) => item.path).find((file) => file.endsWith(`/run-${runId}/status.json`));
+    if (!statusPath) throw new DomainError("IMAGE_NOT_FOUND", "원고를 찾을 수 없습니다.", 404);
+    const basePath = statusPath.slice(0, -"/status.json".length);
+    const manifest = await this.readOptionalJson<GeneratedImageManifest>(`${basePath}/images/manifest.json`);
+    const asset = manifest?.assets.find((candidate) => candidate.id === assetId);
+    if (!asset || pathHasTraversal(asset.path)) throw new DomainError("IMAGE_NOT_FOUND", "생성된 이미지를 찾을 수 없습니다.", 404);
+    const file = await this.file(`${basePath}/images/${asset.path}`);
+    if (file.encoding !== "base64") throw new Error(`지원하지 않는 GitHub 파일 인코딩입니다: ${file.encoding}`);
+    return {
+      body: Buffer.from(file.content.replace(/\s/g, ""), "base64"),
+      contentType: imageContentType(asset.path),
+      etag: file.sha,
+    };
   }
 
   async getTrends() {

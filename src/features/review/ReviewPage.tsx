@@ -15,7 +15,8 @@ import {
 } from "lucide-react";
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import type { ApiContentVersion } from "../../api/types";
+import { contentImageUrl, generateContentImages } from "../../api/client";
+import type { ApiContentVersion, ApiGeneratedImagePackage } from "../../api/types";
 import { Button } from "../../components/Button";
 import { PageLoadingState } from "../../components/PageLoadingState";
 import { StatusBadge } from "../../components/StatusBadge";
@@ -24,7 +25,7 @@ import { RejectDialog } from "./RejectDialog";
 import { EvidenceReviewPanel, evidenceReviewFrom } from "./EvidenceReviewPanel";
 import { useContentDetail } from "./useContentDetail";
 
-type ReviewTab = "draft" | "sources" | "history";
+type ReviewTab = "draft" | "sources" | "images" | "history";
 
 interface VisualPlanItem {
   afterSection: number;
@@ -60,6 +61,14 @@ function visualPlanFrom(version: ApiContentVersion | null): VisualPlanItem[] {
   });
 }
 
+function imagePackageFrom(version: ApiContentVersion | null): ApiGeneratedImagePackage | null {
+  const value = version?.metadata.imagePackage;
+  if (!value || typeof value !== "object") return null;
+  const candidate = value as Record<string, unknown>;
+  if (!['ready', 'failed'].includes(String(candidate.status)) || typeof candidate.runId !== "string") return null;
+  return candidate as unknown as ApiGeneratedImagePackage;
+}
+
 const pipelineStageLabel: Record<string, string> = {
   collect_trends: "트렌드 수집",
   verify_sources: "공식 근거 검증",
@@ -83,6 +92,9 @@ export function ReviewPage() {
   const [rejectOpen, setRejectOpen] = useState(false);
   const [decisionBusy, setDecisionBusy] = useState<"approve" | "reject" | null>(null);
   const [rewritePending, setRewritePending] = useState(false);
+  const [imagePending, setImagePending] = useState(false);
+  const [imageBusy, setImageBusy] = useState(false);
+  const [imageRequestStartedAt, setImageRequestStartedAt] = useState<number | null>(null);
   const [toast, setToast] = useState("");
   const finalChecksRef = useRef<HTMLElement>(null);
   const firstFinalCheckRef = useRef<HTMLInputElement>(null);
@@ -120,6 +132,47 @@ export function ReviewPage() {
       window.clearInterval(interval);
     };
   }, [refresh, rewritePending]);
+
+  useEffect(() => {
+    if (!imagePending) return;
+    let stopped = false;
+    let attempts = 0;
+    const poll = async () => {
+      attempts += 1;
+      try {
+        const next = await refresh();
+        if (stopped) return;
+        const nextPackage = imagePackageFrom(next.versions.at(-1) ?? null);
+        const packageTime = Date.parse(nextPackage?.generatedAt ?? nextPackage?.updatedAt ?? "");
+        const isNewResult = imageRequestStartedAt === null || (Number.isFinite(packageTime) && packageTime >= imageRequestStartedAt - 5_000);
+        if (nextPackage?.status === "ready" && isNewResult) {
+          setImagePending(false);
+          setImageRequestStartedAt(null);
+          setTab("images");
+          setToast("대표 이미지와 본문 이미지가 완성됐어요. 사용 전 미리보기를 확인해주세요.");
+          window.setTimeout(() => setToast(""), 5000);
+        } else if (nextPackage?.status === "failed" && isNewResult) {
+          setImagePending(false);
+          setImageRequestStartedAt(null);
+          setTab("images");
+          setToast("이미지 생성이 완료되지 않았습니다. 이미지 탭에서 다시 요청할 수 있어요.");
+          window.setTimeout(() => setToast(""), 5000);
+        } else if (attempts >= 40) {
+          setImagePending(false);
+          setToast("이미지 생성 시간이 길어지고 있습니다. GitHub Actions의 Generate approved draft images 실행을 확인해주세요.");
+          window.setTimeout(() => setToast(""), 7000);
+        }
+      } catch {
+        if (attempts >= 40 && !stopped) setImagePending(false);
+      }
+    };
+    void poll();
+    const interval = window.setInterval(() => void poll(), 15_000);
+    return () => {
+      stopped = true;
+      window.clearInterval(interval);
+    };
+  }, [imagePending, imageRequestStartedAt, refresh]);
 
   if (connectionStatus === "loading") {
     return (
@@ -176,6 +229,7 @@ export function ReviewPage() {
   }));
   const latestJob = detail.jobs[0] ?? null;
   const latestVersion = detail.versions.at(-1) ?? null;
+  const imagePackage = imagePackageFrom(latestVersion);
   const evidenceReview = evidenceReviewFrom(latestVersion);
   const effectiveQualityItems = detail.qualityResults.map((result) => {
         const definition = {
@@ -226,15 +280,38 @@ export function ReviewPage() {
     setDecisionBusy("approve");
     try {
       const updated = await approveApi({ sources: checks.sources, advertising: checks.ads });
-      setToast(updated?.mirrorSynced === false
+      if (updated?.imagesQueued === true) {
+        setImageRequestStartedAt(Date.now());
+        setImagePending(true);
+      }
+      setToast(updated?.imagesQueued === false
+        ? "원고는 승인됐지만 이미지 생성 요청에 실패했습니다. 이미지 탭에서 다시 요청해주세요."
+        : updated?.mirrorSynced === false
         ? "승인은 저장됐지만 운영 DB 동기화가 지연되고 있습니다. 잠시 후 다시 열어 확인해주세요."
-        : "원고를 승인했어요. 발행 일정에서 예약할 수 있습니다.");
+        : "원고를 승인하고 이미지 생성을 시작했어요. 완료되면 이미지 탭으로 이동합니다.");
     } catch (error) {
       setToast(error instanceof Error ? error.message : "승인 처리에 실패했습니다.");
     } finally {
       setDecisionBusy(null);
     }
     window.setTimeout(() => setToast(""), 3200);
+  };
+
+  const generateImages = async () => {
+    if (!contentId || imageBusy) return;
+    setImageBusy(true);
+    try {
+      setImageRequestStartedAt(Date.now());
+      await generateContentImages(contentId);
+      setImagePending(true);
+      setToast("이미지 생성을 요청했어요. 완료되면 자동으로 새 결과를 불러옵니다.");
+    } catch (error) {
+      setImageRequestStartedAt(null);
+      setToast(error instanceof Error ? error.message : "이미지 생성 요청에 실패했습니다.");
+    } finally {
+      setImageBusy(false);
+      window.setTimeout(() => setToast(""), 4200);
+    }
   };
 
   const reject = async (reason: string) => {
@@ -305,13 +382,15 @@ export function ReviewPage() {
 
         <section className="editor-region">
           <div className="editor-tabs" role="tablist" aria-label="원고 정보">
-            <button role="tab" aria-selected={tab === "draft"} onClick={() => setTab("draft")}>원고</button>
-            <button role="tab" aria-selected={tab === "sources"} onClick={() => setTab("sources")}>근거</button>
-            <button role="tab" aria-selected={tab === "history"} onClick={() => setTab("history")}>변경 이력</button>
+            <button type="button" role="tab" aria-selected={tab === "draft"} onClick={() => setTab("draft")}>원고</button>
+            <button type="button" role="tab" aria-selected={tab === "sources"} onClick={() => setTab("sources")}>근거</button>
+            <button type="button" role="tab" aria-selected={tab === "images"} onClick={() => setTab("images")}>이미지</button>
+            <button type="button" role="tab" aria-selected={tab === "history"} onClick={() => setTab("history")}>변경 이력</button>
           </div>
 
           {tab === "draft" ? <ArticleDraft title={latestVersion?.title} body={latestVersion?.body} /> : null}
           {tab === "sources" ? <EvidenceReviewPanel evidence={evidenceReview} sources={detail.sources} claims={detail.claims} /> : null}
+          {tab === "images" ? <ImageAssetsView contentId={detail.content.id} packageState={imagePackage} contentStatus={status} pending={imagePending} busy={imageBusy} onGenerate={() => void generateImages()} /> : null}
           {tab === "history" ? <HistoryView versions={detail.versions} /> : null}
         </section>
 
@@ -414,6 +493,76 @@ export function ReviewPage() {
       <RejectDialog open={rejectOpen} busy={decisionBusy !== null} onClose={() => setRejectOpen(false)} onReject={reject} />
       {toast ? <div className="snackbar" role="status">{toast}</div> : null}
     </div>
+  );
+}
+
+function ImageAssetsView({
+  contentId,
+  packageState,
+  contentStatus,
+  pending,
+  busy,
+  onGenerate,
+}: {
+  contentId: string;
+  packageState: ApiGeneratedImagePackage | null;
+  contentStatus: ContentStatus;
+  pending: boolean;
+  busy: boolean;
+  onGenerate: () => void;
+}) {
+  const assets = packageState?.assets ?? [];
+  const canGenerate = ["approved", "scheduled", "published"].includes(contentStatus);
+  const ready = packageState?.status === "ready" && packageState.technicalQualityPassed === true && assets.length > 0;
+  return (
+    <section className="image-assets" aria-label="생성 이미지">
+      <header className="image-assets__header">
+        <div>
+          <h2>블로그 이미지</h2>
+          <p>전달한 우수 샘플의 구도와 완성도를 참고해 대표 1장과 본문 2장을 실사 또는 고급 일러스트로 만듭니다.</p>
+        </div>
+        {canGenerate ? (
+          <Button variant={ready ? "outline" : "brand"} disabled={pending || busy} icon={<Images size={17} />} onClick={onGenerate}>
+            {pending ? "생성 중" : busy ? "요청 중" : ready ? "다시 생성" : "이미지 생성"}
+          </Button>
+        ) : null}
+      </header>
+
+      {pending ? (
+        <div className="image-assets__state"><PageLoadingState label="고품질 대표 이미지와 본문 이미지를 생성하는 중입니다." /></div>
+      ) : ready ? (
+        <>
+          <div className="image-assets__grid">
+            {assets.map((asset) => (
+              <figure className={asset.role === "hero" ? "image-asset image-asset--hero" : "image-asset"} key={asset.id}>
+                <img src={contentImageUrl(contentId, asset.id, packageState.generatedAt)} alt={asset.altText} loading="lazy" />
+                <figcaption>
+                  <div><strong>{asset.role === "hero" ? "대표 이미지" : `본문 ${asset.afterSection}절 뒤`}</strong><span>AI 실사·일러스트</span></div>
+                  <p>{asset.altText}</p>
+                  <small>{asset.width}×{asset.height} · {Math.round(asset.bytes / 1024)}KB</small>
+                </figcaption>
+              </figure>
+            ))}
+          </div>
+          <div className="image-assets__checks">
+            <strong>자동 품질 검사</strong>
+            {(packageState.checks ?? []).map((check) => <span key={check.id} className={check.passed ? "passed" : "failed"}><CheckCircle2 size={16} />{check.label} · {check.detail}</span>)}
+            <span className={packageState.visualQuality?.overallPassed ? "passed" : "failed"}><CheckCircle2 size={16} />AI 시각 품질 검사 · {packageState.visualQuality?.overallPassed ? "통과" : "확인 필요"}</span>
+            <p>{packageState.visualQuality?.summary ?? "해상도·비율·용량 기준을 통과했습니다."} 최종 사용 전에는 사람·손·차량 디테일과 주제 적합성을 눈으로 한 번 더 확인해주세요.</p>
+          </div>
+        </>
+      ) : packageState?.status === "failed" ? (
+        <div className="image-assets__state image-assets__state--failed">
+          <strong>이미지 생성이 완료되지 않았습니다.</strong>
+          <p>{packageState.message ?? "GitHub Actions 실행 기록을 확인하거나 다시 생성해주세요."}</p>
+        </div>
+      ) : (
+        <div className="image-assets__state">
+          <strong>{canGenerate ? "아직 생성된 이미지가 없습니다." : "원고 승인 후 이미지를 생성합니다."}</strong>
+          <p>{canGenerate ? "이미지 생성을 누르면 대표 이미지 1장과 본문 이미지 2장을 만듭니다." : "원고 내용이 확정된 뒤에만 생성해 사용 한도와 재작업을 줄입니다."}</p>
+        </div>
+      )}
+    </section>
   );
 }
 

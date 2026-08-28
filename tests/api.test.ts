@@ -567,3 +567,40 @@ test("말투 보정 또는 최신 품질 검사에 실패한 GitHub 원고는 �
   assert.deepEqual(factsResponse.json<{ error: { details: { failedCategories: string[] } } }>().error.details.failedCategories, ["facts"]);
   assert.equal(updates, 0);
 });
+
+test("원고 승인 시 이미지 생성을 시작하고 승인 원고는 다시 생성할 수 있다", async (context) => {
+  let draft = reviewDraft("909", "이미지 생성 검증 원고");
+  const dispatches: Array<{ workflow: string; inputs: Record<string, string> }> = [];
+  const githubAutomation = {
+    getDraft: async () => draft,
+    updateState: async (
+      _runId: string,
+      changes: Partial<DashboardDraftState>,
+      actor: string,
+      currentState?: DashboardDraftState,
+    ) => {
+      assert.equal(currentState, draft.state);
+      const state = changedState(draft, changes, actor);
+      draft = reviewDraft(draft.runId, draft.title, state);
+      return state;
+    },
+    dispatch: async (workflow: string, inputs: Record<string, string>) => {
+      dispatches.push({ workflow, inputs });
+    },
+  } as unknown as GitHubAutomationService;
+  const app = buildApp({ githubAutomation, databaseProvider: "memory" });
+  context.after(() => app.close());
+
+  const approved = await app.inject({
+    method: "POST",
+    url: "/api/contents/909/approve",
+    payload: { checks: { sources: true, advertising: true } },
+  });
+  assert.equal(approved.statusCode, 200);
+  assert.equal(approved.json<{ imagesQueued: boolean }>().imagesQueued, true);
+  assert.deepEqual(dispatches[0], { workflow: "images", inputs: { run_id: "909" } });
+
+  const regenerated = await app.inject({ method: "POST", url: "/api/contents/909/images/generate" });
+  assert.equal(regenerated.statusCode, 202);
+  assert.deepEqual(dispatches[1], { workflow: "images", inputs: { run_id: "909" } });
+});

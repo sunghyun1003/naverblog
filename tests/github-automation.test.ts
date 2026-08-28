@@ -21,6 +21,7 @@ test("GitHub Actions 실행 상태와 생성 원고를 읽는다", async () => {
     if (url.includes("/actions/workflows/generate.yml/runs")) return json({ workflow_runs: [{ id: 2, status: "completed", conclusion: "success", created_at: "2026-08-18T01:00:00Z", updated_at: "2026-08-18T01:02:00Z", html_url: "https://github.com/run/2" }] });
     if (url.endsWith("/actions/workflows/generate.yml/dispatches")) return new Response(null, { status: 204 });
     if (url.endsWith("/actions/workflows/rewrite.yml/dispatches")) return new Response(null, { status: 204 });
+    if (url.endsWith("/actions/workflows/images.yml/dispatches")) return new Response(null, { status: 204 });
     if (url.includes("/git/trees/main")) return json({ truncated: false, tree: [
       { path: "output/drafts/2026-08-18/run-123/status.json", type: "blob" },
       { path: "output/drafts/2026-08-18/run-123/article.json", type: "blob" },
@@ -66,10 +67,38 @@ test("GitHub Actions 실행 상태와 생성 원고를 읽는다", async () => {
 
   await service.dispatch("generate", { topic: "실손보험", strategy: "trend" });
   await service.dispatch("rewrite", { run_id: "123" });
+  await service.dispatch("images", { run_id: "123" });
   const dispatches = requests.filter((request) => request.method === "POST");
   assert.match(dispatches[0]?.body ?? "", /실손보험/);
   assert.match(dispatches[1]?.url ?? "", /rewrite\.yml\/dispatches$/);
   assert.match(dispatches[1]?.body ?? "", /"run_id":"123"/);
+  assert.match(dispatches[2]?.url ?? "", /images\.yml\/dispatches$/);
+  assert.match(dispatches[2]?.body ?? "", /"run_id":"123"/);
+});
+
+test("이미지 manifest에 등록된 파일만 GitHub에서 읽는다", async () => {
+  const imageBytes = Buffer.from("generated-image");
+  const mockFetch = (async (input: string | URL | Request) => {
+    const url = String(input);
+    if (url.includes("/git/trees/main")) return json({ truncated: false, tree: [
+      { path: "output/drafts/2026-08-28/run-555/status.json", type: "blob" },
+      { path: "output/drafts/2026-08-28/run-555/images/manifest.json", type: "blob" },
+      { path: "output/drafts/2026-08-28/run-555/images/hero.jpg", type: "blob" },
+    ] });
+    if (url.includes("images%2Fmanifest.json") || url.includes("images/manifest.json")) return file({
+      status: "ready",
+      assets: [{ id: "hero", path: "hero.jpg" }],
+    });
+    if (url.includes("hero.jpg")) return json({ content: imageBytes.toString("base64"), encoding: "base64", sha: "image-sha" });
+    return json({ message: "Not Found" }, 404);
+  }) as typeof fetch;
+  const service = new GitHubAutomationService({ owner: "owner", repository: "repo", branch: "main", token: "token" }, mockFetch);
+
+  const image = await service.getDraftImage("555", "hero");
+  assert.deepEqual(image.body, imageBytes);
+  assert.equal(image.contentType, "image/jpeg");
+  assert.equal(image.etag, "image-sha");
+  await assert.rejects(() => service.getDraftImage("555", "not-in-manifest"), (error: unknown) => (error as { code?: string }).code === "IMAGE_NOT_FOUND");
 });
 
 test("재작성된 원고와 이전 버전을 함께 읽는다", async () => {

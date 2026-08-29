@@ -30,6 +30,8 @@
 | POST | `/api/contents/:id/images/generate` | 승인 원고 이미지 3장 생성 또는 재생성 |
 | GET | `/api/contents/:id/images/:assetId` | 생성 이미지 미리보기 |
 | POST | `/api/contents/:id/reject` | 반려와 사유 기록 후 기존 원고 자동 재작성 요청 |
+| PATCH | `/api/contents/:id` | 제목·본문을 수동 수정해 새 버전으로 저장하고 검토 대기로 전환 |
+| DELETE | `/api/contents/:id` | 원문·이력을 보존하는 소프트 삭제(목록에서 숨김) |
 | POST | `/api/contents/:id/schedule` | 발행 예약 |
 | POST | `/api/contents/:id/publish` | 승인·예약된 원고 발행 |
 | GET | `/api/trends` | 수집된 트렌드 목록 |

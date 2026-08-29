@@ -665,6 +665,7 @@ function ImageAssetsView({
   const displayable = assets.length > 0;
   const packageGeneratedAt = packageState?.generatedAt;
   const visualQuality = packageState?.visualQuality;
+  const visualQualityByAsset = new Map((visualQuality?.assets ?? []).map((item) => [item.id, item]));
   return (
     <section className="image-assets" aria-label="생성 이미지">
       <header className="image-assets__header">
@@ -694,6 +695,17 @@ function ImageAssetsView({
               <figure className={asset.role === "hero" ? "image-asset image-asset--hero" : "image-asset"} key={asset.id}>
                 <img src={contentImageUrl(contentId, asset.id, packageGeneratedAt)} alt={asset.altText} loading="lazy" />
                 <figcaption>
+                  {(() => {
+                    const quality = visualQualityByAsset.get(asset.id);
+                    if (!quality || quality.passed) return null;
+                    const detail = quality.defects.length > 0 ? quality.defects.join(" · ") : quality.recommendation;
+                    return (
+                      <div className="image-asset__quality image-asset__quality--failed">
+                        <strong>재생성 권장</strong>
+                        <p>{detail}</p>
+                      </div>
+                    );
+                  })()}
                   <div><strong>{asset.role === "hero" ? "대표 이미지" : `본문 ${asset.afterSection}절 뒤`}</strong><span>AI 실사·일러스트</span></div>
                   <p>{asset.altText}</p>
                   <div className="image-asset__feedback">

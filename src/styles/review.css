@@ -1160,6 +1160,27 @@
   padding: var(--space-3) var(--space-4) var(--space-4);
 }
 
+.image-asset__quality {
+  display: grid;
+  gap: 4px;
+  margin-bottom: var(--space-3);
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--color-warning-weak, #fff4e6);
+  color: var(--color-warning, #b45309);
+}
+
+.image-asset__quality strong {
+  font-size: 12px;
+}
+
+.image-asset__quality p {
+  margin-top: 0;
+  color: inherit;
+  font-size: 11px;
+  line-height: 16px;
+}
+
 .image-asset figcaption > div {
   display: flex;
   align-items: center;

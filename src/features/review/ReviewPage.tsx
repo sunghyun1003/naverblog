@@ -253,14 +253,27 @@ export function ReviewPage() {
               : "planning";
   const finalChecksComplete = checks.sources && checks.ads;
   const staleDetail = detail.freshness?.stale === true;
-  const canRequestApproval = status === "review" && connectionStatus === "connected" && !staleDetail && decisionBusy === null;
+  const latestJob = detail.jobs[0] ?? null;
+  const pipelineBusy = ["queued", "running"].includes(latestJob?.status ?? "")
+    || detail.content.rewriteStatus === "queued";
+  // A failed quality run is still actionable: the reviewer should be able to
+  // reject it and trigger a rewrite instead of being trapped on this page.
+  const canReject = (status === "review" || (status === "drafting" && !pipelineBusy))
+    && connectionStatus === "connected"
+    && !staleDetail
+    && decisionBusy === null;
+  // Keep approval visible for a generated draft. The handler explains which
+  // quality gate is blocking approval and focuses that section for the user.
+  const canRequestApproval = (status === "review" || status === "drafting")
+    && connectionStatus === "connected"
+    && !staleDetail
+    && decisionBusy === null;
   const currentSources = detail.sources.map((source) => ({
     organization: source.organization,
     date: source.collectedAt.slice(0, 10),
     note: source.title,
     url: /^https?:\/\//i.test(source.url) ? source.url : "",
   }));
-  const latestJob = detail.jobs[0] ?? null;
   const latestVersion = detail.versions.at(-1) ?? null;
   const imagePackage = imagePackageFrom(latestVersion);
   const evidenceReview = evidenceReviewFrom(latestVersion);
@@ -302,6 +315,18 @@ export function ReviewPage() {
       window.setTimeout(() => firstFinalCheckRef.current?.focus(), 350);
       setToast("최종 확인 두 항목을 체크해야 승인할 수 있습니다.");
       window.setTimeout(() => setToast(""), 3200);
+      return;
+    }
+    if (status !== "review") {
+      const firstFailure = failedQualityItems[0];
+      if (firstFailure) {
+        setExpandedQuality(firstFailure.id);
+        document.getElementById(`quality-${firstFailure.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+        setToast("아직 검토 대기 상태가 아닙니다. 실패한 품질 점검을 먼저 보완해 주세요.");
+      } else {
+        setToast("자동화 단계가 끝난 뒤 승인할 수 있습니다. 잠시 후 새로고침해 주세요.");
+      }
+      window.setTimeout(() => setToast(""), 4200);
       return;
     }
     if (failedQualityItems.length > 0) {
@@ -426,7 +451,7 @@ export function ReviewPage() {
               window.setTimeout(() => setToast(""), 3200);
             });
           }}>원고 복사</Button>
-          <Button onClick={() => setRejectOpen(true)} disabled={status !== "review" || connectionStatus !== "connected" || staleDetail || decisionBusy !== null}>반려</Button>
+          <Button onClick={() => setRejectOpen(true)} disabled={!canReject}>반려</Button>
           <Button variant="brand" onClick={approve} disabled={!canRequestApproval} icon={status === "approved" ? <Check size={18} /> : undefined}>
             {status === "approved" ? "승인 완료" : decisionBusy === "approve" ? "승인 처리 중" : "승인하기"}
           </Button>

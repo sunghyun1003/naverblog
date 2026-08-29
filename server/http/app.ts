@@ -32,6 +32,9 @@ const editContentSchema = z.object({
   body: z.string().trim().min(20, "원고는 20자 이상 입력해주세요.").max(100_000),
   reason: z.string().trim().max(1000).nullable().default(null),
 });
+const bulkDeleteSchema = z.object({
+  ids: z.array(z.string().trim().min(1)).min(1).max(50),
+});
 const scheduleSchema = z.object({ scheduledAt: z.iso.datetime({ offset: true }) });
 const publicationSchema = z.object({ externalUrl: z.url().refine((value) => value.startsWith("https://blog.naver.com/"), "네이버 블로그 URL을 입력하세요.") });
 const loginSchema = z.object({ username: z.string().min(1).max(100), password: z.string().min(1).max(200) });
@@ -95,6 +98,27 @@ function draftWithState(draft: AutomationDraftDetail, state: DashboardDraftState
     deleted: Boolean(state.deletedAt),
     updatedAt: state.updatedAt,
   };
+}
+
+// A failed quality check is still a valid review outcome: the reviewer must be
+// able to reject it and send it back for rewriting. Only an active pipeline or
+// a terminal publication state should block rejection.
+const activePipelineMarkers = [
+  "QUEUED",
+  "RUNNING",
+  "IN_PROGRESS",
+  "COLLECTING",
+  "GENERATING",
+  "DRAFTING",
+  "HUMANIZING",
+  "REWRITING",
+  "PENDING",
+];
+
+function canRejectGitHubDraft(draft: AutomationDraftDetail): boolean {
+  if (draft.deleted || draft.reviewStatus !== "pending" || draft.publicationStatus !== "none") return false;
+  const pipelineStatus = (draft.pipelineStatus ?? "UNKNOWN").toUpperCase();
+  return !activePipelineMarkers.some((marker) => pipelineStatus.includes(marker));
 }
 
 function freshness(source: "github" | "postgres-cache" | "local", stale: boolean, asOf: string | null, mirrorSynced = true) {
@@ -201,7 +225,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     reply.header("Access-Control-Allow-Origin", origin);
     reply.header("Access-Control-Allow-Credentials", "true");
     reply.header("Access-Control-Allow-Headers", "Content-Type, X-User-Id, X-User-Roles, X-Idempotency-Key, X-Requested-With");
-    reply.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    reply.header("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
     if (request.method === "OPTIONS") return reply.status(204).send();
     if (!auth || !request.url.startsWith("/api/")) return;
     if (request.url.startsWith("/api/auth/login")) return;
@@ -306,6 +330,30 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       actorFrom(request, auth?.verifyCookie(request.headers.cookie)?.username),
     );
     return reply.status(201).send(content);
+  });
+  app.post("/api/contents/bulk-delete", async (request) => {
+    const { ids } = bulkDeleteSchema.parse(request.body);
+    const actor = actorFrom(request, auth?.verifyCookie(request.headers.cookie)?.username);
+    const items: Array<ReturnType<typeof draftToContent> & { mirrorSynced?: boolean }> = [];
+    const failures: Array<{ id: string; message: string }> = [];
+
+    // Process in order so GitHub decision-file writes cannot race each other.
+    for (const id of [...new Set(ids)]) {
+      try {
+        if (githubAutomation) {
+          const draft = await githubAutomation.getDraft(id);
+          const state = await githubAutomation.deleteDraft(id, actor.id, draft.state);
+          const updatedDraft = draftWithState(draft, state);
+          const mirrorSynced = await persistGitHubDetailSafely(updatedDraft, "bulk-delete");
+          items.push({ ...draftToContent(updatedDraft), mirrorSynced });
+        } else {
+          items.push(await system.contentService.delete(id, actor));
+        }
+      } catch (error) {
+        failures.push({ id, message: error instanceof Error ? error.message : "콘텐츠 삭제에 실패했습니다." });
+      }
+    }
+    return { items, failures };
   });
   app.get("/api/contents/:id", async (request) => {
     const { id } = idParamsSchema.parse(request.params);
@@ -417,8 +465,8 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     const actor = actorFrom(request, auth?.verifyCookie(request.headers.cookie)?.username);
     if (githubAutomation) {
       const draft = await githubAutomation.getDraft(id);
-      if (draftToContent(draft).state !== "review_ready") {
-        return reply.status(409).send({ error: { code: "CONTENT_NOT_REVIEW_READY", message: "검토 대기 상태의 원고만 반려할 수 있습니다.", details: null } });
+      if (!canRejectGitHubDraft(draft)) {
+        return reply.status(409).send({ error: { code: "CONTENT_NOT_REVIEW_READY", message: "검토가 끝난 원고 또는 품질 점검이 완료된 원고만 반려할 수 있습니다.", details: null } });
       }
       const rejectedAt = new Date().toISOString();
       const state = await githubAutomation.updateState(id, {

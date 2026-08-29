@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { createContent, generateContent, getCapabilities, listContents, runPipeline } from "../../api/client";
+import { useCallback, useEffect, useState } from "react";
+import { createContent, deleteContents, generateContent, getCapabilities, listContents, runPipeline } from "../../api/client";
 import { mapContent } from "../../api/mapping";
 import type { ApiCapabilities, ApiFreshness } from "../../api/types";
 import type { ContentItem } from "../../types/content";
@@ -12,28 +12,33 @@ export function useContents() {
   const [capabilities, setCapabilities] = useState<ApiCapabilities | null>(null);
   const [freshness, setFreshness] = useState<ApiFreshness | null>(null);
   const [creating, setCreating] = useState(false);
+  const [refreshVersion, setRefreshVersion] = useState(0);
+
+  const refresh = useCallback(async (signal?: AbortSignal) => {
+    const [contentResponse, capabilityResponse] = await Promise.all([
+      listContents(signal, true),
+      getCapabilities(signal),
+    ]);
+    setContents(contentResponse.items.map(mapContent));
+    setFreshness(contentResponse.freshness ?? null);
+    setCapabilities(capabilityResponse);
+    setConnectionStatus("connected");
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
-    const refresh = () => Promise.all([listContents(controller.signal, true), getCapabilities(controller.signal)])
-      .then(([contentResponse, capabilityResponse]) => {
-        setContents(contentResponse.items.map(mapContent));
-        setFreshness(contentResponse.freshness ?? null);
-        setCapabilities(capabilityResponse);
-        setConnectionStatus("connected");
-      })
-      .catch((error: unknown) => {
-        if (error instanceof DOMException && error.name === "AbortError") return;
-        setConnectionStatus("offline");
-      });
-    void refresh();
-    // 최신 GitHub 원고 조회는 비용이 크므로 최초 진입과 15분 주기로만 실행한다.
-    const interval = window.setInterval(() => void refresh(), 900_000);
+    void refresh(controller.signal).catch((error: unknown) => {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      setConnectionStatus("offline");
+    });
+    const interval = window.setInterval(() => {
+      void refresh(controller.signal).catch(() => setConnectionStatus("offline"));
+    }, 900_000);
     return () => {
       window.clearInterval(interval);
       controller.abort();
     };
-  }, []);
+  }, [refresh, refreshVersion]);
 
   const createAndRun = async (title: string, strategy: "trend" | "original") => {
     setCreating(true);
@@ -43,8 +48,7 @@ export function useContents() {
       } else {
         const content = await createContent({ title, topic: title, strategy });
         await runPipeline(content.id);
-        const refreshed = await listContents();
-        setContents(refreshed.items.map(mapContent));
+        await refresh();
       }
       setConnectionStatus("connected");
     } finally {
@@ -52,5 +56,20 @@ export function useContents() {
     }
   };
 
-  return { contents, connectionStatus, capabilities, freshness, creating, createAndRun };
+  const removeMany = async (ids: string[]) => {
+    const result = await deleteContents(ids);
+    await refresh();
+    return result;
+  };
+
+  return {
+    contents,
+    connectionStatus,
+    capabilities,
+    freshness,
+    creating,
+    createAndRun,
+    removeMany,
+    reload: () => setRefreshVersion((current) => current + 1),
+  };
 }

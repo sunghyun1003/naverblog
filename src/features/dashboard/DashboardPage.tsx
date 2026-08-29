@@ -7,8 +7,10 @@ import {
   Filter,
   Plus,
   Search,
+  Trash2,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type { ChangeEvent, MouseEvent } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "../../components/Button";
 import { StatusBadge } from "../../components/StatusBadge";
@@ -32,7 +34,7 @@ const isHostedPreview = import.meta.env.VITE_PREVIEW_MODE === "true";
 export function DashboardPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { contents, connectionStatus, capabilities, freshness, creating, createAndRun } = useContents();
+  const { contents, connectionStatus, capabilities, freshness, creating, createAndRun, removeMany } = useContents();
   const requestedFilter = searchParams.get("filter");
   const activeFilter: "all" | ContentStatus = requestedFilter && filters.some((filter) => filter.key === requestedFilter)
     ? requestedFilter as ContentStatus
@@ -42,6 +44,11 @@ export function DashboardPage() {
   const [filterOpen, setFilterOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [toast, setToast] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+
+  const deletable = (content: { status: ContentStatus }) =>
+    !["scheduled", "published", "deleted"].includes(content.status);
 
   const setActiveFilter = (filter: "all" | ContentStatus) => {
     const next = new URLSearchParams(searchParams);
@@ -59,6 +66,26 @@ export function DashboardPage() {
       return matchesStatus && matchesQuery && matchesMine;
     });
   }, [activeFilter, contents, mineOnly, query]);
+
+  const selectableContents = useMemo(
+    () => filteredContents.filter(deletable),
+    [filteredContents],
+  );
+  const allVisibleSelected = selectableContents.length > 0
+    && selectableContents.every((content) => selectedIds.has(content.id));
+
+  const stopSelectionClick = (event: MouseEvent<HTMLInputElement>) => {
+    event.stopPropagation();
+  };
+
+  const handleSelectionChange = (event: ChangeEvent<HTMLInputElement>, callback: () => void) => {
+    event.stopPropagation();
+    callback();
+  };
+
+  useEffect(() => {
+    setSelectedIds((current) => new Set([...current].filter((id) => contents.some((content) => content.id === id))));
+  }, [contents]);
 
   const reviewCount = contents.filter((content) => content.status === "review").length;
   const scheduledCount = contents.filter((content) => content.status === "scheduled").length;
@@ -88,6 +115,43 @@ export function DashboardPage() {
       setToast(error instanceof Error ? error.message : "자동화 실행에 실패했습니다.");
     }
     window.setTimeout(() => setToast(""), 3600);
+  };
+
+  const toggleSelected = (contentId: string) => {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(contentId)) next.delete(contentId);
+      else next.add(contentId);
+      return next;
+    });
+  };
+
+  const toggleAllVisible = () => {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (allVisibleSelected) selectableContents.forEach((content) => next.delete(content.id));
+      else selectableContents.forEach((content) => next.add(content.id));
+      return next;
+    });
+  };
+
+  const removeSelected = async () => {
+    const ids = [...selectedIds].filter((id) => contents.some((content) => content.id === id && deletable(content)));
+    if (!ids.length || bulkDeleting) return;
+    if (!window.confirm(`${ids.length}건의 콘텐츠를 삭제할까요? 삭제 후 목록에서 숨겨집니다.`)) return;
+    setBulkDeleting(true);
+    try {
+      const result = await removeMany(ids);
+      setSelectedIds(new Set());
+      setToast(result.failures.length
+        ? `${result.items.length}건 삭제 완료, ${result.failures.length}건은 삭제하지 못했습니다.`
+        : `${result.items.length}건을 삭제했습니다.`);
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "선택한 콘텐츠를 삭제하지 못했습니다.");
+    } finally {
+      setBulkDeleting(false);
+      window.setTimeout(() => setToast(""), 3600);
+    }
   };
 
   return (
@@ -174,43 +238,86 @@ export function DashboardPage() {
             <span className="sr-only">콘텐츠 검색</span>
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="콘텐츠 제목으로 검색" />
           </label>
-          <div className="filter-control">
-            <button
-              type="button"
-              className={`icon-button icon-button--bordered ${mineOnly ? "icon-button--selected" : ""}`}
-              aria-label="필터 옵션"
-              aria-expanded={filterOpen}
-              onClick={() => setFilterOpen((current) => !current)}
-            >
-              <Filter size={19} />
-            </button>
-            {filterOpen ? (
-              <div className="filter-popover">
-                <label>
-                  <input type="checkbox" checked={mineOnly} onChange={(event) => setMineOnly(event.target.checked)} />
-                  내 담당만 보기
-                </label>
+          <div className="content-toolbar__actions">
+            {selectedIds.size > 0 ? (
+              <div className="bulk-selection">
+                <span>{selectedIds.size}건 선택</span>
+                <Button variant="danger" size="small" icon={<Trash2 size={16} />} onClick={() => void removeSelected()} disabled={bulkDeleting}>
+                  {bulkDeleting ? "삭제 중..." : "선택 삭제"}
+                </Button>
               </div>
             ) : null}
+            <div className="filter-control">
+              <button
+                type="button"
+                className={`icon-button icon-button--bordered ${mineOnly ? "icon-button--selected" : ""}`}
+                aria-label="필터 옵션"
+                aria-expanded={filterOpen}
+                onClick={() => setFilterOpen((current) => !current)}
+              >
+                <Filter size={19} />
+              </button>
+              {filterOpen ? (
+                <div className="filter-popover">
+                  <label>
+                    <input type="checkbox" checked={mineOnly} onChange={(event) => setMineOnly(event.target.checked)} />
+                    내 담당만 보기
+                  </label>
+                </div>
+              ) : null}
+            </div>
           </div>
         </div>
 
         <div className="content-table" role="region" aria-label="콘텐츠 목록" tabIndex={0}>
           <div className="content-table__header" role="row">
-            <span>콘텐츠</span><span>상태</span><span>담당자</span><span>업데이트</span><span>발행 예정</span><span />
+            <span className="content-table__title-header">
+              <input
+                type="checkbox"
+                aria-label="현재 목록에서 삭제 가능한 콘텐츠 전체 선택"
+                checked={allVisibleSelected}
+                onClick={stopSelectionClick}
+                onChange={(event) => handleSelectionChange(event, toggleAllVisible)}
+                disabled={!selectableContents.length}
+              />
+              콘텐츠
+            </span><span>상태</span><span>담당자</span><span>업데이트</span><span>발행 예정</span><span />
           </div>
           <div className="content-table__body">
             {connectionStatus === "connecting" ? (
               <div className="content-list-loading" role="status"><span className="page-loading__spinner" aria-hidden="true" />실제 콘텐츠를 불러오는 중입니다.</div>
             ) : filteredContents.length ? filteredContents.map((content) => (
-              <button key={content.id} type="button" className="content-row" onClick={() => navigate(`/contents/${content.id}`)}>
-                <span className="content-row__title">{content.title}</span>
+              <div
+                key={content.id}
+                className={`content-row ${selectedIds.has(content.id) ? "content-row--selected" : ""}`}
+                role="link"
+                tabIndex={0}
+                onClick={() => navigate(`/contents/${content.id}`)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    navigate(`/contents/${content.id}`);
+                  }
+                }}
+              >
+                <span className="content-row__title">
+                  <input
+                    type="checkbox"
+                    aria-label={`${content.title} 선택`}
+                  checked={selectedIds.has(content.id)}
+                  disabled={!deletable(content)}
+                    onClick={stopSelectionClick}
+                    onKeyDown={(event) => event.stopPropagation()}
+                    onChange={(event) => handleSelectionChange(event, () => toggleSelected(content.id))}
+                  />
+                  <span>{content.title}</span>
+                </span>
                 <span><StatusBadge status={content.status} /></span>
                 <span className="assignee"><span className="avatar">{content.initials}</span>{content.assignee}</span>
                 <span className="content-row__meta" data-label="업데이트">{content.updatedAt}</span>
                 <span className="content-row__meta" data-label="발행 예정">{content.publishAt ?? "-"}</span>
                 <ChevronRight size={18} aria-hidden="true" />
-              </button>
+              </div>
             )) : (
               <div className="empty-list">
                 <strong>조건에 맞는 콘텐츠가 없어요.</strong>

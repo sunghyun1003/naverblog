@@ -226,6 +226,32 @@ test("원고 직접 수정은 새 수동 버전으로 저장하고 삭제는 목
   assert.equal(listed.json<{ items: Array<{ id: string }> }>().items.some((item) => item.id === content.id), false);
 });
 
+test("콘텐츠 일괄 삭제는 선택한 원고를 순서대로 숨긴다", async (context) => {
+  const system = testSystem();
+  const app = buildApp({ system });
+  context.after(() => app.close());
+  const actor = { id: "admin", roles: ["admin"] as const };
+  const first = await system.contentService.create(
+    { title: "일괄 삭제 첫 번째 원고", topic: "자동차보험", strategy: "trend", idempotencyKey: "bulk-delete-1" },
+    actor,
+  );
+  const second = await system.contentService.create(
+    { title: "일괄 삭제 두 번째 원고", topic: "자동차보험", strategy: "trend", idempotencyKey: "bulk-delete-2" },
+    actor,
+  );
+
+  const response = await app.inject({
+    method: "POST",
+    url: "/api/contents/bulk-delete",
+    payload: { ids: [first.id, second.id, first.id] },
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.json<{ items: unknown[]; failures: unknown[] }>().items.length, 2);
+  assert.equal(response.json<{ items: unknown[]; failures: unknown[] }>().failures.length, 0);
+  assert.equal((await system.contentService.list()).some((item) => [first.id, second.id].includes(item.id)), false);
+});
+
 test("권한 없는 역할의 승인을 거부한다", async (context) => {
   const system = testSystem();
   const app = buildApp({ system });
@@ -311,6 +337,44 @@ test("GitHub 원고는 검토 대기 상태에서만 승인하거나 반려할 �
   assert.equal(rejectScheduled.statusCode, 409);
   assert.equal(rejectScheduled.json<{ error: { code: string } }>().error.code, "CONTENT_NOT_REVIEW_READY");
   assert.equal(updates, 0);
+});
+
+test("GitHub 원고는 품질 검사가 실패해도 반려로 재작성을 요청할 수 있다", async (context) => {
+  let draft = reviewDraft("322", "품질 실패 원고");
+  draft.pipelineStatus = "TONE_REVIEW_FAILED";
+  draft.toneSkillApplied = false;
+  const githubAutomation = {
+    getDraft: async () => draft,
+    updateState: async (
+      _runId: string,
+      changes: Partial<DashboardDraftState>,
+      actor: string,
+      currentState?: DashboardDraftState,
+    ) => {
+      assert.equal(currentState, draft.state);
+      const state = changedState(draft, changes, actor);
+      draft = reviewDraft(draft.runId, draft.title, state);
+      draft.pipelineStatus = "TONE_REVIEW_FAILED";
+      draft.toneSkillApplied = false;
+      return state;
+    },
+    dispatch: async (workflow: string, inputs: Record<string, string>) => {
+      assert.equal(workflow, "rewrite");
+      assert.equal(inputs.run_id, "322");
+    },
+  } as unknown as GitHubAutomationService;
+  const app = buildApp({ githubAutomation, databaseProvider: "memory" });
+  context.after(() => app.close());
+
+  const response = await app.inject({
+    method: "POST",
+    url: "/api/contents/322/reject",
+    payload: { reason: "말투 점검에서 실패한 문장을 다시 다듬어 주세요." },
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.json<{ state: string }>().state, "drafting");
+  assert.equal(response.json<{ rewriteQueued: boolean }>().rewriteQueued, true);
 });
 
 test("서로 다른 GitHub 원고를 연속으로 반려한다", async (context) => {

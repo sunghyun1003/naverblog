@@ -104,6 +104,16 @@ export function deleteContent(contentId: string): Promise<ApiContent> {
   return request(`/api/contents/${encodeURIComponent(contentId)}`, { method: "DELETE" });
 }
 
+export function deleteContents(contentIds: string[]): Promise<{
+  items: ApiContent[];
+  failures: Array<{ id: string; message: string }>;
+}> {
+  return request("/api/contents/bulk-delete", {
+    method: "POST",
+    body: JSON.stringify({ ids: contentIds }),
+  });
+}
+
 export function generateContentImages(contentId: string): Promise<{ accepted: boolean }> {
   return request(`/api/contents/${encodeURIComponent(contentId)}/images/generate`, { method: "POST" });
 }

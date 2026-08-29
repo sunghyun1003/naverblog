@@ -16,6 +16,7 @@ export interface AutomationRepository {
   createContent(content: ContentRecord): Promise<ContentRecord>;
   updateContent(content: ContentRecord): Promise<ContentRecord>;
   getContent(id: string): Promise<ContentRecord | null>;
+  deleteContentPermanently(id: string): Promise<boolean>;
   findContentByCreationKey(key: string): Promise<ContentRecord | null>;
   listContents(): Promise<ContentRecord[]>;
   getContentDetail(id: string): Promise<ContentDetail | null>;

@@ -193,7 +193,7 @@ test("HTTP API로 생성부터 검수 상세 조회까지 실행한다", async (
   assert.equal(detail.claims.length, 3);
 });
 
-test("원고 직접 수정은 새 수동 버전으로 저장하고 삭제는 목록에서 숨긴다", async (context) => {
+test("원고 직접 수정은 수동 버전으로 저장하고 삭제하면 모든 저장소에서 제거한다", async (context) => {
   const system = testSystem();
   const app = buildApp({ system });
   context.after(() => app.close());
@@ -222,11 +222,13 @@ test("원고 직접 수정은 새 수동 버전으로 저장하고 삭제는 목
   const deleted = await app.inject({ method: "DELETE", url: `/api/contents/${content.id}`, headers: actorHeaders });
   assert.equal(deleted.statusCode, 200);
   assert.equal(deleted.json<{ state: string }>().state, "deleted");
+  const deletedDetail = await app.inject({ method: "GET", url: `/api/contents/${content.id}` });
+  assert.equal(deletedDetail.statusCode, 404);
   const listed = await app.inject({ method: "GET", url: "/api/contents" });
   assert.equal(listed.json<{ items: Array<{ id: string }> }>().items.some((item) => item.id === content.id), false);
 });
 
-test("콘텐츠 일괄 삭제는 선택한 원고를 순서대로 숨긴다", async (context) => {
+test("콘텐츠 일괄 삭제는 선택한 원고를 모든 저장소에서 제거한다", async (context) => {
   const system = testSystem();
   const app = buildApp({ system });
   context.after(() => app.close());

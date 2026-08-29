@@ -105,7 +105,7 @@ export function deleteContent(contentId: string): Promise<ApiContent> {
 }
 
 export function deleteContents(contentIds: string[]): Promise<{
-  items: ApiContent[];
+  items: Array<ApiContent & { mirrorSynced?: boolean; deletedFiles?: number }>;
   failures: Array<{ id: string; message: string }>;
 }> {
   return request("/api/contents/bulk-delete", {

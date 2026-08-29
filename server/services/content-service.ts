@@ -163,7 +163,9 @@ export class ContentService {
     if (["scheduled", "published", "measured", "deleted"].includes(content.state)) {
       throw new DomainError("CONTENT_NOT_DELETABLE", "예약·발행된 원고와 이미 삭제된 원고는 삭제할 수 없습니다.", 409);
     }
-    return this.changeState(content, "deleted", actor.id, "content.deleted");
+    const deleted = await this.repository.deleteContentPermanently(contentId);
+    if (!deleted) throw new DomainError("CONTENT_NOT_FOUND", "콘텐츠를 찾을 수 없습니다.", 404);
+    return { ...content, state: "deleted", updatedAt: this.clock() };
   }
 
   async schedule(contentId: string, scheduledAt: string, actor: Actor): Promise<{ content: ContentRecord; publication: PublicationRecord }> {

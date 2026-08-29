@@ -138,14 +138,17 @@ export function DashboardPage() {
   const removeSelected = async () => {
     const ids = [...selectedIds].filter((id) => contents.some((content) => content.id === id && deletable(content)));
     if (!ids.length || bulkDeleting) return;
-    if (!window.confirm(`${ids.length}건의 콘텐츠를 삭제할까요? 삭제 후 목록에서 숨겨집니다.`)) return;
+    if (!window.confirm(`${ids.length}건의 콘텐츠를 영구 삭제할까요? 원문·변경 이력·생성 이미지를 복구할 수 없습니다.`)) return;
     setBulkDeleting(true);
     try {
       const result = await removeMany(ids);
       setSelectedIds(new Set());
+      const mirrorPending = result.items.some((item) => item.mirrorSynced === false);
       setToast(result.failures.length
         ? `${result.items.length}건 삭제 완료, ${result.failures.length}건은 삭제하지 못했습니다.`
-        : `${result.items.length}건을 삭제했습니다.`);
+        : mirrorPending
+          ? `${result.items.length}건을 삭제했지만 운영 DB 동기화가 지연되고 있습니다.`
+          : `${result.items.length}건을 삭제했습니다.`);
     } catch (error) {
       setToast(error instanceof Error ? error.message : "선택한 콘텐츠를 삭제하지 못했습니다.");
     } finally {

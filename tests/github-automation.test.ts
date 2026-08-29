@@ -256,3 +256,53 @@ test("동일 revision의 decision 동시 쓰기는 compare-and-set으로 하나�
   assert.equal((rejected?.reason as { code?: string }).code, "CONTENT_STATE_CONFLICT");
   assert.ok(["approved", "rejected"].includes((stored?.state as { reviewStatus: string }).reviewStatus));
 });
+
+test("원고 영구 삭제는 GitHub 파일과 결정 파일을 한 커밋으로 제거한다", async () => {
+  const requests: Array<{ url: string; method: string; body: string }> = [];
+  const mockFetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = String(input);
+    const method = init?.method ?? "GET";
+    const body = String(init?.body ?? "");
+    requests.push({ url, method, body });
+    if (url.includes("/git/trees/main?recursive=1")) return json({ truncated: false, tree: [
+      { path: "output/drafts/2026-08-29/run-123/status.json", type: "blob" },
+      { path: "output/drafts/2026-08-29/run-123/article.md", type: "blob" },
+      { path: "output/drafts/2026-08-29/run-123/images/hero.jpg", type: "blob" },
+      { path: "dashboard/decisions/run-123.json", type: "blob" },
+      { path: "output/drafts/2026-08-29/run-999/status.json", type: "blob" },
+    ] });
+    if (url.endsWith("/git/ref/heads/main")) return json({ object: { sha: "head-sha" } });
+    if (url.endsWith("/git/commits/head-sha")) return json({ tree: { sha: "base-tree-sha" } });
+    if (url.endsWith("/git/trees") && method === "POST") return json({ sha: "delete-tree-sha" });
+    if (url.endsWith("/git/commits") && method === "POST") return json({ sha: "delete-commit-sha" });
+    if (url.endsWith("/git/refs/heads/main") && method === "PATCH") return json({ ref: "refs/heads/main" });
+    return json({ message: "Unexpected request" }, 500);
+  }) as typeof fetch;
+  const service = new GitHubAutomationService({ owner: "owner", repository: "repo", branch: "main", token: "token" }, mockFetch);
+  const result = await service.deleteDraftPermanently("123", {
+    schemaVersion: 1,
+    runId: "123",
+    reviewStatus: "pending",
+    publicationStatus: "none",
+    checks: { sources: false, advertising: false },
+    reason: null,
+    approvedAt: null,
+    rejectedAt: null,
+    scheduledAt: null,
+    publishedAt: null,
+    externalUrl: null,
+    updatedAt: "2026-08-29T00:00:00.000Z",
+    updatedBy: "system",
+  });
+
+  assert.equal(result.deletedFiles, 4);
+  assert.deepEqual(requests.map((request) => request.method), ["GET", "GET", "GET", "POST", "POST", "PATCH"]);
+  const treeBody = JSON.parse(requests[3]!.body) as { tree: Array<{ path: string; sha: string | null }> };
+  assert.deepEqual(treeBody.tree.map((entry) => entry.path).sort(), [
+    "dashboard/decisions/run-123.json",
+    "output/drafts/2026-08-29/run-123/article.md",
+    "output/drafts/2026-08-29/run-123/images/hero.jpg",
+    "output/drafts/2026-08-29/run-123/status.json",
+  ]);
+  assert.ok(treeBody.tree.every((entry) => entry.sha === null));
+});

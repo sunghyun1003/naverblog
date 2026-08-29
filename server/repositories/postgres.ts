@@ -123,6 +123,38 @@ export class PostgresAutomationRepository implements AutomationRepository {
     return result.rows[0] ? contentFrom(result.rows[0]) : null;
   }
 
+  async deleteContentPermanently(id: string): Promise<boolean> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const exists = await client.query("SELECT id FROM contents WHERE id=$1 AND team_id=$2 FOR UPDATE", [id, this.teamId]);
+      if (!exists.rows[0]) {
+        await client.query("ROLLBACK");
+        return false;
+      }
+      // These tables do not all cascade from contents (claims and approvals
+      // intentionally retain strict foreign keys), so remove dependants first.
+      await client.query("DELETE FROM audit_logs WHERE team_id=$1 AND content_id=$2", [this.teamId, id]);
+      await client.query("DELETE FROM claims WHERE content_id=$1", [id]);
+      await client.query("DELETE FROM approvals WHERE content_id=$1", [id]);
+      // Break the remaining non-cascading references before the content
+      // cascade removes jobs and versions.
+      await client.query(
+        "UPDATE automation_job_steps SET output_version_id=NULL WHERE job_id IN (SELECT id FROM automation_jobs WHERE content_id=$1)",
+        [id],
+      );
+      await client.query("UPDATE content_versions SET parent_version_id=NULL WHERE content_id=$1", [id]);
+      await client.query("DELETE FROM contents WHERE id=$1 AND team_id=$2", [id, this.teamId]);
+      await client.query("COMMIT");
+      return true;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async findContentByCreationKey(key: string): Promise<ContentRecord | null> {
     const result = await this.pool.query("SELECT * FROM contents WHERE team_id=$1 AND creation_key=$2", [this.teamId, key]);
     return result.rows[0] ? contentFrom(result.rows[0]) : null;

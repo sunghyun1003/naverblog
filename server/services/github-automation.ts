@@ -660,6 +660,59 @@ export class GitHubAutomationService {
     return this.updateState(runId, { deletedAt: now, deletedBy: actor }, actor, previousState);
   }
 
+  /**
+   * Permanently removes the generated draft directory and its dashboard
+   * decision file in one Git commit. This avoids one GitHub Contents API
+   * commit per file and keeps deletion fast even when images/revisions exist.
+   */
+  async deleteDraftPermanently(
+    runId: string,
+    currentState?: DashboardDraftState,
+  ): Promise<{ deletedAt: string; deletedFiles: number }> {
+    const previousState = currentState ?? (await this.getDraft(runId)).state;
+    if (!/^\d+$/.test(runId)) throw new DomainError("CONTENT_NOT_FOUND", "원고를 찾을 수 없습니다.", 404);
+    if (previousState.deletedAt) throw new DomainError("CONTENT_NOT_DELETABLE", "이미 삭제된 원고입니다.", 409);
+    if (previousState.publicationStatus !== "none") {
+      throw new DomainError("CONTENT_NOT_DELETABLE", "예약·발행된 원고는 삭제할 수 없습니다.", 409);
+    }
+
+    const tree = await this.tree();
+    const statusPath = tree
+      .map((item) => item.path)
+      .find((file) => new RegExp(`^output/drafts/\\d{4}-\\d{2}-\\d{2}/run-${runId}/status\\.json$`).test(file));
+    if (!statusPath) throw new DomainError("CONTENT_NOT_FOUND", "원고를 찾을 수 없습니다.", 404);
+    const draftBasePath = statusPath.slice(0, -"/status.json".length);
+    const decisionPath = `dashboard/decisions/run-${runId}.json`;
+    const paths = tree
+      .map((item) => item.path)
+      .filter((path) => path === decisionPath || path.startsWith(`${draftBasePath}/`));
+    if (!paths.length) throw new DomainError("CONTENT_NOT_FOUND", "원고 파일을 찾을 수 없습니다.", 404);
+
+    const refName = encodeURIComponent(this.config.branch);
+    const ref = await this.github<{ object: { sha: string } }>(`/git/ref/heads/${refName}`);
+    const head = await this.github<{ tree: { sha: string } }>(`/git/commits/${encodeURIComponent(ref.object.sha)}`);
+    const nextTree = await this.github<{ sha: string }>("/git/trees", {
+      method: "POST",
+      body: JSON.stringify({
+        base_tree: head.tree.sha,
+        tree: paths.map((path) => ({ path, mode: "100644", type: "blob", sha: null })),
+      }),
+    });
+    const commit = await this.github<{ sha: string }>("/git/commits", {
+      method: "POST",
+      body: JSON.stringify({
+        message: `dashboard: permanently delete draft ${runId}`,
+        tree: nextTree.sha,
+        parents: [ref.object.sha],
+      }),
+    });
+    await this.github(`/git/refs/heads/${refName}`, {
+      method: "PATCH",
+      body: JSON.stringify({ sha: commit.sha, force: false }),
+    });
+    return { deletedAt: new Date().toISOString(), deletedFiles: paths.length };
+  }
+
   async getDraftImage(runId: string, assetId: string): Promise<{ body: Buffer; contentType: string; etag: string }> {
     if (!/^\d+$/.test(runId) || !/^[a-z0-9-]+$/.test(assetId)) {
       throw new DomainError("IMAGE_NOT_FOUND", "이미지 경로가 올바르지 않습니다.", 404);

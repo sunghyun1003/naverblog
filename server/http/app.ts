@@ -192,6 +192,31 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     }
   }
 
+  async function deletePersistedContentSafely(contentId: string): Promise<boolean> {
+    if (!persistGitHubData) return true;
+    try {
+      // A missing mirror is already in the desired final state.
+      await system.repository.deleteContentPermanently(contentId);
+      return true;
+    } catch (error) {
+      app.log.warn({ err: error, contentId }, "영속 저장소에서 원고와 관련 데이터를 삭제하지 못했습니다.");
+      return false;
+    }
+  }
+
+  function deletedDraftView(draft: AutomationDraftDetail, actorId: string, deletedAt: string): AutomationDraftDetail {
+    return {
+      ...draft,
+      state: {
+        ...draft.state,
+        deletedAt,
+        deletedBy: actorId,
+        updatedAt: deletedAt,
+        updatedBy: actorId,
+      },
+    };
+  }
+
   async function getGitHubDetail(id: string, forceRefresh = false) {
     if (persistGitHubData && !forceRefresh) {
       const cached = await system.repository.getContentDetail(id);
@@ -334,7 +359,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   app.post("/api/contents/bulk-delete", async (request) => {
     const { ids } = bulkDeleteSchema.parse(request.body);
     const actor = actorFrom(request, auth?.verifyCookie(request.headers.cookie)?.username);
-    const items: Array<ReturnType<typeof draftToContent> & { mirrorSynced?: boolean }> = [];
+    const items: Array<ReturnType<typeof draftToContent> & { mirrorSynced?: boolean; deletedFiles?: number }> = [];
     const failures: Array<{ id: string; message: string }> = [];
 
     // Process in order so GitHub decision-file writes cannot race each other.
@@ -342,10 +367,10 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       try {
         if (githubAutomation) {
           const draft = await githubAutomation.getDraft(id);
-          const state = await githubAutomation.deleteDraft(id, actor.id, draft.state);
-          const updatedDraft = draftWithState(draft, state);
-          const mirrorSynced = await persistGitHubDetailSafely(updatedDraft, "bulk-delete");
-          items.push({ ...draftToContent(updatedDraft), mirrorSynced });
+          const deleted = await githubAutomation.deleteDraftPermanently(id, draft.state);
+          const updatedDraft = deletedDraftView(draft, actor.id, deleted.deletedAt);
+          const mirrorSynced = await deletePersistedContentSafely(id);
+          items.push({ ...draftToContent(updatedDraft), mirrorSynced, deletedFiles: deleted.deletedFiles });
         } else {
           items.push(await system.contentService.delete(id, actor));
         }
@@ -379,10 +404,10 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     const actor = actorFrom(request, auth?.verifyCookie(request.headers.cookie)?.username);
     if (githubAutomation) {
       const draft = await githubAutomation.getDraft(id);
-      const state = await githubAutomation.deleteDraft(id, actor.id, draft.state);
-      const updatedDraft = draftWithState(draft, state);
-      const mirrorSynced = await persistGitHubDetailSafely(updatedDraft, "delete");
-      return { ...draftToContent(updatedDraft), mirrorSynced };
+      const deleted = await githubAutomation.deleteDraftPermanently(id, draft.state);
+      const updatedDraft = deletedDraftView(draft, actor.id, deleted.deletedAt);
+      const mirrorSynced = await deletePersistedContentSafely(id);
+      return { ...draftToContent(updatedDraft), mirrorSynced, deletedFiles: deleted.deletedFiles };
     }
     return system.contentService.delete(id, actor);
   });

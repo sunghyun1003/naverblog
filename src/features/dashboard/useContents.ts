@@ -57,9 +57,20 @@ export function useContents() {
   };
 
   const removeMany = async (ids: string[]) => {
-    const result = await deleteContents(ids);
-    await refresh();
-    return result;
+    const idSet = new Set(ids);
+    const previous = contents;
+    // Remove from the visible list immediately. The physical GitHub/Neon
+    // deletion continues in the background and is reconciled only on a
+    // partial failure, so the user never waits for remote commits to render.
+    setContents((current) => current.filter((content) => !idSet.has(content.id)));
+    try {
+      const result = await deleteContents(ids);
+      if (result.failures.length) await refresh();
+      return result;
+    } catch (error) {
+      setContents(previous);
+      throw error;
+    }
   };
 
   return {

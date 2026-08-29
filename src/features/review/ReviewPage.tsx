@@ -418,7 +418,7 @@ export function ReviewPage() {
 
   const remove = async () => {
     if (deleteBusy) return;
-    if (!window.confirm("이 원고를 삭제할까요? 원문과 변경 이력은 보존되며 목록에서 숨겨집니다.")) return;
+    if (!window.confirm("이 원고를 저장소와 운영 DB에서 영구 삭제할까요? 원문·변경 이력·생성 이미지를 복구할 수 없습니다.")) return;
     setDeleteBusy(true);
     try {
       await removeApi();

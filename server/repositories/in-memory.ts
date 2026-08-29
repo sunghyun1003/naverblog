@@ -62,6 +62,27 @@ export class InMemoryAutomationRepository implements AutomationRepository {
     return content ? clone(content) : null;
   }
 
+  async deleteContentPermanently(id: string): Promise<boolean> {
+    const content = this.contents.get(id);
+    if (!content) return false;
+    this.contents.delete(id);
+    if (this.contentKeys.get(content.creationKey) === id) this.contentKeys.delete(content.creationKey);
+    this.sources.delete(id);
+    this.claims.delete(id);
+    this.versions.delete(id);
+    this.qualityResults.delete(id);
+    this.approvals.delete(id);
+    this.publications.delete(id);
+    this.auditEvents.delete(id);
+    for (const [jobId, job] of this.jobs) {
+      if (job.contentId === id) {
+        this.jobs.delete(jobId);
+        this.jobKeys.delete(job.idempotencyKey);
+      }
+    }
+    return true;
+  }
+
   async findContentByCreationKey(key: string): Promise<ContentRecord | null> {
     const id = this.contentKeys.get(key);
     return id ? this.getContent(id) : null;

@@ -54,8 +54,8 @@ export function getCapabilities(signal?: AbortSignal): Promise<ApiCapabilities> 
   return request("/api/system/capabilities", { signal });
 }
 
-export function getContentDetail(contentId: string, signal?: AbortSignal): Promise<ApiContentDetail> {
-  return request(`/api/contents/${encodeURIComponent(contentId)}?refresh=true`, { signal });
+export function getContentDetail(contentId: string, signal?: AbortSignal, refresh = false): Promise<ApiContentDetail> {
+  return request(`/api/contents/${encodeURIComponent(contentId)}${refresh ? "?refresh=true" : ""}`, { signal });
 }
 
 export function createContent(input: { title: string; topic: string; strategy: "trend" | "original" }): Promise<ApiContent> {
@@ -114,8 +114,11 @@ export function deleteContents(contentIds: string[]): Promise<{
   });
 }
 
-export function generateContentImages(contentId: string): Promise<{ accepted: boolean }> {
-  return request(`/api/contents/${encodeURIComponent(contentId)}/images/generate`, { method: "POST" });
+export function generateContentImages(contentId: string, input?: { assetId?: string; feedback?: string }): Promise<{ accepted: boolean }> {
+  return request(`/api/contents/${encodeURIComponent(contentId)}/images/generate`, {
+    method: "POST",
+    body: input ? JSON.stringify(input) : undefined,
+  });
 }
 
 export function contentImageUrl(contentId: string, assetId: string, version?: string): string {

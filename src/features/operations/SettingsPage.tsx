@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { getCapabilities } from "../../api/client";
 import type { ApiCapabilities } from "../../api/types";
 import { PageLoadingState } from "../../components/PageLoadingState";
+import { readRuntimeCache, writeRuntimeCache } from "../../api/runtimeCache";
 
 const labels: Record<string, string> = {
   ai: "Codex 원고 생성",
@@ -14,9 +15,10 @@ const labels: Record<string, string> = {
 const integrationOrder = ["ai", "naverSearch", "publisher", "database", "automation"];
 
 export function SettingsPage() {
-  const [capabilities, setCapabilities] = useState<ApiCapabilities | null>(null);
-  const [loading, setLoading] = useState(true);
-  useEffect(() => { void getCapabilities().then(setCapabilities).finally(() => setLoading(false)); }, []);
+  const cached = readRuntimeCache<ApiCapabilities>("capabilities");
+  const [capabilities, setCapabilities] = useState<ApiCapabilities | null>(cached);
+  const [loading, setLoading] = useState(!cached);
+  useEffect(() => { void getCapabilities().then((next) => { setCapabilities(next); writeRuntimeCache("capabilities", next); }).finally(() => setLoading(false)); }, []);
   return (
     <div className="operations-page">
       <header className="operations-heading"><div><h1>설정</h1><p>현재 운영 환경과 외부 연동 준비 상태를 확인하세요.</p></div></header>

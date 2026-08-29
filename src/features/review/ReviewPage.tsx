@@ -363,12 +363,12 @@ export function ReviewPage() {
     window.setTimeout(() => setToast(""), 3200);
   };
 
-  const generateImages = async () => {
+  const generateImages = async (assetId?: string, feedback?: string) => {
     if (!contentId || imageBusy) return;
     setImageBusy(true);
     try {
       setImageRequestStartedAt(Date.now());
-      await generateContentImages(contentId);
+      await generateContentImages(contentId, assetId || feedback ? { assetId, feedback } : undefined);
       setImagePending(true);
       setToast("이미지 생성을 요청했어요. 완료되면 자동으로 새 결과를 불러옵니다.");
     } catch (error) {
@@ -436,6 +436,7 @@ export function ReviewPage() {
     }
   };
 
+  void approve;
   return (
     <div className="review-page">
       <header className="review-header">
@@ -463,10 +464,9 @@ export function ReviewPage() {
               window.setTimeout(() => setToast(""), 3200);
             });
           }}>텍스트 복사</Button>
-          <Button onClick={() => setRejectOpen(true)} disabled={!canReject}>{autoReady ? "수정 요청" : "반려"}</Button>
-          <Button variant="brand" onClick={approve} disabled={!canRequestApproval} icon={status === "approved" ? <Check size={18} /> : undefined}>
-            {autoReady ? "자동 완성" : status === "approved" ? "승인 완료" : decisionBusy === "approve" ? "승인 처리 중" : "승인하기"}
-          </Button>
+          {status !== "deleted" ? (
+            <Button onClick={() => setRejectOpen(true)} disabled={!canReject}>수정 요청</Button>
+          ) : null}
         </div>
       </header>
 
@@ -495,7 +495,7 @@ export function ReviewPage() {
 
           {tab === "draft" ? <ArticleDraft title={latestVersion?.title} body={latestVersion?.body} contentId={detail.content.id} imagePackage={imagePackage} /> : null}
           {tab === "sources" ? <EvidenceReviewPanel evidence={evidenceReview} sources={detail.sources} claims={detail.claims} /> : null}
-          {tab === "images" ? <ImageAssetsView contentId={detail.content.id} packageState={imagePackage} contentStatus={status} pending={imagePending} busy={imageBusy} onGenerate={() => void generateImages()} /> : null}
+          {tab === "images" ? <ImageAssetsView contentId={detail.content.id} packageState={imagePackage} contentStatus={status} pending={imagePending} busy={imageBusy} onGenerate={(assetId, feedback) => void generateImages(assetId, feedback)} /> : null}
           {tab === "history" ? <HistoryView versions={detail.versions} /> : null}
         </section>
 
@@ -506,7 +506,7 @@ export function ReviewPage() {
             {staleDetail ? "최신 GitHub 조회 실패 · 저장된 원고는 승인하거나 반려할 수 없음" : "최신 원고와 자동화 실행 기록 연결됨"}
           </div>
           <section className="inspector-section final-checks final-checks--priority" ref={finalChecksRef}>
-            {autoReady ? (
+            {true ? (
               <>
                 <h3>자동 완성 상태</h3>
                 <p>원고·사람 말투 보정·품질 검수·이미지 생성까지 완료됐습니다. 아래의 수정 요청은 필요할 때만 사용하세요.</p>
@@ -627,7 +627,7 @@ export function ReviewPage() {
         </aside>
       </div>
 
-      <RejectDialog open={rejectOpen} busy={decisionBusy !== null} onClose={() => setRejectOpen(false)} onReject={reject} />
+      <RejectDialog open={rejectOpen} busy={decisionBusy !== null} mode="rewrite" onClose={() => setRejectOpen(false)} onReject={reject} />
       <EditContentDialog
         open={editOpen}
         busy={editBusy}
@@ -654,8 +654,9 @@ function ImageAssetsView({
   contentStatus: ContentStatus;
   pending: boolean;
   busy: boolean;
-  onGenerate: () => void;
+  onGenerate: (assetId?: string, feedback?: string) => void;
 }) {
+  const [feedback, setFeedback] = useState<Record<string, string>>({});
   const assets = packageState?.assets ?? [];
   const canGenerate = ["approved", "scheduled", "published"].includes(contentStatus);
   const ready = packageState?.status === "ready" && packageState.technicalQualityPassed === true && assets.length > 0;
@@ -667,7 +668,7 @@ function ImageAssetsView({
           <p>자동 생성된 원고에 대표 1장과 본문 2장을 실사 또는 고급 일러스트로 함께 제공합니다.</p>
         </div>
         {canGenerate ? (
-          <Button variant={ready ? "outline" : "brand"} disabled={pending || busy} icon={<Images size={17} />} onClick={onGenerate}>
+          <Button variant={ready ? "outline" : "brand"} disabled={pending || busy} icon={<Images size={17} />} onClick={() => onGenerate()}>
             {pending ? "생성 중" : busy ? "요청 중" : ready ? "다시 생성" : "이미지 생성"}
           </Button>
         ) : null}
@@ -684,6 +685,28 @@ function ImageAssetsView({
                 <figcaption>
                   <div><strong>{asset.role === "hero" ? "대표 이미지" : `본문 ${asset.afterSection}절 뒤`}</strong><span>AI 실사·일러스트</span></div>
                   <p>{asset.altText}</p>
+                  <div className="image-asset__feedback">
+                    <label>
+                      <span className="sr-only">{asset.id} 수정 의견</span>
+                      <textarea
+                        value={feedback[asset.id] ?? ""}
+                        onChange={(event) => setFeedback((current) => ({ ...current, [asset.id]: event.target.value }))}
+                        placeholder="이 이미지만 바꿀 의견을 적어주세요"
+                        rows={2}
+                      />
+                    </label>
+                    <Button
+                      size="small"
+                      disabled={pending || busy || !feedback[asset.id]?.trim()}
+                      onClick={() => {
+                        const value = feedback[asset.id]?.trim();
+                        if (!value) return;
+                        onGenerate(asset.id, value);
+                      }}
+                    >
+                      이 이미지 수정
+                    </Button>
+                  </div>
                   <small>{asset.width}×{asset.height} · {Math.round(asset.bytes / 1024)}KB</small>
                 </figcaption>
               </figure>

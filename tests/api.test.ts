@@ -702,4 +702,15 @@ test("원고 승인 시 이미지 생성을 시작하고 승인 원고는 다시
   const regenerated = await app.inject({ method: "POST", url: "/api/contents/909/images/generate" });
   assert.equal(regenerated.statusCode, 202);
   assert.deepEqual(dispatches[1], { workflow: "images", inputs: { run_id: "909", force: "true" } });
+
+  const editedImage = await app.inject({
+    method: "POST",
+    url: "/api/contents/909/images/generate",
+    payload: { assetId: "visual-01", feedback: "배경을 더 밝게 하고 자동차가 잘 보이게 해주세요." },
+  });
+  assert.equal(editedImage.statusCode, 202);
+  assert.deepEqual(dispatches[2], {
+    workflow: "images",
+    inputs: { run_id: "909", force: "true", asset_id: "visual-01", feedback: "배경을 더 밝게 하고 자동차가 잘 보이게 해주세요." },
+  });
 });

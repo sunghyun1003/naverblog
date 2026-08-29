@@ -5,7 +5,13 @@ import { Modal } from "../../components/Modal";
 const minimumReasonLength = 5;
 const maximumReasonLength = 1000;
 
-export function RejectDialog({ open, busy = false, onClose, onReject }: { open: boolean; busy?: boolean; onClose: () => void; onReject: (reason: string) => Promise<void> }) {
+export function RejectDialog({ open, busy = false, onClose, onReject, mode = "reject" }: {
+  open: boolean;
+  busy?: boolean;
+  onClose: () => void;
+  onReject: (reason: string) => Promise<void>;
+  mode?: "reject" | "rewrite";
+}) {
   const [reason, setReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const normalizedReason = reason.trim();
@@ -30,20 +36,20 @@ export function RejectDialog({ open, busy = false, onClose, onReject }: { open: 
     <Modal
       open={open}
       onClose={() => { if (!processing) onClose(); }}
-      title="원고 반려"
-      description="반려 의견을 저장하면 기존 원고를 보존한 채 새 버전 재작성을 바로 시작합니다."
+      title={mode === "rewrite" ? "수정 요청" : "원고 반려"}
+      description={mode === "rewrite" ? "수정할 부분과 이유를 남기면 새 버전으로 다시 작성합니다." : "반려 의견을 저장하면 기존 원고를 보존한 채 새 버전 재작성을 바로 시작합니다."}
       footer={
         <>
           <Button type="button" onClick={onClose} disabled={processing}>취소</Button>
           <Button type="submit" form="reject-form" variant="danger" disabled={!validReason || processing}>
-            {processing ? "반려 처리 중" : "반려하기"}
+            {processing ? "처리 중..." : mode === "rewrite" ? "수정 요청" : "반려하기"}
           </Button>
         </>
       }
     >
       <form id="reject-form" onSubmit={submit}>
         <label className="field">
-          <span className="field__label">반려 사유</span>
+          <span className="field__label">{mode === "rewrite" ? "수정 요청 내용" : "반려 사유"}</span>
           <textarea
             value={reason}
             onChange={(event) => setReason(event.target.value)}

@@ -44,6 +44,10 @@ const generationSchema = z.object({
 });
 const idParamsSchema = z.object({ id: z.string().min(1) });
 const imageParamsSchema = z.object({ id: z.string().min(1), assetId: z.string().regex(/^[a-z0-9-]+$/) });
+const imageGenerationSchema = z.object({
+  assetId: z.string().regex(/^[a-z0-9-]+$/).optional(),
+  feedback: z.string().trim().max(1000).optional(),
+}).default({});
 const refreshQuerySchema = z.object({ refresh: z.enum(["true", "false"]).default("false") });
 
 export interface AppOptions {
@@ -480,9 +484,15 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     if (draft.reviewStatus !== "approved") {
       return reply.status(409).send({ error: { code: "CONTENT_NOT_APPROVED", message: "승인 완료된 원고만 이미지를 생성할 수 있습니다.", details: null } });
     }
-    // The endpoint is only reachable through the explicit "regenerate" action.
+    const body = imageGenerationSchema.parse(request.body);
+    // The endpoint is only reachable through the explicit regenerate action.
     // Pass force so the image preflight guard does not block an intentional rerun.
-    await githubAutomation.dispatch("images", { run_id: id, force: "true" });
+    await githubAutomation.dispatch("images", {
+      run_id: id,
+      force: "true",
+      ...(body.assetId ? { asset_id: body.assetId } : {}),
+      ...(body.feedback ? { feedback: body.feedback } : {}),
+    });
     return reply.status(202).send({ accepted: true });
   });
   app.post("/api/contents/:id/reject", async (request, reply) => {

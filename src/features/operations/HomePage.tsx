@@ -25,6 +25,7 @@ import type {
 import { Button } from "../../components/Button";
 import { PageLoadingState } from "../../components/PageLoadingState";
 import { StatusBadge } from "../../components/StatusBadge";
+import { readRuntimeCache, writeRuntimeCache } from "../../api/runtimeCache";
 
 const integrationLabels: Record<string, string> = {
   ai: "Codex 원고 생성",
@@ -65,12 +66,17 @@ function formatCollectionDate(value: string): string {
 
 export function HomePage() {
   const navigate = useNavigate();
-  const [contents, setContents] = useState<ApiContent[]>([]);
+  const cachedContents = readRuntimeCache<{ items: ApiContent[]; freshness?: ApiFreshness }>("home:contents")
+    ?? readRuntimeCache<{ contents: ApiContent[]; freshness: ApiFreshness | null }>("contents");
+  const cachedTrends = readRuntimeCache<ApiTrendSnapshot>("trends");
+  const cachedCapabilities = readRuntimeCache<ApiCapabilities>("capabilities");
+  const initialContents = cachedContents && "items" in cachedContents ? cachedContents.items : cachedContents?.contents ?? [];
+  const [contents, setContents] = useState<ApiContent[]>(initialContents);
   const [runs, setRuns] = useState<ApiWorkflowRun[]>([]);
-  const [capabilities, setCapabilities] = useState<ApiCapabilities | null>(null);
-  const [freshness, setFreshness] = useState<ApiFreshness | null>(null);
-  const [trends, setTrends] = useState<ApiTrendSnapshot | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [capabilities, setCapabilities] = useState<ApiCapabilities | null>(cachedCapabilities);
+  const [freshness, setFreshness] = useState<ApiFreshness | null>(cachedContents?.freshness ?? null);
+  const [trends, setTrends] = useState<ApiTrendSnapshot | null>(cachedTrends);
+  const [loading, setLoading] = useState(!cachedContents && !cachedCapabilities && !cachedTrends);
   const [error, setError] = useState("");
 
   const refresh = async (signal?: AbortSignal) => {
@@ -88,10 +94,17 @@ export function HomePage() {
     if (contentResult.status === "fulfilled") {
       setContents(contentResult.value.items);
       setFreshness(contentResult.value.freshness ?? null);
+      writeRuntimeCache("home:contents", contentResult.value);
     }
     if (runResult.status === "fulfilled") setRuns(runResult.value.items);
-    if (capabilityResult.status === "fulfilled") setCapabilities(capabilityResult.value);
-    if (trendResult.status === "fulfilled") setTrends(trendResult.value);
+    if (capabilityResult.status === "fulfilled") {
+      setCapabilities(capabilityResult.value);
+      writeRuntimeCache("capabilities", capabilityResult.value);
+    }
+    if (trendResult.status === "fulfilled") {
+      setTrends(trendResult.value);
+      writeRuntimeCache("trends", trendResult.value);
+    }
 
     const failedCount = results.filter((result) => result.status === "rejected").length;
     if (failedCount === results.length) setError("운영 현황을 불러오지 못했습니다. 잠시 후 다시 시도해주세요.");

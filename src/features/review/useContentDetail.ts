@@ -1,17 +1,20 @@
 import { useCallback, useEffect, useState } from "react";
 import { approveContent, deleteContent, editContent, getContentDetail, rejectContent } from "../../api/client";
 import type { ApiContentDetail } from "../../api/types";
+import { readRuntimeCache, writeRuntimeCache } from "../../api/runtimeCache";
 
 export function useContentDetail(contentId: string | undefined) {
-  const [detail, setDetail] = useState<ApiContentDetail | null>(null);
-  const [connectionStatus, setConnectionStatus] = useState<"loading" | "connected" | "offline">("loading");
+  const cachedDetail = contentId ? readRuntimeCache<ApiContentDetail>(`content:${contentId}`) : null;
+  const [detail, setDetail] = useState<ApiContentDetail | null>(cachedDetail);
+  const [connectionStatus, setConnectionStatus] = useState<"loading" | "connected" | "offline">(cachedDetail ? "connected" : "loading");
   const [loadError, setLoadError] = useState("");
   const [requestVersion, setRequestVersion] = useState(0);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (force = true) => {
     if (!contentId) throw new Error("Content ID is missing.");
-    const response = await getContentDetail(contentId);
+    const response = await getContentDetail(contentId, undefined, force);
     setDetail(response);
+    writeRuntimeCache(`content:${contentId}`, response);
     setConnectionStatus("connected");
     setLoadError("");
     return response;
@@ -24,17 +27,19 @@ export function useContentDetail(contentId: string | undefined) {
       return;
     }
     const controller = new AbortController();
-    setDetail(null);
-    setConnectionStatus("loading");
+    const cached = readRuntimeCache<ApiContentDetail>(`content:${contentId}`);
+    if (cached) setDetail(cached);
+    setConnectionStatus(cached ? "connected" : "loading");
     setLoadError("");
-    getContentDetail(contentId, controller.signal)
+    getContentDetail(contentId, controller.signal, false)
       .then((response) => {
         setDetail(response);
+        writeRuntimeCache(`content:${contentId}`, response);
         setConnectionStatus("connected");
       })
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === "AbortError") return;
-        setDetail(null);
+        if (!readRuntimeCache<ApiContentDetail>(`content:${contentId}`)) setDetail(null);
         setConnectionStatus("offline");
         setLoadError(error instanceof Error ? error.message : "원고를 불러오지 못했습니다.");
       });
@@ -44,28 +49,48 @@ export function useContentDetail(contentId: string | undefined) {
   const approve = async (checks: { sources: boolean; advertising: boolean }) => {
     if (!contentId || connectionStatus !== "connected" || !detail) throw new Error("원고 연결을 확인한 뒤 다시 시도해주세요.");
     const content = await approveContent(contentId, checks);
-    setDetail((current) => (current ? { ...current, content } : current));
+    setDetail((current) => {
+      if (!current) return current;
+      const next = { ...current, content };
+      writeRuntimeCache(`content:${contentId}`, next);
+      return next;
+    });
     return content;
   };
 
   const reject = async (reason: string) => {
     if (!contentId || connectionStatus !== "connected" || !detail) throw new Error("원고 연결을 확인한 뒤 다시 시도해주세요.");
     const content = await rejectContent(contentId, reason);
-    setDetail((current) => (current ? { ...current, content } : current));
+    setDetail((current) => {
+      if (!current) return current;
+      const next = { ...current, content };
+      writeRuntimeCache(`content:${contentId}`, next);
+      return next;
+    });
     return content;
   };
 
   const edit = async (input: { title: string; body: string; reason?: string | null }) => {
     if (!contentId || connectionStatus !== "connected" || !detail) throw new Error("원고 연결을 확인한 뒤 다시 시도해주세요.");
     const content = await editContent(contentId, input);
-    setDetail((current) => (current ? { ...current, content } : current));
+    setDetail((current) => {
+      if (!current) return current;
+      const next = { ...current, content };
+      writeRuntimeCache(`content:${contentId}`, next);
+      return next;
+    });
     return content;
   };
 
   const remove = async () => {
     if (!contentId || connectionStatus !== "connected" || !detail) throw new Error("원고 연결을 확인한 뒤 다시 시도해주세요.");
     const content = await deleteContent(contentId);
-    setDetail((current) => (current ? { ...current, content } : current));
+    setDetail((current) => {
+      if (!current) return current;
+      const next = { ...current, content };
+      writeRuntimeCache(`content:${contentId}`, next);
+      return next;
+    });
     return content;
   };
 

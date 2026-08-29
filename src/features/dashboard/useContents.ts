@@ -3,25 +3,30 @@ import { createContent, deleteContents, generateContent, getCapabilities, listCo
 import { mapContent } from "../../api/mapping";
 import type { ApiCapabilities, ApiFreshness } from "../../api/types";
 import type { ContentItem } from "../../types/content";
+import { readRuntimeCache, writeRuntimeCache } from "../../api/runtimeCache";
 
 type ConnectionStatus = "connecting" | "connected" | "offline";
 
 export function useContents() {
-  const [contents, setContents] = useState<ContentItem[]>([]);
-  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("connecting");
-  const [capabilities, setCapabilities] = useState<ApiCapabilities | null>(null);
-  const [freshness, setFreshness] = useState<ApiFreshness | null>(null);
+  const cached = readRuntimeCache<{ contents: ContentItem[]; capabilities: ApiCapabilities | null; freshness: ApiFreshness | null }>("contents");
+  const [contents, setContents] = useState<ContentItem[]>(cached?.contents ?? []);
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(cached ? "connected" : "connecting");
+  const [capabilities, setCapabilities] = useState<ApiCapabilities | null>(cached?.capabilities ?? null);
+  const [freshness, setFreshness] = useState<ApiFreshness | null>(cached?.freshness ?? null);
   const [creating, setCreating] = useState(false);
   const [refreshVersion, setRefreshVersion] = useState(0);
 
-  const refresh = useCallback(async (signal?: AbortSignal) => {
+  const refresh = useCallback(async (signal?: AbortSignal, force = false) => {
     const [contentResponse, capabilityResponse] = await Promise.all([
-      listContents(signal, true),
+      listContents(signal, force),
       getCapabilities(signal),
     ]);
-    setContents(contentResponse.items.map(mapContent));
-    setFreshness(contentResponse.freshness ?? null);
+    const nextContents = contentResponse.items.map(mapContent);
+    const nextFreshness = contentResponse.freshness ?? null;
+    setContents(nextContents);
+    setFreshness(nextFreshness);
     setCapabilities(capabilityResponse);
+    writeRuntimeCache("contents", { contents: nextContents, capabilities: capabilityResponse, freshness: nextFreshness });
     setConnectionStatus("connected");
   }, []);
 
@@ -48,7 +53,7 @@ export function useContents() {
       } else {
         const content = await createContent({ title, topic: title, strategy });
         await runPipeline(content.id);
-        await refresh();
+        await refresh(undefined, true);
       }
       setConnectionStatus("connected");
     } finally {
@@ -62,10 +67,13 @@ export function useContents() {
     // Remove from the visible list immediately. The physical GitHub/Neon
     // deletion continues in the background and is reconciled only on a
     // partial failure, so the user never waits for remote commits to render.
-    setContents((current) => current.filter((content) => !idSet.has(content.id)));
+    const nextContents = contents.filter((content) => !idSet.has(content.id));
+    setContents(nextContents);
+    const cachedState = readRuntimeCache<{ capabilities: ApiCapabilities | null; freshness: ApiFreshness | null }>("contents");
+    writeRuntimeCache("contents", { contents: nextContents, capabilities: cachedState?.capabilities ?? capabilities, freshness: cachedState?.freshness ?? freshness });
     try {
       const result = await deleteContents(ids);
-      if (result.failures.length) await refresh();
+      if (result.failures.length) await refresh(undefined, true);
       return result;
     } catch (error) {
       setContents(previous);

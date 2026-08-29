@@ -54,7 +54,7 @@
 }
 
 .review-header__title h1 {
-  max-width: min(720px, 56vw);
+  max-width: min(620px, 42vw);
   overflow: hidden;
   font-size: 24px;
   line-height: 32px;
@@ -65,8 +65,15 @@
 
 .review-header__actions {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3);
+  flex: none;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.review-header__actions .button {
+  white-space: nowrap;
 }
 
 .edit-content-form {
@@ -1187,6 +1194,28 @@
   margin-top: var(--space-2);
   color: var(--color-text-muted);
   font-size: 11px;
+}
+
+.image-asset__feedback {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.image-asset__feedback textarea {
+  width: 100%;
+  min-height: 54px;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  resize: vertical;
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.image-asset__feedback .button {
+  justify-self: start;
 }
 
 .image-assets__checks,

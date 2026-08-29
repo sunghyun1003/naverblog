@@ -658,7 +658,9 @@ function ImageAssetsView({
 }) {
   const [feedback, setFeedback] = useState<Record<string, string>>({});
   const assets = packageState?.assets ?? [];
-  const canGenerate = ["approved", "scheduled", "published"].includes(contentStatus);
+  // Image generation is independent from editorial approval. A draft can be
+  // generated, reviewed, and repaired before any publication decision.
+  const canGenerate = contentStatus !== "deleted";
   const ready = packageState?.status === "ready" && packageState.technicalQualityPassed === true && assets.length > 0;
   const displayable = assets.length > 0;
   const packageGeneratedAt = packageState?.generatedAt;

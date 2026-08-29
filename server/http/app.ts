@@ -481,11 +481,14 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     const { id } = idParamsSchema.parse(request.params);
     if (!githubAutomation) return reply.status(409).send({ error: { code: "AUTOMATION_UNAVAILABLE", message: "이미지 자동화가 연결되지 않았습니다.", details: null } });
     const draft = await githubAutomation.getDraft(id);
-    if (draft.reviewStatus !== "approved") {
+    if (draft.state.deletedAt) {
       return reply.status(409).send({ error: { code: "CONTENT_NOT_APPROVED", message: "승인 완료된 원고만 이미지를 생성할 수 있습니다.", details: null } });
     }
+    if (draft.state.rewriteStatus === "queued") {
+      return reply.status(409).send({ error: { code: "CONTENT_REWRITE_IN_PROGRESS", message: "A rewrite is already in progress for this draft.", details: null } });
+    }
     const body = imageGenerationSchema.parse(request.body);
-    // The endpoint is only reachable through the explicit regenerate action.
+    // Explicit generation and single-asset repairs are allowed before approval.
     // Pass force so the image preflight guard does not block an intentional rerun.
     await githubAutomation.dispatch("images", {
       run_id: id,

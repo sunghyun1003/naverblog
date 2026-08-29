@@ -38,7 +38,11 @@ export function EditContentDialog({
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!valid || busy) return;
-    await onSave({ title: normalizedTitle, body: normalizedBody, reason: reason.trim() || null });
+    try {
+      await onSave({ title: normalizedTitle, body: normalizedBody, reason: reason.trim() || null });
+    } catch {
+      // 상위 화면이 오류를 표시하고 재시도를 위해 모달을 유지한다.
+    }
   };
 
   return (

@@ -33,15 +33,16 @@ try {
      WHERE conname='qa_results_category_check'`,
   );
   const qualityConstraintDefinition = qualityConstraint.rows[0]?.definition ?? "";
-  if (!qualityConstraintDefinition.includes("editorial")) {
-    throw new Error("편집 품질 분류 마이그레이션이 적용되지 않았습니다.");
+  if (!qualityConstraintDefinition.includes("editorial") || !qualityConstraintDefinition.includes("native_korean")) {
+    throw new Error("편집 품질·한국어 자연스러움 분류 마이그레이션이 적용되지 않았습니다.");
   }
 
   const migrations = await pool.query<{ filename: string }>(
     "SELECT filename FROM schema_migrations ORDER BY filename",
   );
-  if (!migrations.rows.some((row) => row.filename === "002_editorial_quality.sql")) {
-    throw new Error("002_editorial_quality.sql 적용 기록이 없습니다.");
+  if (!migrations.rows.some((row) => row.filename === "002_editorial_quality.sql")
+    || !migrations.rows.some((row) => row.filename === "003_native_korean_quality.sql")) {
+    throw new Error("편집 품질·한국어 자연스러움 마이그레이션 적용 기록이 없습니다.");
   }
 
   const counts = await pool.query<{
@@ -68,7 +69,7 @@ try {
     teamName: team.rows[0]!.name,
     tables: requiredTables.length,
     migrations: migrations.rows.map((row) => row.filename),
-    qualityCategories: ["facts", "seo", "geo", "tone", "advertising", "editorial"],
+    qualityCategories: ["facts", "seo", "geo", "tone", "native_korean", "advertising", "editorial"],
     users: users.rows.map((row) => row.id),
     stored: {
       contents: Number(stored.contents),

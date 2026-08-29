@@ -112,7 +112,7 @@ export interface QualityResult {
   id: string;
   contentId: string;
   versionId: string;
-  category: "facts" | "seo" | "geo" | "tone" | "advertising" | "editorial";
+  category: "facts" | "seo" | "geo" | "tone" | "native_korean" | "advertising" | "editorial";
   status: QualityStatus;
   score: number;
   messages: string[];

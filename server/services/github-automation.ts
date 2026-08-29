@@ -77,6 +77,7 @@ export interface AutomationDraftDetail extends AutomationDraftSummary {
   discoveryQuality?: GeneratedDiscoveryQuality | null;
   advertisingQuality?: GeneratedAdvertisingQuality | null;
   editorialQuality?: GeneratedEditorialQuality | null;
+  nativeKoreanQuality?: GeneratedNativeKoreanQuality | null;
   toneReview?: GeneratedToneReview | null;
   toneAttempts?: GeneratedToneAttempts | null;
   imageManifest?: GeneratedImageManifest | null;
@@ -180,6 +181,25 @@ export interface GeneratedEditorialQuality {
   score: number;
   status: "passed" | "warning" | "failed";
   checks: GeneratedDiscoveryQualityCheck[];
+}
+
+export interface GeneratedNativeKoreanQuality {
+  schemaVersion: number;
+  checkedAt: string;
+  status: "passed" | "warning" | "failed";
+  score: number;
+  counts: { high: number; medium: number; low: number };
+  issues: Array<{
+    id: string;
+    path: string;
+    severity: "HIGH" | "MEDIUM" | "LOW";
+    category: string;
+    excerpt: string;
+    feedback: string;
+    suggestedDirection: string;
+    rewriteExample?: string;
+  }>;
+  checkedFields?: string[];
 }
 
 export interface GeneratedToneReview {
@@ -503,7 +523,7 @@ export class GitHubAutomationService {
     const revisionStatusPaths = paths
       .filter((file) => file.startsWith(`${basePath}/revisions/v`) && file.endsWith("/status.json"))
       .sort((left, right) => left.localeCompare(right, undefined, { numeric: true }));
-    const [status, article, articleMarkdown, copyPackage, sourcesMarkdown, evidencePackage, discoveryQuality, advertisingQuality, editorialQuality, toneReview, toneAttempts, imageManifest, imageStatus, state] = await Promise.all([
+    const [status, article, articleMarkdown, copyPackage, sourcesMarkdown, evidencePackage, discoveryQuality, advertisingQuality, editorialQuality, nativeKoreanQuality, toneReview, toneAttempts, imageManifest, imageStatus, state] = await Promise.all([
       this.readJson<GeneratedStatus>(statusPath),
       this.readJson<GeneratedArticle>(`${basePath}/article.json`),
       this.readText(`${basePath}/article.md`),
@@ -513,6 +533,7 @@ export class GitHubAutomationService {
       this.readOptionalJson<GeneratedDiscoveryQuality>(`${basePath}/discovery-quality.json`),
       this.readOptionalJson<GeneratedAdvertisingQuality>(`${basePath}/advertising-quality.json`),
       this.readOptionalJson<GeneratedEditorialQuality>(`${basePath}/editorial-quality.json`),
+      this.readOptionalJson<GeneratedNativeKoreanQuality>(`${basePath}/native-korean-quality.json`),
       this.readOptionalJson<GeneratedToneReview>(`${basePath}/tone-review.json`),
       this.readOptionalJson<GeneratedToneAttempts>(`${basePath}/tone-attempts.json`),
       paths.includes(`${basePath}/images/manifest.json`)
@@ -540,7 +561,7 @@ export class GitHubAutomationService {
         createdAt: revisionStatus.updatedAt ?? revisionStatus.generatedAt ?? status.generatedAt ?? new Date(0).toISOString(),
       };
     }));
-    return { ...this.summary(runId, status, article, state), articleMarkdown, copyPackage, sourcesMarkdown, article, evidencePackage, discoveryQuality, advertisingQuality, editorialQuality, toneReview, toneAttempts, imageManifest, imageStatus, state, revisions };
+    return { ...this.summary(runId, status, article, state), articleMarkdown, copyPackage, sourcesMarkdown, article, evidencePackage, discoveryQuality, advertisingQuality, editorialQuality, nativeKoreanQuality, toneReview, toneAttempts, imageManifest, imageStatus, state, revisions };
   }
 
   async getDraftImage(runId: string, assetId: string): Promise<{ body: Buffer; contentType: string; etag: string }> {

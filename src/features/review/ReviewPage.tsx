@@ -8,6 +8,7 @@ import {
   Globe2,
   Images,
   LayoutTemplate,
+  Languages,
   SearchCheck,
   ShieldAlert,
   UserRound,
@@ -32,6 +33,22 @@ interface VisualPlanItem {
   purpose: "concept" | "comparison" | "checklist" | "process";
   brief: string;
   altText: string;
+}
+
+interface NativeKoreanQuality {
+  status: "passed" | "warning" | "failed";
+  score: number;
+  counts: { high: number; medium: number; low: number };
+  issues: Array<{
+    id: string;
+    path: string;
+    severity: "HIGH" | "MEDIUM" | "LOW";
+    category: string;
+    excerpt: string;
+    feedback: string;
+    suggestedDirection: string;
+    rewriteExample?: string;
+  }>;
 }
 
 const visualPurposeLabel: Record<VisualPlanItem["purpose"], string> = {
@@ -67,6 +84,14 @@ function imagePackageFrom(version: ApiContentVersion | null): ApiGeneratedImageP
   const candidate = value as Record<string, unknown>;
   if (!['ready', 'failed'].includes(String(candidate.status)) || typeof candidate.runId !== "string") return null;
   return candidate as unknown as ApiGeneratedImagePackage;
+}
+
+function nativeKoreanQualityFrom(version: ApiContentVersion | null): NativeKoreanQuality | null {
+  const value = version?.metadata.nativeKoreanQuality;
+  if (!value || typeof value !== "object") return null;
+  const candidate = value as Partial<NativeKoreanQuality>;
+  if (!candidate.counts || !Array.isArray(candidate.issues) || !["passed", "warning", "failed"].includes(String(candidate.status))) return null;
+  return candidate as NativeKoreanQuality;
 }
 
 const pipelineStageLabel: Record<string, string> = {
@@ -238,6 +263,7 @@ export function ReviewPage() {
           geo: { label: "GEO 점검", icon: Globe2, tone: "info" },
           editorial: { label: "편집 품질", icon: LayoutTemplate, tone: "positive" },
           tone: { label: "사람 말투", icon: UserRound, tone: "positive" },
+          native_korean: { label: "한국어 자연스러움", icon: Languages, tone: "positive" },
           advertising: { label: "광고 위험", icon: ShieldAlert, tone: "warning" },
         }[result.category];
         return {
@@ -254,6 +280,7 @@ export function ReviewPage() {
     ? latestVersion.metadata.diffSummary.filter((item): item is string => typeof item === "string")
     : [];
   const visualPlan = visualPlanFrom(latestVersion);
+  const nativeKoreanQuality = nativeKoreanQualityFrom(latestVersion);
   const copyPackage = typeof latestVersion?.metadata.copyPackage === "string" ? latestVersion.metadata.copyPackage : latestVersion?.body ?? "";
   const jumpTo = (id: string) => {
     setActiveOutline(id);
@@ -456,6 +483,29 @@ export function ReviewPage() {
                 <p className="review-empty-inline">저장된 말투 보정 변경 요약이 없습니다.</p>
               )}
             </div>
+          </section>
+
+          <section className="inspector-section">
+            <h3>한국어 자연스러움 검사</h3>
+            {nativeKoreanQuality ? (
+              <>
+                <div className="diff-card">
+                  <p>{nativeKoreanQuality.status === "passed" ? "번역체 검사 통과" : "보정이 필요한 표현이 있습니다."} · {nativeKoreanQuality.score}점</p>
+                  <small>높음 {nativeKoreanQuality.counts.high}건 · 보통 {nativeKoreanQuality.counts.medium}건 · 낮음 {nativeKoreanQuality.counts.low}건</small>
+                </div>
+                {nativeKoreanQuality.issues.length ? (
+                  <ul className="native-korean-issues">
+                    {nativeKoreanQuality.issues.slice(0, 8).map((issue) => (
+                      <li key={issue.id}>
+                        <strong>{issue.excerpt}</strong>
+                        {issue.rewriteExample ? <span>권장 표현: {issue.rewriteExample}</span> : null}
+                        <small>{issue.suggestedDirection}</small>
+                      </li>
+                    ))}
+                  </ul>
+                ) : <p className="review-empty-inline">검출된 번역체 표현이 없습니다.</p>}
+              </>
+            ) : <p className="review-empty-inline">이 원고에는 한국어 자연스러움 검사 결과가 없습니다.</p>}
           </section>
 
           <section className="inspector-section">

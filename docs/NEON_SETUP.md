@@ -75,8 +75,10 @@ GitHub `sunghyun1003/naverblog` → **Actions** → **migrate-neon-database** �
 기대 결과:
 
 - `Applied 001_initial.sql`
+- `Applied 003_native_korean_quality.sql` (기존 DB라면 새 품질 분류 마이그레이션)
 - `"status":"ok"`
 - `"teamId":"carrot-company"`
+- `"qualityCategories"`에 `native_korean` 포함
 
 ## 6. Cloud Run 재배포
 

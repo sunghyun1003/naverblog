@@ -47,8 +47,10 @@ export function draftToDetail(draft: AutomationDraftDetail): ContentDetail {
     ? `${draft.runId}:human-tone`
     : `${draft.runId}:human-tone:${revision}`;
   const versionId = versionIdForRevision(currentRevision);
-  const tonePassed = draft.toneVerdict === "PASS"
-    || (draft.toneVerdict == null && draft.pipelineStatus === "TONE_REVIEW_COMPLETE" && draft.toneSkillApplied);
+  const nativeKoreanQuality = draft.nativeKoreanQuality;
+  const nativeKoreanPassed = !nativeKoreanQuality || nativeKoreanQuality.status !== "failed";
+  const tonePassed = nativeKoreanPassed && (draft.toneVerdict === "PASS"
+    || (draft.toneVerdict == null && draft.pipelineStatus === "TONE_REVIEW_COMPLETE" && draft.toneSkillApplied));
   const sourceByKey = new Map<string, ContentDetail["sources"][number]>();
   const sourceByEvidenceId = new Map<string, ContentDetail["sources"][number]>();
   const evidenceClaimById = new Map((draft.evidencePackage?.claims ?? []).map((claim) => [claim.id, claim]));
@@ -162,12 +164,17 @@ export function draftToDetail(draft: AutomationDraftDetail): ContentDetail {
     return counts;
   }, { high: 0, medium: 0, low: 0 });
   const toneMessage = draft.toneReview && draft.toneAttempts
-    ? tonePassed
+    ? !nativeKoreanPassed
+      ? `한국어 자연스러움 검사에서 보완이 필요합니다. HIGH ${nativeKoreanQuality?.counts.high ?? 0}건, MEDIUM ${nativeKoreanQuality?.counts.medium ?? 0}건. 자동 재작성 ${draft.toneAttempts.rewriteAttemptsPerformed}회가 실행됐습니다.`
+      : tonePassed
       ? `사람 말투 검수 PASS. 자동 재작성 ${draft.toneAttempts.rewriteAttemptsPerformed}회 후 통과했습니다. ${draft.toneReview.summary}`
       : `자동 재작성 ${draft.toneAttempts.rewriteAttemptsPerformed}/${draft.toneAttempts.maxRewriteAttempts}회 후에도 보완이 필요합니다. 남은 문제: HIGH ${toneIssueCounts.high}건, MEDIUM ${toneIssueCounts.medium}건, LOW ${toneIssueCounts.low}건. ${draft.toneReview.summary}`
     : tonePassed
       ? "사람 말투 보정과 최종 PASS 검수가 완료됐습니다."
       : "자동 재작성 후에도 말투 문제가 남아 추가 검토가 필요합니다.";
+  const nativeKoreanMessage = nativeKoreanQuality
+    ? `번역체·추상 표현 검사 ${nativeKoreanQuality.status === "passed" ? "통과" : "확인 필요"}. HIGH ${nativeKoreanQuality.counts.high}건, MEDIUM ${nativeKoreanQuality.counts.medium}건, LOW ${nativeKoreanQuality.counts.low}건.`
+    : "한국어 자연스러움 검사 결과가 없는 이전 원고입니다.";
   const qualitySeeds = [
     ["facts", factsStatus, factsScore, draft.evidencePackage
       ? `공식 출처 ${draft.evidencePackage.sources.length}개, 검증 주장 ${supportedEvidenceClaims}개, 미해결 주장 ${unresolvedEvidenceClaims}개, 추가 확인 ${evidenceGaps.length}개입니다.`
@@ -176,6 +183,7 @@ export function draftToDetail(draft: AutomationDraftDetail): ContentDetail {
     ["geo", geoQuality?.status ?? "warning", geoQuality?.score ?? 60, discoveryQualitySummary("GEO", geoQuality)],
     ["editorial", editorialQuality?.status ?? "warning", editorialQuality?.score ?? 60, discoveryQualitySummary("편집 품질", editorialQuality)],
     ["tone", tonePassed ? "passed" : "failed", tonePassed ? 100 : 0, toneMessage],
+    ["native_korean", nativeKoreanQuality?.status ?? "warning", nativeKoreanQuality?.score ?? 60, nativeKoreanMessage],
     ["advertising", advertisingQuality?.status ?? "warning", advertisingQuality?.score ?? 60, advertisingMessage],
   ] as const;
   const approvalCreatedAt = draft.state.reviewStatus === "approved"
@@ -255,6 +263,7 @@ export function draftToDetail(draft: AutomationDraftDetail): ContentDetail {
         visualPlan: draft.article.article?.visualPlan ?? [],
         imagePackage: draft.imageManifest ?? draft.imageStatus ?? null,
         editorialQuality: draft.editorialQuality ?? null,
+        nativeKoreanQuality: draft.nativeKoreanQuality ?? null,
         evidenceReview: draft.evidencePackage ?? null,
         revision: currentRevision,
         diffSummary: ["Humanizer 33개 패턴 진단", "피드백 반영 재작성", "사실·출처 보존 자체 감사"],

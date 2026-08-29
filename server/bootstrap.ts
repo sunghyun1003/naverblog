@@ -18,10 +18,13 @@ export async function bootstrapSystem(config: AppConfig): Promise<RuntimeSystem>
     });
     try {
       await repository.pool.query("SELECT 1");
-      const [team, editorialMigration, qualityConstraint] = await Promise.all([
+      const [team, editorialMigration, nativeKoreanMigration, qualityConstraint] = await Promise.all([
         repository.pool.query("SELECT 1 FROM teams WHERE id=$1", [config.DATABASE_TEAM_ID]),
         repository.pool.query(
           "SELECT 1 FROM schema_migrations WHERE filename='002_editorial_quality.sql'",
+        ),
+        repository.pool.query(
+          "SELECT 1 FROM schema_migrations WHERE filename='003_native_korean_quality.sql'",
         ),
         repository.pool.query<{ definition: string }>(
           `SELECT pg_get_constraintdef(oid) AS definition
@@ -30,8 +33,8 @@ export async function bootstrapSystem(config: AppConfig): Promise<RuntimeSystem>
         ),
       ]);
       if (!team.rowCount) throw new Error(`운영 팀을 찾을 수 없습니다: ${config.DATABASE_TEAM_ID}. 먼저 데이터베이스 마이그레이션을 실행하세요.`);
-      if (!editorialMigration.rowCount || !qualityConstraint.rows[0]?.definition.includes("editorial")) {
-        throw new Error("운영 DB에 편집 품질 스키마가 적용되지 않았습니다. 먼저 DB 마이그레이션을 실행하세요.");
+      if (!editorialMigration.rowCount || !nativeKoreanMigration.rowCount || !qualityConstraint.rows[0]?.definition.includes("native_korean")) {
+        throw new Error("운영 DB에 편집 품질·한국어 자연스러움 스키마가 적용되지 않았습니다. 먼저 DB 마이그레이션을 실행하세요.");
       }
       return {
         system: createAutomationSystem({ repository }),

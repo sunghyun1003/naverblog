@@ -130,7 +130,7 @@ test("GitHub 원고를 영속 저장소에 중복 없이 동기화한다", async
   assert.equal(detail.sources.length, 1);
   assert.equal(detail.claims.length, 1);
   assert.equal(detail.jobs.length, 1);
-  assert.equal(detail.qualityResults.length, 6);
+  assert.equal(detail.qualityResults.length, 7);
   assert.equal(detail.approvals.length, 1);
   assert.equal(detail.publications.length, 1);
   assert.equal(detail.auditEvents.length, 1);

@@ -15,7 +15,8 @@ flowchart LR
   Pipeline --> Collectors[수집 어댑터]
   Pipeline --> AI[작성 어댑터]
   Pipeline --> Tone[말투 Skill Runner]
-  Pipeline --> QA[품질 검사]
+  Tone --> Native[한국어 자연스러움 검사·재작성]
+  Native --> QA[품질 검사]
   Pipeline --> Notify[알림 어댑터]
   API --> Repo[저장소 계약]
   Repo --> Memory[인메모리 개발 저장소]
@@ -34,8 +35,10 @@ flowchart LR
 5. SEO 최적화
 6. GEO 최적화
 7. 사람 말투 보정
-8. 사실·검색·표현 품질 검사
-9. 사람 검토 알림
+8. 번역체·추상 표현 결정론적 검사
+9. 사람 말투 피드백 반영 재작성
+10. 사실·검색·표현 품질 검사
+11. 사람 검토 알림
 
 각 단계는 `AutomationJob.steps`에 시작·완료·실패 시각을 남긴다. 초안 이후의 편집 단계는 기존 원고를 덮어쓰지 않고 `content_versions`에 새 버전을 만든다.
 
@@ -71,7 +74,7 @@ flowchart LR
 - `TrendCollector`: 네이버·커뮤니티·YouTube
 - `ResearchVerifier`: 공식 자료 수집·주장 장부
 - `ContentGenerator`: 기획·초안·SEO·GEO
-- `HumanToneRunner`: 기존 사람 말투 skill
+- `HumanToneRunner`: 기존 사람 말투 skill과 한국어 자연어 보정 루프
 - `QualityReviewer`: 사실·검색·광고 위험 검사
 - `ReviewNotifier`: Slack 등 검토 알림
 - `Publisher`: 네이버 발행 준비·실행

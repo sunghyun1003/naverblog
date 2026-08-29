@@ -47,6 +47,8 @@ export interface ContentRecord {
   scheduledAt: string | null;
   publishedAt: string | null;
   rewriteStatus?: "queued" | "completed" | "failed" | null;
+  imageGenerationStatus?: "queued" | "ready" | "failed" | null;
+  imageGenerationWarning?: string | null;
 }
 
 export interface TrendSignal {

@@ -44,6 +44,8 @@ export function draftToContent(draft: AutomationDraftSummary): ContentRecord {
     scheduledAt: draft.scheduledAt,
     publishedAt: draft.publishedAt,
     rewriteStatus: draft.rewriteStatus ?? null,
+    imageGenerationStatus: draft.imageGenerationStatus ?? null,
+    imageGenerationWarning: draft.imageGenerationWarning ?? null,
   };
 }
 

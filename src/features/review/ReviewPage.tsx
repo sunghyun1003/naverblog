@@ -20,7 +20,7 @@ import {
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { contentImageUrl, generateContentImages } from "../../api/client";
-import type { ApiContentVersion, ApiGeneratedImagePackage } from "../../api/types";
+import type { ApiContent, ApiContentVersion, ApiGeneratedImagePackage } from "../../api/types";
 import { Button } from "../../components/Button";
 import { PageLoadingState } from "../../components/PageLoadingState";
 import { StatusBadge } from "../../components/StatusBadge";
@@ -86,8 +86,18 @@ function imagePackageFrom(version: ApiContentVersion | null): ApiGeneratedImageP
   const value = version?.metadata.imagePackage;
   if (!value || typeof value !== "object") return null;
   const candidate = value as Record<string, unknown>;
-  if (!['ready', 'failed'].includes(String(candidate.status)) || typeof candidate.runId !== "string") return null;
+  if (!['queued', 'ready', 'failed'].includes(String(candidate.status)) || typeof candidate.runId !== "string") return null;
   return candidate as unknown as ApiGeneratedImagePackage;
+}
+
+function queuedImagePackage(content: ApiContent): ApiGeneratedImagePackage | null {
+  if (content.imageGenerationStatus !== "queued") return null;
+  return {
+    schemaVersion: 1,
+    status: "queued",
+    runId: content.id,
+    assets: [],
+  };
 }
 
 function nativeKoreanQualityFrom(version: ApiContentVersion | null): NativeKoreanQuality | null {
@@ -279,7 +289,7 @@ export function ReviewPage() {
     url: /^https?:\/\//i.test(source.url) ? source.url : "",
   }));
   const latestVersion = detail.versions.at(-1) ?? null;
-  const imagePackage = imagePackageFrom(latestVersion);
+  const imagePackage = imagePackageFrom(latestVersion) ?? queuedImagePackage(detail.content);
   const evidenceReview = evidenceReviewFrom(latestVersion);
   const effectiveQualityItems = detail.qualityResults.map((result) => {
         const definition = {
@@ -742,6 +752,11 @@ function ImageAssetsView({
             <p>{visualQuality?.summary ?? "해상도·비율·용량 기준을 통과했습니다."} 최종 사용 전에는 사람·손·차량 디테일과 주제 적합성을 눈으로 한 번 더 확인해주세요.</p>
           </div>
         </>
+      ) : packageState?.status === "queued" ? (
+        <div className="image-assets__state">
+          <strong>이미지 생성 대기 중입니다.</strong>
+          <p>원고는 먼저 저장되었고, 이미지 작업은 별도 Actions에서 진행 중입니다. 잠시 후 새로고침하면 결과가 표시됩니다.</p>
+        </div>
       ) : packageState?.status === "failed" ? (
         <div className="image-assets__state image-assets__state--failed">
           <strong>이미지 생성이 완료되지 않았습니다.</strong>

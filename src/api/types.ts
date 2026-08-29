@@ -27,6 +27,8 @@ export interface ApiContent {
   imagesQueued?: boolean;
   rewriteQueued?: boolean;
   rewriteStatus?: "queued" | "completed" | "failed" | null;
+  imageGenerationStatus?: "queued" | "ready" | "failed" | null;
+  imageGenerationWarning?: string | null;
 }
 
 export interface ApiGeneratedImageAsset {
@@ -45,7 +47,7 @@ export interface ApiGeneratedImageAsset {
 
 export interface ApiGeneratedImagePackage {
   schemaVersion: number;
-  status: "ready" | "failed";
+  status: "queued" | "ready" | "failed";
   generatedAt?: string;
   updatedAt?: string;
   runId: string;

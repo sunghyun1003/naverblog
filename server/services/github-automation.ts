@@ -51,6 +51,8 @@ export interface DashboardDraftState {
   manualEdit?: DashboardManualEdit | null;
   deletedAt?: string | null;
   deletedBy?: string | null;
+  imageGenerationStatus?: "queued" | "ready" | "failed" | null;
+  imageGenerationWarning?: string | null;
   updatedAt: string;
   updatedBy: string;
 }
@@ -72,6 +74,8 @@ export interface AutomationDraftSummary {
   publishedAt: string | null;
   revision?: number;
   rewriteStatus?: DashboardRewriteStatus | null;
+  imageGenerationStatus?: "queued" | "ready" | "failed" | null;
+  imageGenerationWarning?: string | null;
   deleted?: boolean;
 }
 
@@ -353,6 +357,8 @@ interface GeneratedStatus {
   status?: string;
   toneSkillApplied?: boolean;
   toneVerdict?: "PASS" | "REWRITE_REQUIRED" | null;
+  imageGenerationStatus?: "queued" | "ready" | "failed" | null;
+  imageGenerationWarning?: string | null;
 }
 
 interface WorkflowRunsResponse {
@@ -816,6 +822,8 @@ export class GitHubAutomationService {
       publishedAt: state.publishedAt,
       revision: state.revision ?? status.revision ?? 1,
       rewriteStatus: state.rewriteStatus ?? null,
+      imageGenerationStatus: status.imageGenerationStatus ?? state.imageGenerationStatus ?? null,
+      imageGenerationWarning: status.imageGenerationWarning ?? state.imageGenerationWarning ?? null,
       deleted: Boolean(state.deletedAt),
     };
   }

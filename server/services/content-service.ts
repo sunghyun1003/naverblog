@@ -20,6 +20,12 @@ export interface ApprovalChecks {
   advertising: boolean;
 }
 
+export interface EditContentInput {
+  title: string;
+  body: string;
+  reason?: string | null;
+}
+
 export class ContentService {
   readonly pipeline: AutomationPipeline;
 
@@ -58,7 +64,7 @@ export class ContentService {
   }
 
   async list(): Promise<ContentRecord[]> {
-    return this.repository.listContents();
+    return (await this.repository.listContents()).filter((content) => content.state !== "deleted");
   }
 
   async detail(id: string): Promise<ContentDetail> {
@@ -111,6 +117,53 @@ export class ContentService {
       createdAt: this.clock(),
     });
     return this.changeState(content, "drafting", actor.id, "content.rejected", { reason });
+  }
+
+  async edit(contentId: string, input: EditContentInput, actor: Actor): Promise<ContentRecord> {
+    requirePermission(actor, "content:edit");
+    const content = await this.requireContent(contentId);
+    if (["scheduled", "published", "measured", "deleted"].includes(content.state)) {
+      throw new DomainError("CONTENT_NOT_EDITABLE", "예약·발행된 원고와 삭제된 원고는 직접 수정할 수 없습니다.", 409);
+    }
+    const versions = await this.repository.listVersions(contentId);
+    const previous = versions.at(-1);
+    if (!previous) throw new DomainError("VERSION_NOT_FOUND", "수정할 원고 버전이 없습니다.", 409);
+    const title = input.title.trim();
+    const body = input.body.trim();
+    if (title.length < 5 || body.length < 20) {
+      throw new DomainError("INVALID_CONTENT_EDIT", "제목은 5자 이상, 원고는 20자 이상 입력해주세요.", 422);
+    }
+    const now = this.clock();
+    await this.repository.saveVersion({
+      id: this.id(),
+      contentId,
+      sequence: previous.sequence + 1,
+      stage: "manual",
+      title,
+      body,
+      brief: previous.brief,
+      createdBy: actor.id,
+      createdAt: now,
+      parentVersionId: previous.id,
+      metadata: { reason: input.reason?.trim() || null, editedManually: true },
+    });
+    const updated = await this.changeState(
+      { ...content, title, state: "review_ready", rewriteStatus: null },
+      "review_ready",
+      actor.id,
+      "content.edited",
+      { reason: input.reason?.trim() || null, versionSequence: previous.sequence + 1 },
+    );
+    return updated;
+  }
+
+  async delete(contentId: string, actor: Actor): Promise<ContentRecord> {
+    requirePermission(actor, "content:edit");
+    const content = await this.requireContent(contentId);
+    if (["scheduled", "published", "measured", "deleted"].includes(content.state)) {
+      throw new DomainError("CONTENT_NOT_DELETABLE", "예약·발행된 원고와 이미 삭제된 원고는 삭제할 수 없습니다.", 409);
+    }
+    return this.changeState(content, "deleted", actor.id, "content.deleted");
   }
 
   async schedule(contentId: string, scheduledAt: string, actor: Actor): Promise<{ content: ContentRecord; publication: PublicationRecord }> {

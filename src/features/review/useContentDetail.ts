@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { approveContent, getContentDetail, rejectContent } from "../../api/client";
+import { approveContent, deleteContent, editContent, getContentDetail, rejectContent } from "../../api/client";
 import type { ApiContentDetail } from "../../api/types";
 
 export function useContentDetail(contentId: string | undefined) {
@@ -55,7 +55,21 @@ export function useContentDetail(contentId: string | undefined) {
     return content;
   };
 
+  const edit = async (input: { title: string; body: string; reason?: string | null }) => {
+    if (!contentId || connectionStatus !== "connected" || !detail) throw new Error("원고 연결을 확인한 뒤 다시 시도해주세요.");
+    const content = await editContent(contentId, input);
+    setDetail((current) => (current ? { ...current, content } : current));
+    return content;
+  };
+
+  const remove = async () => {
+    if (!contentId || connectionStatus !== "connected" || !detail) throw new Error("원고 연결을 확인한 뒤 다시 시도해주세요.");
+    const content = await deleteContent(contentId);
+    setDetail((current) => (current ? { ...current, content } : current));
+    return content;
+  };
+
   const reload = () => setRequestVersion((current) => current + 1);
 
-  return { detail, connectionStatus, loadError, reload, refresh, approve, reject };
+  return { detail, connectionStatus, loadError, reload, refresh, approve, reject, edit, remove };
 }

@@ -30,11 +30,18 @@ test("한국어 자연스러움 결과를 저장할 수 있도록 품질 분류 
   assert.match(sql, /'native_korean'/);
 });
 
+test("원고 소프트 삭제 상태를 저장할 수 있도록 콘텐츠 상태 제약을 확장한다", async () => {
+  const sql = await readFile(new URL("../server/db/migrations/004_deleted_content_state.sql", import.meta.url), "utf8");
+  assert.match(sql, /DROP CONSTRAINT IF EXISTS contents_state_check/);
+  assert.match(sql, /'deleted'/);
+});
+
 test("DB 검증은 편집 품질 스키마와 적용 기록을 확인한다", async () => {
   const source = await readFile(new URL("../server/db/verify.ts", import.meta.url), "utf8");
   assert.match(source, /qa_results_category_check/);
   assert.match(source, /002_editorial_quality\.sql/);
   assert.match(source, /003_native_korean_quality\.sql/);
+  assert.match(source, /004_deleted_content_state\.sql/);
   assert.match(source, /native_korean/);
   assert.match(source, /qualityCategories/);
 });
@@ -44,6 +51,8 @@ test("Cloud Run은 실제 풀링 DB의 편집 품질 스키마를 시작 시 확
   assert.match(source, /qa_results_category_check/);
   assert.match(source, /002_editorial_quality\.sql/);
   assert.match(source, /003_native_korean_quality\.sql/);
+  assert.match(source, /004_deleted_content_state\.sql/);
+  assert.match(source, /contents_state_check/);
   assert.match(source, /definition\.includes\("native_korean"\)/);
   assert.match(source, /definition\.includes\("native_korean"\)/);
 });

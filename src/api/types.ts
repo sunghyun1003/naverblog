@@ -7,7 +7,8 @@ export type ApiContentState =
   | "approved"
   | "scheduled"
   | "published"
-  | "measured";
+  | "measured"
+  | "deleted";
 
 export interface ApiContent {
   id: string;

@@ -14,6 +14,7 @@ function sourceKey(url: string): string {
 }
 
 function contentState(draft: AutomationDraftSummary): ContentState {
+  if (draft.deleted) return "deleted";
   if (draft.publicationStatus === "published") return "published";
   if (draft.publicationStatus === "scheduled") return "scheduled";
   if (draft.reviewStatus === "approved") return "approved";
@@ -47,7 +48,29 @@ export function draftToDetail(draft: AutomationDraftDetail): ContentDetail {
     ? `${draft.runId}:human-tone`
     : `${draft.runId}:human-tone:${revision}`;
   const versionId = versionIdForRevision(currentRevision);
-  const nativeKoreanQuality = draft.nativeKoreanQuality;
+  const nativeKoreanQuality = draft.nativeKoreanQuality && draft.state.manualEdit
+    ? {
+        ...draft.nativeKoreanQuality,
+        status: draft.nativeKoreanQuality.status === "failed" ? "failed" as const : "warning" as const,
+        issues: [
+          ...draft.nativeKoreanQuality.issues,
+          {
+            id: `${draft.runId}:manual-edit-quality-review`,
+            path: "manualEdit.body",
+            severity: "LOW" as const,
+            category: "수동 수정 후 재검수",
+            excerpt: draft.state.manualEdit.title,
+            feedback: "수동 수정된 원고는 자동 검사 결과와 달라질 수 있습니다.",
+            suggestedDirection: "최종 승인 전에 문장 흐름과 보험 용어를 한 번 더 확인하세요.",
+            rewriteExample: "보험료·보장 범위·특약처럼 구체적인 용어를 사용하세요.",
+          },
+        ],
+        counts: {
+          ...draft.nativeKoreanQuality.counts,
+          low: draft.nativeKoreanQuality.counts.low + 1,
+        },
+      }
+    : draft.nativeKoreanQuality;
   const nativeKoreanPassed = !nativeKoreanQuality || nativeKoreanQuality.status !== "failed";
   const tonePassed = nativeKoreanPassed && (draft.toneVerdict === "PASS"
     || (draft.toneVerdict == null && draft.pipelineStatus === "TONE_REVIEW_COMPLETE" && draft.toneSkillApplied));
@@ -247,11 +270,11 @@ export function draftToDetail(draft: AutomationDraftDetail): ContentDetail {
       id: versionId,
       contentId: draft.runId,
       sequence: currentRevision,
-      stage: "human_tone",
+      stage: draft.state.manualEdit ? "manual" : "human_tone",
       title: draft.title,
       body: draft.articleMarkdown,
       brief: null,
-      createdBy: "github-actions",
+      createdBy: draft.state.manualEdit?.createdBy ?? "github-actions",
       createdAt: currentRevision > 1 ? draft.state.rewrittenAt ?? draft.updatedAt : draft.generatedAt,
       parentVersionId: currentRevision > 1 ? versionIdForRevision(currentRevision - 1) : null,
       metadata: {
@@ -263,11 +286,12 @@ export function draftToDetail(draft: AutomationDraftDetail): ContentDetail {
         visualPlan: draft.article.article?.visualPlan ?? [],
         imagePackage: draft.imageManifest ?? draft.imageStatus ?? null,
         editorialQuality: draft.editorialQuality ?? null,
-        nativeKoreanQuality: draft.nativeKoreanQuality ?? null,
+        nativeKoreanQuality: nativeKoreanQuality ?? null,
         evidenceReview: draft.evidencePackage ?? null,
         revision: currentRevision,
         diffSummary: ["Humanizer 33개 패턴 진단", "피드백 반영 재작성", "사실·출처 보존 자체 감사"],
         copyPackage: draft.copyPackage,
+        manualEdit: draft.state.manualEdit ?? null,
       },
     }],
     sources,

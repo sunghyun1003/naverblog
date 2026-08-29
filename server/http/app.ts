@@ -27,6 +27,11 @@ const rejectionSchema = z.object({
     .min(5, "반려 사유는 5자 이상 입력해주세요.")
     .max(1000, "반려 사유는 1,000자 이하로 입력해주세요."),
 });
+const editContentSchema = z.object({
+  title: z.string().trim().min(5, "제목은 5자 이상 입력해주세요.").max(120),
+  body: z.string().trim().min(20, "원고는 20자 이상 입력해주세요.").max(100_000),
+  reason: z.string().trim().max(1000).nullable().default(null),
+});
 const scheduleSchema = z.object({ scheduledAt: z.iso.datetime({ offset: true }) });
 const publicationSchema = z.object({ externalUrl: z.url().refine((value) => value.startsWith("https://blog.naver.com/"), "네이버 블로그 URL을 입력하세요.") });
 const loginSchema = z.object({ username: z.string().min(1).max(100), password: z.string().min(1).max(200) });
@@ -70,8 +75,16 @@ function idempotencyKey(request: FastifyRequest, scope: string): string {
 }
 
 function draftWithState(draft: AutomationDraftDetail, state: DashboardDraftState): AutomationDraftDetail {
+  const manualEdit = state.manualEdit;
+  const article = manualEdit
+    ? { ...draft.article, article: { ...draft.article.article, title: manualEdit.title } }
+    : draft.article;
   return {
     ...draft,
+    title: manualEdit?.title ?? draft.title,
+    articleMarkdown: manualEdit?.body ?? draft.articleMarkdown,
+    copyPackage: manualEdit?.body ?? draft.copyPackage,
+    article,
     state,
     reviewStatus: state.reviewStatus,
     publicationStatus: state.publicationStatus,
@@ -79,6 +92,7 @@ function draftWithState(draft: AutomationDraftDetail, state: DashboardDraftState
     publishedAt: state.publishedAt,
     revision: state.revision ?? draft.revision ?? 1,
     rewriteStatus: state.rewriteStatus ?? draft.rewriteStatus ?? null,
+    deleted: Boolean(state.deletedAt),
     updatedAt: state.updatedAt,
   };
 }
@@ -114,7 +128,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     const cachedBeforeSync = persistGitHubData ? await system.repository.listContents() : [];
     if (cachedBeforeSync.length && !forceRefresh) {
       return {
-        items: cachedBeforeSync,
+        items: cachedBeforeSync.filter((content) => content.state !== "deleted"),
         freshness: freshness("postgres-cache", false, cachedBeforeSync[0]?.updatedAt ?? null),
       };
     }
@@ -128,15 +142,15 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
         const allContents = drafts.length ? await system.repository.listContents() : cachedBeforeSync;
         const listSource = cachedBeforeSync.length ? "postgres-cache" : "github";
         const asOf = listSource === "github" ? new Date().toISOString() : allContents[0]?.updatedAt ?? null;
-        return { items: allContents, freshness: freshness(listSource, false, asOf) };
+        return { items: allContents.filter((content) => content.state !== "deleted"), freshness: freshness(listSource, false, asOf) };
       }
-      return { items: drafts.map(draftToContent), freshness: freshness("github", false, new Date().toISOString()) };
+      return { items: drafts.map(draftToContent).filter((content) => content.state !== "deleted"), freshness: freshness("github", false, new Date().toISOString()) };
     } catch (error) {
       if (!persistGitHubData) throw error;
       const cached = await system.repository.listContents();
       if (!cached.length) throw error;
       app.log.warn({ err: error }, "GitHub 원고 목록 조회에 실패해 PostgreSQL 캐시를 사용합니다.");
-      return { items: cached, freshness: freshness("postgres-cache", true, cached[0]?.updatedAt ?? null) };
+      return { items: cached.filter((content) => content.state !== "deleted"), freshness: freshness("postgres-cache", true, cached[0]?.updatedAt ?? null) };
     }
   }
 
@@ -298,6 +312,31 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     const query = refreshQuerySchema.parse(request.query);
     if (githubAutomation) return getGitHubDetail(id, query.refresh === "true");
     return system.contentService.detail(id);
+  });
+  app.patch("/api/contents/:id", async (request) => {
+    const { id } = idParamsSchema.parse(request.params);
+    const body = editContentSchema.parse(request.body);
+    const actor = actorFrom(request, auth?.verifyCookie(request.headers.cookie)?.username);
+    if (githubAutomation) {
+      const draft = await githubAutomation.getDraft(id);
+      const state = await githubAutomation.editDraft(id, body, actor.id, draft.state);
+      const updatedDraft = draftWithState(draft, state);
+      const mirrorSynced = await persistGitHubDetailSafely(updatedDraft, "edit");
+      return { ...draftToContent(updatedDraft), mirrorSynced };
+    }
+    return system.contentService.edit(id, body, actor);
+  });
+  app.delete("/api/contents/:id", async (request) => {
+    const { id } = idParamsSchema.parse(request.params);
+    const actor = actorFrom(request, auth?.verifyCookie(request.headers.cookie)?.username);
+    if (githubAutomation) {
+      const draft = await githubAutomation.getDraft(id);
+      const state = await githubAutomation.deleteDraft(id, actor.id, draft.state);
+      const updatedDraft = draftWithState(draft, state);
+      const mirrorSynced = await persistGitHubDetailSafely(updatedDraft, "delete");
+      return { ...draftToContent(updatedDraft), mirrorSynced };
+    }
+    return system.contentService.delete(id, actor);
   });
   app.get("/api/contents/:id/images/:assetId", async (request, reply) => {
     const { id, assetId } = imageParamsSchema.parse(request.params);

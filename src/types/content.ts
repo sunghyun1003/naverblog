@@ -5,7 +5,8 @@ export type ContentStatus =
   | "review"
   | "approved"
   | "scheduled"
-  | "published";
+  | "published"
+  | "deleted";
 
 export interface ContentItem {
   id: string;

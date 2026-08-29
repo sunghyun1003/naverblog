@@ -11,6 +11,7 @@ const allowedTransitions: Record<ContentState, readonly ContentState[]> = {
   scheduled: ["published", "approved"],
   published: ["measured"],
   measured: [],
+  deleted: [],
 };
 
 export function canTransition(from: ContentState, to: ContentState): boolean {

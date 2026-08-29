@@ -8,6 +8,7 @@ export const contentStatusLabel: Record<ContentStatus, string> = {
   approved: "승인 완료",
   scheduled: "예약",
   published: "발행 완료",
+  deleted: "삭제됨",
 };
 
 export const initialContents: ContentItem[] = [

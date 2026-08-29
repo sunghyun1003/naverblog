@@ -37,12 +37,22 @@ try {
     throw new Error("편집 품질·한국어 자연스러움 분류 마이그레이션이 적용되지 않았습니다.");
   }
 
+  const contentStateConstraint = await pool.query<{ definition: string }>(
+    `SELECT pg_get_constraintdef(oid) AS definition
+     FROM pg_constraint
+     WHERE conname='contents_state_check'`,
+  );
+  if (!contentStateConstraint.rows[0]?.definition.includes("deleted")) {
+    throw new Error("소프트 삭제 상태 마이그레이션이 적용되지 않았습니다.");
+  }
+
   const migrations = await pool.query<{ filename: string }>(
     "SELECT filename FROM schema_migrations ORDER BY filename",
   );
   if (!migrations.rows.some((row) => row.filename === "002_editorial_quality.sql")
-    || !migrations.rows.some((row) => row.filename === "003_native_korean_quality.sql")) {
-    throw new Error("편집 품질·한국어 자연스러움 마이그레이션 적용 기록이 없습니다.");
+    || !migrations.rows.some((row) => row.filename === "003_native_korean_quality.sql")
+    || !migrations.rows.some((row) => row.filename === "004_deleted_content_state.sql")) {
+    throw new Error("최신 품질·소프트 삭제 마이그레이션 적용 기록이 없습니다.");
   }
 
   const counts = await pool.query<{

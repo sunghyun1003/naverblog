@@ -90,6 +90,20 @@ export function rejectContent(contentId: string, reason: string): Promise<ApiCon
   });
 }
 
+export function editContent(
+  contentId: string,
+  input: { title: string; body: string; reason?: string | null },
+): Promise<ApiContent> {
+  return request(`/api/contents/${encodeURIComponent(contentId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+
+export function deleteContent(contentId: string): Promise<ApiContent> {
+  return request(`/api/contents/${encodeURIComponent(contentId)}`, { method: "DELETE" });
+}
+
 export function generateContentImages(contentId: string): Promise<{ accepted: boolean }> {
   return request(`/api/contents/${encodeURIComponent(contentId)}/images/generate`, { method: "POST" });
 }

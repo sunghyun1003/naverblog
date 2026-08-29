@@ -193,6 +193,39 @@ test("HTTP API로 생성부터 검수 상세 조회까지 실행한다", async (
   assert.equal(detail.claims.length, 3);
 });
 
+test("원고 직접 수정은 새 수동 버전으로 저장하고 삭제는 목록에서 숨긴다", async (context) => {
+  const system = testSystem();
+  const app = buildApp({ system });
+  context.after(() => app.close());
+  const actorHeaders = { "x-user-id": "admin", "x-user-roles": "admin" };
+  const content = await system.contentService.create(
+    { title: "자동차보험 비교 원고", topic: "자동차보험 비교", strategy: "trend", idempotencyKey: "api-edit-delete" },
+    { id: "admin", roles: ["admin"] },
+  );
+  await system.contentService.runPipeline(content.id, "api-edit-delete-pipeline", { id: "admin", roles: ["admin"] });
+
+  const edited = await app.inject({
+    method: "PATCH",
+    url: `/api/contents/${content.id}`,
+    headers: actorHeaders,
+    payload: {
+      title: "자동차보험 보험료 비교 방법",
+      body: "자동차보험 보험료를 비교할 때는 보장 범위와 특약 포함 여부를 먼저 확인해요.",
+      reason: "보험료와 보장 범위를 구체적으로 표현",
+    },
+  });
+  assert.equal(edited.statusCode, 200);
+  assert.equal(edited.json<{ state: string }>().state, "review_ready");
+  const editedDetail = await app.inject({ method: "GET", url: `/api/contents/${content.id}` });
+  assert.equal(editedDetail.json<{ versions: Array<{ stage: string; title: string }> }>().versions.at(-1)?.stage, "manual");
+
+  const deleted = await app.inject({ method: "DELETE", url: `/api/contents/${content.id}`, headers: actorHeaders });
+  assert.equal(deleted.statusCode, 200);
+  assert.equal(deleted.json<{ state: string }>().state, "deleted");
+  const listed = await app.inject({ method: "GET", url: "/api/contents" });
+  assert.equal(listed.json<{ items: Array<{ id: string }> }>().items.some((item) => item.id === content.id), false);
+});
+
 test("권한 없는 역할의 승인을 거부한다", async (context) => {
   const system = testSystem();
   const app = buildApp({ system });

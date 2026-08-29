@@ -11,6 +11,7 @@ const statusMap: Record<ApiContentState, ContentStatus> = {
   scheduled: "scheduled",
   published: "published",
   measured: "published",
+  deleted: "deleted",
 };
 
 function formatDate(value: string | null): string | null {

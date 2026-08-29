@@ -11,6 +11,15 @@ export type DashboardReviewStatus = "pending" | "approved" | "rejected";
 export type DashboardPublicationStatus = "none" | "scheduled" | "published";
 export type DashboardRewriteStatus = "queued" | "completed" | "failed";
 
+export interface DashboardManualEdit {
+  title: string;
+  body: string;
+  reason: string | null;
+  createdAt: string;
+  createdBy: string;
+  baseRevision: number;
+}
+
 export interface DashboardDecisionEvent {
   decision: "approved" | "rejected";
   reason: string | null;
@@ -34,10 +43,13 @@ export interface DashboardDraftState {
   publishedAt: string | null;
   externalUrl: string | null;
   revision?: number;
-  rewriteStatus?: DashboardRewriteStatus;
+  rewriteStatus?: DashboardRewriteStatus | null;
   rewriteRequestedAt?: string | null;
   rewrittenAt?: string | null;
   decisionHistory?: DashboardDecisionEvent[];
+  manualEdit?: DashboardManualEdit | null;
+  deletedAt?: string | null;
+  deletedBy?: string | null;
   updatedAt: string;
   updatedBy: string;
 }
@@ -58,6 +70,7 @@ export interface AutomationDraftSummary {
   publishedAt: string | null;
   revision?: number;
   rewriteStatus?: DashboardRewriteStatus | null;
+  deleted?: boolean;
 }
 
 export interface AutomationDraftRevision {
@@ -561,7 +574,90 @@ export class GitHubAutomationService {
         createdAt: revisionStatus.updatedAt ?? revisionStatus.generatedAt ?? status.generatedAt ?? new Date(0).toISOString(),
       };
     }));
-    return { ...this.summary(runId, status, article, state), articleMarkdown, copyPackage, sourcesMarkdown, article, evidencePackage, discoveryQuality, advertisingQuality, editorialQuality, nativeKoreanQuality, toneReview, toneAttempts, imageManifest, imageStatus, state, revisions };
+    const effectiveArticle = state.manualEdit
+      ? { ...article, article: { ...article.article, title: state.manualEdit.title } }
+      : article;
+    const effectiveMarkdown = state.manualEdit?.body ?? articleMarkdown;
+    const effectiveCopyPackage = state.manualEdit?.body ?? copyPackage;
+    return {
+      ...this.summary(runId, status, effectiveArticle, state),
+      articleMarkdown: effectiveMarkdown,
+      copyPackage: effectiveCopyPackage,
+      sourcesMarkdown,
+      article: effectiveArticle,
+      evidencePackage,
+      discoveryQuality,
+      advertisingQuality,
+      editorialQuality,
+      nativeKoreanQuality,
+      toneReview,
+      toneAttempts,
+      imageManifest,
+      imageStatus,
+      state,
+      revisions,
+    };
+  }
+
+  async editDraft(
+    runId: string,
+    input: { title: string; body: string; reason?: string | null },
+    actor: string,
+    currentState?: DashboardDraftState,
+  ): Promise<DashboardDraftState> {
+    const draft = currentState ? null : await this.getDraft(runId);
+    const previousState = currentState ?? draft!.state;
+    if (previousState.deletedAt) throw new DomainError("CONTENT_NOT_EDITABLE", "삭제된 원고는 직접 수정할 수 없습니다.", 409);
+    if (previousState.publicationStatus !== "none") {
+      throw new DomainError("CONTENT_NOT_EDITABLE", "예약·발행된 원고는 직접 수정할 수 없습니다.", 409);
+    }
+    if (previousState.rewriteStatus === "queued") {
+      throw new DomainError("CONTENT_EDIT_CONFLICT", "자동 재작성 중인 원고는 완료 후 수정할 수 있습니다.", 409);
+    }
+    const title = input.title.trim();
+    const body = input.body.trim();
+    if (title.length < 5 || body.length < 20) {
+      throw new DomainError("INVALID_CONTENT_EDIT", "제목은 5자 이상, 원고는 20자 이상 입력해주세요.", 422);
+    }
+    const now = new Date().toISOString();
+    const baseRevision = previousState.revision ?? draft?.revision ?? 1;
+    return this.updateState(runId, {
+      reviewStatus: "pending",
+      publicationStatus: "none",
+      checks: { sources: false, advertising: false },
+      reason: null,
+      approvedBy: null,
+      rejectedBy: null,
+      approvedAt: null,
+      rejectedAt: null,
+      revision: baseRevision + 1,
+      rewriteStatus: null,
+      rewriteRequestedAt: null,
+      rewrittenAt: null,
+      manualEdit: {
+        title,
+        body,
+        reason: input.reason?.trim() || null,
+        createdAt: now,
+        createdBy: actor,
+        baseRevision,
+      },
+    }, actor, previousState);
+  }
+
+  async deleteDraft(
+    runId: string,
+    actor: string,
+    currentState?: DashboardDraftState,
+  ): Promise<DashboardDraftState> {
+    const draft = currentState ? null : await this.getDraft(runId);
+    const previousState = currentState ?? draft!.state;
+    if (previousState.deletedAt) throw new DomainError("CONTENT_NOT_DELETABLE", "이미 삭제된 원고입니다.", 409);
+    if (previousState.publicationStatus !== "none") {
+      throw new DomainError("CONTENT_NOT_DELETABLE", "예약·발행된 원고는 삭제할 수 없습니다.", 409);
+    }
+    const now = new Date().toISOString();
+    return this.updateState(runId, { deletedAt: now, deletedBy: actor }, actor, previousState);
   }
 
   async getDraftImage(runId: string, assetId: string): Promise<{ body: Buffer; contentType: string; etag: string }> {
@@ -659,6 +755,7 @@ export class GitHubAutomationService {
       publishedAt: state.publishedAt,
       revision: state.revision ?? status.revision ?? 1,
       rewriteStatus: state.rewriteStatus ?? null,
+      deleted: Boolean(state.deletedAt),
     };
   }
 
@@ -711,7 +808,9 @@ export class GitHubAutomationService {
     return left.runId === right.runId
       && left.updatedAt === right.updatedAt
       && left.reviewStatus === right.reviewStatus
-      && left.publicationStatus === right.publicationStatus;
+      && left.publicationStatus === right.publicationStatus
+      && (left.revision ?? 1) === (right.revision ?? 1)
+      && (left.deletedAt ?? null) === (right.deletedAt ?? null);
   }
 
   private async writeJson(

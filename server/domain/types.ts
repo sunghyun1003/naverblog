@@ -8,6 +8,7 @@ export const contentStates = [
   "scheduled",
   "published",
   "measured",
+  "deleted",
 ] as const;
 
 export type ContentState = (typeof contentStates)[number];

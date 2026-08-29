@@ -9,8 +9,10 @@ import {
   Images,
   LayoutTemplate,
   Languages,
+  Pencil,
   SearchCheck,
   ShieldAlert,
+  Trash2,
   UserRound,
   Copy,
 } from "lucide-react";
@@ -23,6 +25,7 @@ import { PageLoadingState } from "../../components/PageLoadingState";
 import { StatusBadge } from "../../components/StatusBadge";
 import type { ContentStatus } from "../../types/content";
 import { RejectDialog } from "./RejectDialog";
+import { EditContentDialog } from "./EditContentDialog";
 import { EvidenceReviewPanel, evidenceReviewFrom } from "./EvidenceReviewPanel";
 import { useContentDetail } from "./useContentDetail";
 
@@ -109,13 +112,16 @@ const pipelineStageLabel: Record<string, string> = {
 export function ReviewPage() {
   const navigate = useNavigate();
   const { contentId } = useParams();
-  const { detail, connectionStatus, loadError, reload, refresh, approve: approveApi, reject: rejectApi } = useContentDetail(contentId);
+  const { detail, connectionStatus, loadError, reload, refresh, approve: approveApi, reject: rejectApi, edit: editApi, remove: removeApi } = useContentDetail(contentId);
   const [tab, setTab] = useState<ReviewTab>("draft");
   const [activeOutline, setActiveOutline] = useState("summary");
   const [expandedQuality, setExpandedQuality] = useState("");
   const [checks, setChecks] = useState({ sources: false, ads: false });
   const [rejectOpen, setRejectOpen] = useState(false);
   const [decisionBusy, setDecisionBusy] = useState<"approve" | "reject" | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editBusy, setEditBusy] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
   const [rewritePending, setRewritePending] = useState(false);
   const [imagePending, setImagePending] = useState(false);
   const [imageBusy, setImageBusy] = useState(false);
@@ -234,6 +240,8 @@ export function ReviewPage() {
   const apiState = detail.content.state;
   const status: ContentStatus = apiState === "review_ready"
       ? "review"
+      : apiState === "deleted"
+        ? "deleted"
       : apiState === "approved"
         ? "approved"
         : apiState === "scheduled"
@@ -366,6 +374,37 @@ export function ReviewPage() {
     }
   };
 
+  const saveEdit = async (input: { title: string; body: string; reason: string | null }) => {
+    setEditBusy(true);
+    try {
+      await editApi(input);
+      await refresh();
+      setEditOpen(false);
+      setChecks({ sources: false, ads: false });
+      setToast("수정본을 새 버전으로 저장했어요. 검토 대기 상태로 전환했습니다.");
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "원고 수정에 실패했습니다.");
+      throw error;
+    } finally {
+      setEditBusy(false);
+      window.setTimeout(() => setToast(""), 3600);
+    }
+  };
+
+  const remove = async () => {
+    if (deleteBusy) return;
+    if (!window.confirm("이 원고를 삭제할까요? 원문과 변경 이력은 보존되며 목록에서 숨겨집니다.")) return;
+    setDeleteBusy(true);
+    try {
+      await removeApi();
+      navigate("/contents");
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "원고 삭제에 실패했습니다.");
+      setDeleteBusy(false);
+      window.setTimeout(() => setToast(""), 3600);
+    }
+  };
+
   return (
     <div className="review-page">
       <header className="review-header">
@@ -379,6 +418,8 @@ export function ReviewPage() {
           </div>
         </div>
         <div className="review-header__actions">
+          <Button icon={<Pencil size={17} />} disabled={status === "deleted" || connectionStatus !== "connected" || staleDetail || editBusy || deleteBusy} onClick={() => setEditOpen(true)}>직접 수정</Button>
+          <Button variant="danger" icon={<Trash2 size={17} />} disabled={status === "deleted" || connectionStatus !== "connected" || staleDetail || editBusy || deleteBusy} onClick={() => void remove()}>삭제</Button>
           <Button icon={<Copy size={17} />} disabled={!copyPackage.trim()} onClick={() => {
             void navigator.clipboard.writeText(copyPackage).then(() => {
               setToast("네이버 블로그에 붙여넣을 원고를 복사했습니다.");
@@ -541,6 +582,14 @@ export function ReviewPage() {
       </div>
 
       <RejectDialog open={rejectOpen} busy={decisionBusy !== null} onClose={() => setRejectOpen(false)} onReject={reject} />
+      <EditContentDialog
+        open={editOpen}
+        busy={editBusy}
+        initialTitle={latestVersion?.title ?? detail.content.title}
+        initialBody={latestVersion?.body ?? ""}
+        onClose={() => setEditOpen(false)}
+        onSave={saveEdit}
+      />
       {toast ? <div className="snackbar" role="status">{toast}</div> : null}
     </div>
   );

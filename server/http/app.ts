@@ -367,7 +367,9 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     if (draft.reviewStatus !== "approved") {
       return reply.status(409).send({ error: { code: "CONTENT_NOT_APPROVED", message: "승인 완료된 원고만 이미지를 생성할 수 있습니다.", details: null } });
     }
-    await githubAutomation.dispatch("images", { run_id: id });
+    // The endpoint is only reachable through the explicit "regenerate" action.
+    // Pass force so the image preflight guard does not block an intentional rerun.
+    await githubAutomation.dispatch("images", { run_id: id, force: "true" });
     return reply.status(202).send({ accepted: true });
   });
   app.post("/api/contents/:id/reject", async (request, reply) => {

@@ -660,6 +660,9 @@ function ImageAssetsView({
   const assets = packageState?.assets ?? [];
   const canGenerate = ["approved", "scheduled", "published"].includes(contentStatus);
   const ready = packageState?.status === "ready" && packageState.technicalQualityPassed === true && assets.length > 0;
+  const displayable = assets.length > 0;
+  const packageGeneratedAt = packageState?.generatedAt;
+  const visualQuality = packageState?.visualQuality;
   return (
     <section className="image-assets" aria-label="생성 이미지">
       <header className="image-assets__header">
@@ -676,12 +679,18 @@ function ImageAssetsView({
 
       {pending ? (
         <div className="image-assets__state"><PageLoadingState label="고품질 대표 이미지와 본문 이미지를 생성하는 중입니다." /></div>
-      ) : ready ? (
+      ) : displayable ? (
         <>
+          {packageState?.status === "failed" ? (
+            <div className="image-assets__state image-assets__state--failed">
+              <strong>일부 이미지의 품질 확인이 필요합니다.</strong>
+              <p>{packageState.visualQuality?.summary ?? "통과한 이미지는 확인할 수 있으며, 문제가 있는 이미지만 다시 생성할 수 있습니다."}</p>
+            </div>
+          ) : null}
           <div className="image-assets__grid">
             {assets.map((asset) => (
               <figure className={asset.role === "hero" ? "image-asset image-asset--hero" : "image-asset"} key={asset.id}>
-                <img src={contentImageUrl(contentId, asset.id, packageState.generatedAt)} alt={asset.altText} loading="lazy" />
+                <img src={contentImageUrl(contentId, asset.id, packageGeneratedAt)} alt={asset.altText} loading="lazy" />
                 <figcaption>
                   <div><strong>{asset.role === "hero" ? "대표 이미지" : `본문 ${asset.afterSection}절 뒤`}</strong><span>AI 실사·일러스트</span></div>
                   <p>{asset.altText}</p>
@@ -714,9 +723,9 @@ function ImageAssetsView({
           </div>
           <div className="image-assets__checks">
             <strong>자동 품질 검사</strong>
-            {(packageState.checks ?? []).map((check) => <span key={check.id} className={check.passed ? "passed" : "failed"}><CheckCircle2 size={16} />{check.label} · {check.detail}</span>)}
-            <span className={packageState.visualQuality?.overallPassed ? "passed" : "failed"}><CheckCircle2 size={16} />AI 시각 품질 검사 · {packageState.visualQuality?.overallPassed ? "통과" : "확인 필요"}</span>
-            <p>{packageState.visualQuality?.summary ?? "해상도·비율·용량 기준을 통과했습니다."} 최종 사용 전에는 사람·손·차량 디테일과 주제 적합성을 눈으로 한 번 더 확인해주세요.</p>
+            {(packageState?.checks ?? []).map((check) => <span key={check.id} className={check.passed ? "passed" : "failed"}><CheckCircle2 size={16} />{check.label} · {check.detail}</span>)}
+            <span className={visualQuality?.overallPassed ? "passed" : "failed"}><CheckCircle2 size={16} />AI 시각 품질 검사 · {visualQuality?.overallPassed ? "통과" : "확인 필요"}</span>
+            <p>{visualQuality?.summary ?? "해상도·비율·용량 기준을 통과했습니다."} 최종 사용 전에는 사람·손·차량 디테일과 주제 적합성을 눈으로 한 번 더 확인해주세요.</p>
           </div>
         </>
       ) : packageState?.status === "failed" ? (
@@ -758,7 +767,7 @@ function renderGeneratedBlocks(body: string): ReactNode[] {
 }
 
 function renderGeneratedBlocksWithImages(body: string, contentId: string, imagePackage: ApiGeneratedImagePackage | null): ReactNode[] {
-  const assets = imagePackage?.status === "ready" ? imagePackage.assets ?? [] : [];
+  const assets = imagePackage?.assets ?? [];
   const imagesBySection = new Map<number, typeof assets>();
   for (const asset of assets.filter((item) => item.role === "inline")) {
     const current = imagesBySection.get(asset.afterSection) ?? [];
@@ -838,7 +847,7 @@ function escapeCopyHtml(value: string): string {
 }
 
 function buildCopyHtml(storedHtml: string, title: string, body: string, contentId: string, imagePackage: ApiGeneratedImagePackage | null): string {
-  const assets = imagePackage?.status === "ready" ? imagePackage.assets ?? [] : [];
+  const assets = imagePackage?.assets ?? [];
   const source = storedHtml.trim() || `<article><h1>${escapeCopyHtml(title)}</h1>${body.split("\n\n").map((block) => {
     const text = block.trim();
     if (!text) return "";

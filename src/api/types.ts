@@ -52,6 +52,7 @@ export interface ApiGeneratedImagePackage {
   sourceRevision?: number;
   styleProfileId?: string;
   technicalQualityPassed?: boolean;
+  visualQualityPassed?: boolean;
   humanReviewRequired?: boolean;
   visualQuality?: {
     overallPassed: boolean;

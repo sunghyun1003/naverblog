@@ -124,6 +124,7 @@ export interface GeneratedImageManifest {
   sourceRevision: number;
   styleProfileId: string;
   technicalQualityPassed: boolean;
+  visualQualityPassed?: boolean;
   humanReviewRequired: true;
   visualQuality: {
     overallPassed: boolean;

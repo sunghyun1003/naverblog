@@ -20,6 +20,12 @@ function contentState(draft: AutomationDraftSummary): ContentState {
   if (draft.reviewStatus === "approved") return "approved";
   if (draft.reviewStatus === "rejected") return "drafting";
   if (draft.pipelineStatus === "TONE_REVIEW_COMPLETE") return "review_ready";
+  // CONTENT_READY is automatically complete only for untouched generated
+  // drafts. A direct edit clears autoApproved and returns the item to the
+  // review queue even though the original package status remains ready.
+  if (draft.pipelineStatus === "CONTENT_READY") {
+    return draft.reviewStatus === "pending" && draft.autoApproved !== true ? "review_ready" : "approved";
+  }
   return "drafting";
 }
 
@@ -249,6 +255,11 @@ export function draftToDetail(draft: AutomationDraftDetail): ContentDetail {
 
   return {
     content,
+    automation: {
+      autoApproved: draft.state.autoApproved === true,
+      reviewStatus: draft.state.reviewStatus,
+      manualEdit: Boolean(draft.state.manualEdit),
+    },
     versions: [...(draft.revisions ?? []).map((revision) => ({
       id: versionIdForRevision(revision.revision),
       contentId: draft.runId,
@@ -291,6 +302,7 @@ export function draftToDetail(draft: AutomationDraftDetail): ContentDetail {
         revision: currentRevision,
         diffSummary: ["Humanizer 33개 패턴 진단", "피드백 반영 재작성", "사실·출처 보존 자체 감사"],
         copyPackage: draft.copyPackage,
+        copyPackageHtml: draft.copyPackageHtml ?? null,
         manualEdit: draft.state.manualEdit ?? null,
       },
     }],

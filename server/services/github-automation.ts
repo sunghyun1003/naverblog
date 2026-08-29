@@ -32,6 +32,7 @@ export interface DashboardDraftState {
   schemaVersion: 1;
   runId: string;
   reviewStatus: DashboardReviewStatus;
+  autoApproved?: boolean;
   publicationStatus: DashboardPublicationStatus;
   checks: { sources: boolean; advertising: boolean };
   reason: string | null;
@@ -65,6 +66,7 @@ export interface AutomationDraftSummary {
   toneVerdict?: "PASS" | "REWRITE_REQUIRED" | null;
   updatedAt: string;
   reviewStatus: DashboardReviewStatus;
+  autoApproved?: boolean;
   publicationStatus: DashboardPublicationStatus;
   scheduledAt: string | null;
   publishedAt: string | null;
@@ -84,6 +86,7 @@ export interface AutomationDraftRevision {
 export interface AutomationDraftDetail extends AutomationDraftSummary {
   articleMarkdown: string;
   copyPackage: string;
+  copyPackageHtml?: string | null;
   sourcesMarkdown: string;
   article: GeneratedArticle;
   evidencePackage?: GeneratedEvidencePackage | null;
@@ -536,11 +539,12 @@ export class GitHubAutomationService {
     const revisionStatusPaths = paths
       .filter((file) => file.startsWith(`${basePath}/revisions/v`) && file.endsWith("/status.json"))
       .sort((left, right) => left.localeCompare(right, undefined, { numeric: true }));
-    const [status, article, articleMarkdown, copyPackage, sourcesMarkdown, evidencePackage, discoveryQuality, advertisingQuality, editorialQuality, nativeKoreanQuality, toneReview, toneAttempts, imageManifest, imageStatus, state] = await Promise.all([
+    const [status, article, articleMarkdown, copyPackage, copyPackageHtml, sourcesMarkdown, evidencePackage, discoveryQuality, advertisingQuality, editorialQuality, nativeKoreanQuality, toneReview, toneAttempts, imageManifest, imageStatus, state] = await Promise.all([
       this.readJson<GeneratedStatus>(statusPath),
       this.readJson<GeneratedArticle>(`${basePath}/article.json`),
       this.readText(`${basePath}/article.md`),
       this.readText(`${basePath}/copy-package.txt`),
+      this.readOptionalText(`${basePath}/copy-package.html`),
       this.readText(`${basePath}/sources.md`),
       this.readOptionalJson<GeneratedEvidencePackage>(`${basePath}/evidence-package.json`),
       this.readOptionalJson<GeneratedDiscoveryQuality>(`${basePath}/discovery-quality.json`),
@@ -583,6 +587,7 @@ export class GitHubAutomationService {
       ...this.summary(runId, status, effectiveArticle, state),
       articleMarkdown: effectiveMarkdown,
       copyPackage: effectiveCopyPackage,
+      copyPackageHtml,
       sourcesMarkdown,
       article: effectiveArticle,
       evidencePackage,
@@ -623,6 +628,7 @@ export class GitHubAutomationService {
     const baseRevision = previousState.revision ?? draft?.revision ?? 1;
     return this.updateState(runId, {
       reviewStatus: "pending",
+      autoApproved: false,
       publicationStatus: "none",
       checks: { sources: false, advertising: false },
       reason: null,
@@ -803,6 +809,7 @@ export class GitHubAutomationService {
       toneVerdict: status.toneVerdict ?? null,
       updatedAt,
       reviewStatus: state.reviewStatus,
+      autoApproved: state.autoApproved === true,
       publicationStatus: state.publicationStatus,
       scheduledAt: state.scheduledAt,
       publishedAt: state.publishedAt,
@@ -825,6 +832,15 @@ export class GitHubAutomationService {
     );
     if (payload.truncated) throw new Error("비공개 레포 파일 목록이 너무 커서 원고 목록을 완전히 읽지 못했습니다.");
     return payload.tree.filter((item) => item.type === "blob");
+  }
+
+  private async readOptionalText(path: string): Promise<string | null> {
+    const response = await this.raw(`/contents/${encodeRepositoryPath(path)}?ref=${encodeURIComponent(this.config.branch)}`);
+    if (response.status === 404) return null;
+    if (!response.ok) throw await this.githubError(response);
+    const file = await response.json() as GitHubFileResponse;
+    if (file.encoding !== "base64") throw new Error(`GitHub file has unsupported encoding: ${file.encoding}`);
+    return Buffer.from(file.content.replace(/\s/g, ""), "base64").toString("utf8");
   }
 
   private async readText(path: string): Promise<string> {

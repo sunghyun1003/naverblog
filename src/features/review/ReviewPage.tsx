@@ -2,6 +2,7 @@ import {
   ArrowLeft,
   Check,
   CheckCircle2,
+  Code2,
   ChevronDown,
   ExternalLink,
   FileCheck2,
@@ -126,6 +127,7 @@ export function ReviewPage() {
   const [imagePending, setImagePending] = useState(false);
   const [imageBusy, setImageBusy] = useState(false);
   const [imageRequestStartedAt, setImageRequestStartedAt] = useState<number | null>(null);
+  const [copyBusy, setCopyBusy] = useState(false);
   const [toast, setToast] = useState("");
   const finalChecksRef = useRef<HTMLElement>(null);
   const firstFinalCheckRef = useRef<HTMLInputElement>(null);
@@ -190,7 +192,7 @@ export function ReviewPage() {
           window.setTimeout(() => setToast(""), 5000);
         } else if (attempts >= 40) {
           setImagePending(false);
-          setToast("이미지 생성 시간이 길어지고 있습니다. GitHub Actions의 Generate approved draft images 실행을 확인해주세요.");
+          setToast("이미지 생성 시간이 길어지고 있습니다. GitHub Actions의 이미지 생성 작업을 확인해주세요.");
           window.setTimeout(() => setToast(""), 7000);
         }
       } catch {
@@ -254,13 +256,15 @@ export function ReviewPage() {
   const finalChecksComplete = checks.sources && checks.ads;
   const staleDetail = detail.freshness?.stale === true;
   const latestJob = detail.jobs[0] ?? null;
+  const autoReady = detail.automation?.autoApproved === true && detail.automation.reviewStatus === "approved";
   const pipelineBusy = ["queued", "running"].includes(latestJob?.status ?? "")
     || detail.content.rewriteStatus === "queued";
   // A failed quality run is still actionable: the reviewer should be able to
   // reject it and trigger a rewrite instead of being trapped on this page.
-  const canReject = (status === "review" || (status === "drafting" && !pipelineBusy))
+  const canReject = (autoReady || status === "review" || status === "drafting")
     && connectionStatus === "connected"
     && !staleDetail
+    && !pipelineBusy
     && decisionBusy === null;
   // Keep approval visible for a generated draft. The handler explains which
   // quality gate is blocking approval and focuses that section for the user.
@@ -303,6 +307,8 @@ export function ReviewPage() {
   const visualPlan = visualPlanFrom(latestVersion);
   const nativeKoreanQuality = nativeKoreanQualityFrom(latestVersion);
   const copyPackage = typeof latestVersion?.metadata.copyPackage === "string" ? latestVersion.metadata.copyPackage : latestVersion?.body ?? "";
+  const storedCopyHtml = detail.automation?.manualEdit ? "" : typeof latestVersion?.metadata.copyPackageHtml === "string" ? latestVersion.metadata.copyPackageHtml : "";
+  const copyHtml = buildCopyHtml(storedCopyHtml, latestVersion?.title ?? detail.content.title, latestVersion?.body ?? "", detail.content.id, imagePackage);
   const jumpTo = (id: string) => {
     setActiveOutline(id);
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -445,15 +451,21 @@ export function ReviewPage() {
         <div className="review-header__actions">
           <Button icon={<Pencil size={17} />} disabled={status === "deleted" || connectionStatus !== "connected" || staleDetail || editBusy || deleteBusy} onClick={() => setEditOpen(true)}>직접 수정</Button>
           <Button variant="danger" icon={<Trash2 size={17} />} disabled={status === "deleted" || connectionStatus !== "connected" || staleDetail || editBusy || deleteBusy} onClick={() => void remove()}>삭제</Button>
+          <Button icon={<Code2 size={17} />} disabled={!copyHtml.trim()} onClick={() => void copyHtmlSource(copyHtml, setToast)}>
+            HTML 소스 복사
+          </Button>
+          <Button icon={<Copy size={17} />} disabled={!copyHtml.trim() || copyBusy} onClick={() => void copyRichContent(copyHtml, copyPackage, setCopyBusy, setToast)}>
+            이미지 포함 복사
+          </Button>
           <Button icon={<Copy size={17} />} disabled={!copyPackage.trim()} onClick={() => {
             void navigator.clipboard.writeText(copyPackage).then(() => {
               setToast("네이버 블로그에 붙여넣을 원고를 복사했습니다.");
               window.setTimeout(() => setToast(""), 3200);
             });
-          }}>원고 복사</Button>
-          <Button onClick={() => setRejectOpen(true)} disabled={!canReject}>반려</Button>
+          }}>텍스트 복사</Button>
+          <Button onClick={() => setRejectOpen(true)} disabled={!canReject}>{autoReady ? "수정 요청" : "반려"}</Button>
           <Button variant="brand" onClick={approve} disabled={!canRequestApproval} icon={status === "approved" ? <Check size={18} /> : undefined}>
-            {status === "approved" ? "승인 완료" : decisionBusy === "approve" ? "승인 처리 중" : "승인하기"}
+            {autoReady ? "자동 완성" : status === "approved" ? "승인 완료" : decisionBusy === "approve" ? "승인 처리 중" : "승인하기"}
           </Button>
         </div>
       </header>
@@ -481,7 +493,7 @@ export function ReviewPage() {
             <button type="button" role="tab" aria-selected={tab === "history"} onClick={() => setTab("history")}>변경 이력</button>
           </div>
 
-          {tab === "draft" ? <ArticleDraft title={latestVersion?.title} body={latestVersion?.body} /> : null}
+          {tab === "draft" ? <ArticleDraft title={latestVersion?.title} body={latestVersion?.body} contentId={detail.content.id} imagePackage={imagePackage} /> : null}
           {tab === "sources" ? <EvidenceReviewPanel evidence={evidenceReview} sources={detail.sources} claims={detail.claims} /> : null}
           {tab === "images" ? <ImageAssetsView contentId={detail.content.id} packageState={imagePackage} contentStatus={status} pending={imagePending} busy={imageBusy} onGenerate={() => void generateImages()} /> : null}
           {tab === "history" ? <HistoryView versions={detail.versions} /> : null}
@@ -494,19 +506,28 @@ export function ReviewPage() {
             {staleDetail ? "최신 GitHub 조회 실패 · 저장된 원고는 승인하거나 반려할 수 없음" : "최신 원고와 자동화 실행 기록 연결됨"}
           </div>
           <section className="inspector-section final-checks final-checks--priority" ref={finalChecksRef}>
-            <h3>최종 승인 확인</h3>
-            <label>
-              <input ref={firstFinalCheckRef} type="checkbox" checked={checks.sources} onChange={(event) => setChecks((current) => ({ ...current, sources: event.target.checked }))} />
-              <span>수치와 출처를 확인했어요</span>
-            </label>
-            <label>
-              <input type="checkbox" checked={checks.ads} onChange={(event) => setChecks((current) => ({ ...current, ads: event.target.checked }))} />
-              <span>광고성 표현을 확인했어요</span>
-            </label>
-            {!finalChecksComplete && status === "review" ? <p>실제 승인 처리는 두 항목을 모두 확인한 뒤 가능합니다.</p> : null}
-            {failedQualityItems.length > 0 && status === "review" ? (
-              <p role="alert">자동 검수 실패 {failedQualityItems.length}건을 보완한 뒤 승인할 수 있습니다.</p>
-            ) : null}
+            {autoReady ? (
+              <>
+                <h3>자동 완성 상태</h3>
+                <p>원고·사람 말투 보정·품질 검수·이미지 생성까지 완료됐습니다. 아래의 수정 요청은 필요할 때만 사용하세요.</p>
+              </>
+            ) : (
+              <>
+                <h3>최종 승인 확인</h3>
+                <label>
+                  <input ref={firstFinalCheckRef} type="checkbox" checked={checks.sources} onChange={(event) => setChecks((current) => ({ ...current, sources: event.target.checked }))} />
+                  <span>수치와 출처를 확인했어요</span>
+                </label>
+                <label>
+                  <input type="checkbox" checked={checks.ads} onChange={(event) => setChecks((current) => ({ ...current, ads: event.target.checked }))} />
+                  <span>광고성 표현을 확인했어요</span>
+                </label>
+                {!finalChecksComplete && status === "review" ? <p>실제 승인 처리는 두 항목을 모두 확인한 뒤 가능합니다.</p> : null}
+                {failedQualityItems.length > 0 && status === "review" ? (
+                  <p role="alert">자동 검수 실패 {failedQualityItems.length}건을 보완한 뒤 승인할 수 있습니다.</p>
+                ) : null}
+              </>
+            )}
           </section>
           {latestJob ? (
             <section className="pipeline-progress" aria-label="자동화 단계">
@@ -643,7 +664,7 @@ function ImageAssetsView({
       <header className="image-assets__header">
         <div>
           <h2>블로그 이미지</h2>
-          <p>전달한 우수 샘플의 구도와 완성도를 참고해 대표 1장과 본문 2장을 실사 또는 고급 일러스트로 만듭니다.</p>
+          <p>자동 생성된 원고에 대표 1장과 본문 2장을 실사 또는 고급 일러스트로 함께 제공합니다.</p>
         </div>
         {canGenerate ? (
           <Button variant={ready ? "outline" : "brand"} disabled={pending || busy} icon={<Images size={17} />} onClick={onGenerate}>
@@ -682,15 +703,18 @@ function ImageAssetsView({
         </div>
       ) : (
         <div className="image-assets__state">
-          <strong>{canGenerate ? "아직 생성된 이미지가 없습니다." : "원고 승인 후 이미지를 생성합니다."}</strong>
-          <p>{canGenerate ? "이미지 생성을 누르면 대표 이미지 1장과 본문 이미지 2장을 만듭니다." : "원고 내용이 확정된 뒤에만 생성해 사용 한도와 재작업을 줄입니다."}</p>
+          <strong>{canGenerate ? "아직 생성된 이미지가 없습니다." : "원고 패키지 완료 후 이미지를 생성합니다."}</strong>
+          <p>{canGenerate ? "이미지 생성을 누르면 대표 이미지 1장과 본문 이미지 2장을 만듭니다." : "원고·말투·품질 검사가 끝난 뒤 생성해 사용 한도와 재작업을 줄입니다."}</p>
         </div>
       )}
     </section>
   );
 }
 
+let generatedImageContext: { contentId: string; imagePackage: ApiGeneratedImagePackage | null } | null = null;
+
 function renderGeneratedBlocks(body: string): ReactNode[] {
+  if (generatedImageContext) return renderGeneratedBlocksWithImages(body, generatedImageContext.contentId, generatedImageContext.imagePackage);
   let sectionIndex = 0;
   const sectionIds = ["summary", "differences", "before-switch", "faq"];
   return body.split("\n\n").flatMap((block, index) => {
@@ -710,6 +734,66 @@ function renderGeneratedBlocks(body: string): ReactNode[] {
   });
 }
 
+function renderGeneratedBlocksWithImages(body: string, contentId: string, imagePackage: ApiGeneratedImagePackage | null): ReactNode[] {
+  const assets = imagePackage?.status === "ready" ? imagePackage.assets ?? [] : [];
+  const imagesBySection = new Map<number, typeof assets>();
+  for (const asset of assets.filter((item) => item.role === "inline")) {
+    const current = imagesBySection.get(asset.afterSection) ?? [];
+    current.push(asset);
+    imagesBySection.set(asset.afterSection, current);
+  }
+  const hero = assets.find((asset) => asset.role === "hero");
+  let sectionIndex = 0;
+  const output: ReactNode[] = [];
+  const pushSectionImages = (index: number) => {
+    for (const asset of imagesBySection.get(index) ?? []) {
+      output.push(
+        <figure className="article-inline-image" key={`image-${asset.id}-${index}`}>
+          <img src={contentImageUrl(contentId, asset.id, imagePackage?.generatedAt)} alt={asset.altText} loading="lazy" />
+          <figcaption>{asset.altText}</figcaption>
+        </figure>,
+      );
+    }
+  };
+  for (const [index, block] of body.split("\n\n").entries()) {
+    const text = block.trim();
+    if (!text) continue;
+    if (text.startsWith("### ")) {
+      output.push(<h4 key={index}>{renderInlineBold(text.slice(4), `h4-${index}`)}</h4>);
+      continue;
+    }
+    if (text.startsWith("## ")) {
+      if (sectionIndex > 0) pushSectionImages(sectionIndex);
+      sectionIndex += 1;
+      output.push(<h3 id={["differences", "before-switch", "faq"][Math.min(sectionIndex - 1, 2)]} key={index}>{renderInlineBold(text.slice(3), `h3-${index}`)}</h3>);
+      continue;
+    }
+    if (text.startsWith("# ")) {
+      output.push(<h2 id="summary" key={index}>{renderInlineBold(text.slice(2), `h2-${index}`)}</h2>);
+      if (hero) {
+        output.push(
+          <figure className="article-inline-image article-inline-image--hero" key={`image-${hero.id}`}>
+            <img src={contentImageUrl(contentId, hero.id, imagePackage?.generatedAt)} alt={hero.altText} />
+            <figcaption>{hero.altText}</figcaption>
+          </figure>,
+        );
+      }
+      continue;
+    }
+    if (text.startsWith("- ")) {
+      output.push(<ul key={index}>{text.split("\n").map((line, lineIndex) => <li key={`${lineIndex}-${line}`}>{renderInlineBold(line.replace(/^-\s*/, ""), `li-${index}-${lineIndex}`)}</li>)}</ul>);
+      continue;
+    }
+    if (text.startsWith("> ")) {
+      output.push(<p className="article-note" key={index}>{renderInlineBold(text.slice(2), `note-${index}`)}</p>);
+      continue;
+    }
+    output.push(<p key={index}>{renderInlineBold(text, `p-${index}`)}</p>);
+  }
+  pushSectionImages(sectionIndex);
+  return output;
+}
+
 const inlineBoldPattern = /(\*\*[^*]+\*\*)/g;
 
 function renderInlineBold(text: string, keyPrefix: string): ReactNode[] {
@@ -721,7 +805,94 @@ function renderInlineBold(text: string, keyPrefix: string): ReactNode[] {
   });
 }
 
-function ArticleDraft({ title, body }: { title?: string; body?: string }) {
+function escapeCopyHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function buildCopyHtml(storedHtml: string, title: string, body: string, contentId: string, imagePackage: ApiGeneratedImagePackage | null): string {
+  const assets = imagePackage?.status === "ready" ? imagePackage.assets ?? [] : [];
+  const source = storedHtml.trim() || `<article><h1>${escapeCopyHtml(title)}</h1>${body.split("\n\n").map((block) => {
+    const text = block.trim();
+    if (!text) return "";
+    if (text.startsWith("### ")) return `<h3>${escapeCopyHtml(text.slice(4))}</h3>`;
+    if (text.startsWith("## ")) return `<h2>${escapeCopyHtml(text.slice(3))}</h2>`;
+    if (text.startsWith("# ")) return `<h1>${escapeCopyHtml(text.slice(2))}</h1>`;
+    if (text.startsWith("- ")) return `<ul>${text.split("\n").map((line) => `<li>${escapeCopyHtml(line.replace(/^-\s*/, ""))}</li>`).join("")}</ul>`;
+    if (text.startsWith("> ")) return `<blockquote><p>${escapeCopyHtml(text.slice(2))}</p></blockquote>`;
+    return `<p>${escapeCopyHtml(text)}</p>`;
+  }).join("")}</article>`;
+  return source.replace(/(src=["'])images\/([^"']+)(["'])/g, (_match, prefix: string, fileName: string, suffix: string) => {
+    const asset = assets.find((item) => item.path === fileName || `${item.id}.jpg` === fileName);
+    return asset ? `${prefix}${contentImageUrl(contentId, asset.id, imagePackage?.generatedAt)}${suffix}` : `${prefix}images/${fileName}${suffix}`;
+  });
+}
+
+async function imageDataUrl(url: string): Promise<string | null> {
+  const response = await fetch(url, { credentials: "include" });
+  if (!response.ok) return null;
+  const blob = await response.blob();
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : null);
+    reader.onerror = () => resolve(null);
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function inlineCopyImages(html: string): Promise<string> {
+  const sources = [...html.matchAll(/src=["']([^"']+)["']/g)].map((match) => match[1]).filter((source, index, all) => all.indexOf(source) === index);
+  const replacements = await Promise.all(sources.map(async (source) => [source, await imageDataUrl(source)] as const));
+  return replacements.reduce((result, [source, dataUrl]) => dataUrl ? result.split(source).join(dataUrl) : result, html);
+}
+
+async function copyHtmlSource(html: string, setToast: (message: string) => void): Promise<void> {
+  try {
+    const hydrated = await inlineCopyImages(html);
+    await navigator.clipboard.writeText(hydrated);
+    setToast("이미지가 포함된 HTML 소스를 복사했습니다. 네이버 블로그 HTML 편집기에 붙여넣으세요.");
+  } catch {
+    setToast("HTML 소스 복사에 실패했습니다. 브라우저의 클립보드 권한을 확인해주세요.");
+  }
+}
+
+async function copyRichContent(
+  html: string,
+  plainText: string,
+  setBusy: (value: boolean) => void,
+  setToast: (message: string) => void,
+): Promise<void> {
+  setBusy(true);
+  try {
+    const hydrated = await inlineCopyImages(html);
+    if (typeof ClipboardItem !== "undefined" && navigator.clipboard.write) {
+      const item = new ClipboardItem({
+        "text/html": new Blob([hydrated], { type: "text/html" }),
+        "text/plain": new Blob([plainText], { type: "text/plain" }),
+      });
+      await navigator.clipboard.write([item]);
+    } else {
+      await navigator.clipboard.writeText(plainText);
+    }
+    setToast("이미지가 포함된 원고를 복사했습니다. 네이버 블로그 편집기에 바로 붙여넣으세요.");
+  } catch {
+    try {
+      await navigator.clipboard.writeText(plainText);
+      setToast("서식 복사는 제한되어 일반 원고로 복사했습니다.");
+    } catch {
+      setToast("원고 복사에 실패했습니다. 브라우저의 클립보드 권한을 확인해주세요.");
+    }
+  } finally {
+    setBusy(false);
+  }
+}
+
+function ArticleDraft({ title, body, contentId, imagePackage }: { title?: string; body?: string; contentId: string; imagePackage: ApiGeneratedImagePackage | null }) {
+  generatedImageContext = { contentId, imagePackage };
   if (!body?.trim()) return <div className="review-content-empty">저장된 원고 본문이 없습니다.</div>;
   return <article className="article-draft article-draft--generated" aria-label={`${title ?? "생성된 원고"} 본문`}>{renderGeneratedBlocks(body)}</article>;
 }

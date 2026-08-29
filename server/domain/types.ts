@@ -173,6 +173,11 @@ export interface PublicationRecord {
 
 export interface ContentDetail {
   content: ContentRecord;
+  automation?: {
+    autoApproved: boolean;
+    reviewStatus: "pending" | "approved" | "rejected";
+    manualEdit: boolean;
+  };
   versions: ContentVersion[];
   sources: SourceRecord[];
   claims: ClaimRecord[];

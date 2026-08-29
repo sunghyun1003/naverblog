@@ -116,7 +116,8 @@ const activePipelineMarkers = [
 ];
 
 function canRejectGitHubDraft(draft: AutomationDraftDetail): boolean {
-  if (draft.deleted || draft.reviewStatus !== "pending" || draft.publicationStatus !== "none") return false;
+  const autoReady = draft.state?.autoApproved === true;
+  if (draft.deleted || (!autoReady && draft.reviewStatus !== "pending") || draft.publicationStatus !== "none") return false;
   const pipelineStatus = (draft.pipelineStatus ?? "UNKNOWN").toUpperCase();
   return !activePipelineMarkers.some((marker) => pipelineStatus.includes(marker));
 }

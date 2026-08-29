@@ -136,6 +136,32 @@ test("GitHub 원고를 영속 저장소에 중복 없이 동기화한다", async
   assert.equal(detail.auditEvents.length, 1);
 });
 
+test("자동 완성 원고를 직접 수정하면 다시 검토 대기 상태가 된다", () => {
+  const input = draft();
+  input.pipelineStatus = "CONTENT_READY";
+  input.reviewStatus = "pending";
+  input.publicationStatus = "none";
+  input.scheduledAt = null;
+  input.autoApproved = false;
+  input.state.reviewStatus = "pending";
+  input.state.publicationStatus = "none";
+  input.state.scheduledAt = null;
+  input.state.autoApproved = false;
+  input.state.manualEdit = {
+    title: "직접 수정한 제목",
+    body: "직접 수정한 본문입니다.",
+    reason: null,
+    createdAt: generatedAt,
+    createdBy: "carrot",
+    baseRevision: 1,
+  };
+
+  const detail = draftToDetail(input);
+  assert.equal(detail.content.state, "review_ready");
+  assert.equal(detail.automation?.autoApproved, false);
+  assert.equal(detail.automation?.manualEdit, true);
+});
+
 test("반려 재작성 전후 버전과 반려 이력을 함께 보존한다", () => {
   const input = draft();
   input.reviewStatus = "pending";

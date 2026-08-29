@@ -177,6 +177,11 @@ export interface ApiQualityResult {
 
 export interface ApiContentDetail {
   content: ApiContent;
+  automation?: {
+    autoApproved: boolean;
+    reviewStatus: "pending" | "approved" | "rejected";
+    manualEdit: boolean;
+  };
   versions: ApiContentVersion[];
   sources: ApiSource[];
   claims: ApiClaim[];

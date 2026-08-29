@@ -217,6 +217,41 @@ export function ReviewPage() {
     };
   }, [imagePending, imageRequestStartedAt, refresh]);
 
+  // Automatic generation starts in a separate Actions job. Keep the detail
+  // view in sync while that job is queued so users do not mistake the empty
+  // image tab for a missing package.
+  useEffect(() => {
+    if (imagePending || detail?.content.imageGenerationStatus !== "queued") return;
+    let stopped = false;
+    let attempts = 0;
+    let timer: number | null = null;
+    const poll = async () => {
+      if (stopped) return;
+      attempts += 1;
+      try {
+        const next = await refresh();
+        if (stopped) return;
+        if (next.content.imageGenerationStatus !== "queued") {
+          setTab("images");
+          setToast("이미지 생성 결과가 반영되었습니다.");
+          window.setTimeout(() => setToast(""), 4200);
+        } else if (attempts >= 40) {
+          if (timer !== null) window.clearInterval(timer);
+          setToast("이미지 생성이 아직 진행 중입니다. 잠시 후 새로고침해주세요.");
+          window.setTimeout(() => setToast(""), 5000);
+        }
+      } catch {
+        // A transient GitHub read failure should not interrupt the poll loop.
+      }
+    };
+    void poll();
+    timer = window.setInterval(() => void poll(), 15_000);
+    return () => {
+      stopped = true;
+      if (timer !== null) window.clearInterval(timer);
+    };
+  }, [detail?.content.imageGenerationStatus, imagePending, refresh]);
+
   if (connectionStatus === "loading") {
     return (
       <div className="review-page">

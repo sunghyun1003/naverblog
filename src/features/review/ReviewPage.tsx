@@ -161,7 +161,7 @@ export function ReviewPage() {
           window.setTimeout(() => setToast(""), 5000);
         } else if (attempts >= 40) {
           setRewritePending(false);
-          setToast("재작성 시간이 길어지고 있습니다. GitHub Actions의 Rewrite rejected draft 실행을 확인해주세요.");
+          setToast("재작성 시간이 길어지고 있습니다. 실행 이력에서 원고 수정 작업을 확인해주세요.");
           window.setTimeout(() => setToast(""), 7000);
         }
       } catch {
@@ -202,7 +202,7 @@ export function ReviewPage() {
           window.setTimeout(() => setToast(""), 5000);
         } else if (attempts >= 40) {
           setImagePending(false);
-          setToast("이미지 생성 시간이 길어지고 있습니다. GitHub Actions의 이미지 생성 작업을 확인해주세요.");
+          setToast("이미지 생성 시간이 길어지고 있습니다. 실행 이력에서 이미지 생성 작업을 확인해주세요.");
           window.setTimeout(() => setToast(""), 7000);
         }
       } catch {
@@ -458,7 +458,7 @@ export function ReviewPage() {
       setRejectOpen(false);
       setRewritePending(updated?.rewriteQueued === true);
       if (updated?.rewriteQueued === false) {
-        setToast("반려는 저장됐지만 자동 재작성 요청에 실패했습니다. GitHub Actions에서 Rewrite rejected draft를 수동 실행해주세요.");
+        setToast("수정 의견은 저장됐지만 자동 재작성 요청에 실패했습니다. 실행 이력에서 원고 수정 작업을 다시 실행해주세요.");
       } else if (updated?.mirrorSynced === false) {
         setToast("반려 의견을 저장하고 자동 재작성을 시작했어요. 운영 DB는 다음 조회에서 다시 동기화합니다.");
       } else if (updated?.rewriteQueued === true) {
@@ -573,7 +573,7 @@ export function ReviewPage() {
           <h2>검수 결과</h2>
           <div className={`review-connection review-connection--${staleDetail ? "offline" : connectionStatus}`} role={staleDetail ? "alert" : undefined}>
             <span />
-            {staleDetail ? "최신 GitHub 조회 실패 · 저장된 원고는 승인하거나 반려할 수 없음" : "최신 원고와 자동화 실행 기록 연결됨"}
+            {staleDetail ? "최신 원고 조회 지연 · 저장된 내용 표시 중" : "최신 원고와 자동 실행 기록 확인 완료"}
           </div>
           <section className="inspector-section final-checks final-checks--priority" ref={finalChecksRef}>
             {true ? (
@@ -820,7 +820,7 @@ function ImageAssetsView({
       ) : packageState?.status === "failed" ? (
         <div className="image-assets__state image-assets__state--failed">
           <strong>이미지 생성이 완료되지 않았습니다.</strong>
-          <p>{packageState.message ?? "GitHub Actions 실행 기록을 확인하거나 다시 생성해주세요."}</p>
+          <p>{packageState.message ?? "실행 이력을 확인하거나 이미지를 다시 생성해주세요."}</p>
         </div>
       ) : (
         <div className="image-assets__state">

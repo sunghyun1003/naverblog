@@ -29,12 +29,10 @@ const filters: Array<{ key: "all" | ContentStatus; label: string }> = [
   { key: "published", label: "발행 완료" },
 ];
 
-const isHostedPreview = import.meta.env.VITE_PREVIEW_MODE === "true";
-
 export function DashboardPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { contents, connectionStatus, capabilities, freshness, creating, createAndRun, removeMany } = useContents();
+  const { contents, connectionStatus, creating, createAndRun, removeMany } = useContents();
   const requestedFilter = searchParams.get("filter");
   const activeFilter: "all" | ContentStatus = requestedFilter && filters.some((filter) => filter.key === requestedFilter)
     ? requestedFilter as ContentStatus
@@ -89,9 +87,6 @@ export function DashboardPage() {
 
   const reviewCount = contents.filter((content) => content.status === "review").length;
   const scheduledCount = contents.filter((content) => content.status === "scheduled").length;
-  const freshnessLabel = freshness?.asOf
-    ? new Intl.DateTimeFormat("ko-KR", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(freshness.asOf))
-    : "확인 시각 없음";
   const recentActivities = contents.slice(0, 4).map((content) => ({
     id: content.id,
     title: content.title,
@@ -160,51 +155,14 @@ export function DashboardPage() {
   return (
     <div className="dashboard-page">
       <section className="dashboard-main">
-        <header className="page-heading">
-          <div>
-            <h1>콘텐츠 운영</h1>
-            <p>기획부터 발행까지 한곳에서 관리하세요.</p>
-          </div>
+        <header className="operations-heading">
+          <h1>콘텐츠</h1>
           <Button variant="brand" icon={<Plus size={18} />} onClick={() => setCreateOpen(true)} disabled={connectionStatus !== "connected"}>
             콘텐츠 만들기
           </Button>
         </header>
 
-        <div className={`system-status system-status--${freshness?.stale ? "offline" : connectionStatus}`} role="status">
-          <span className="system-status__dot" />
-          <div>
-            <strong>
-              {connectionStatus === "connected"
-                ? freshness?.stale
-                  ? "최신 원고 연결 실패 · 저장 데이터 표시 중"
-                  : freshness?.source === "postgres-cache"
-                    ? "운영 DB 목록 표시 중"
-                  : capabilities?.mode === "github-actions"
-                  ? "GitHub Actions 자동화 연결됨"
-                  : "로컬 검증 파이프라인 연결됨"
-                : connectionStatus === "connecting"
-                  ? "자동화 서버 연결 확인 중"
-                  : isHostedPreview
-                    ? "웹 미리보기 모드"
-                    : "자동화 서버 연결 대기"}
-            </strong>
-            <small>
-              {connectionStatus === "connected"
-                ? freshness?.stale
-                  ? `저장 데이터 기준 ${freshnessLabel} · 승인이나 반려 전 다시 접속해 최신 상태를 확인해주세요.`
-                  : freshness?.source === "postgres-cache"
-                    ? `최근 원고 갱신 ${freshnessLabel} · 새 원고는 확인했고, 상세 화면에서는 GitHub 최신 상태를 다시 검증합니다.`
-                  : capabilities?.mode === "github-actions"
-                  ? "비공개 자동화 저장소 · 수집·생성·말투 보정 사용 가능"
-                  : "모의 데이터로 생성·검수·승인 흐름을 확인할 수 있습니다."
-                : connectionStatus === "connecting"
-                  ? "실제 콘텐츠와 자동화 상태를 확인하고 있습니다."
-                  : isHostedPreview
-                  ? "운영 데이터 API에 연결해야 콘텐츠를 조회하고 생성할 수 있습니다."
-                  : "자동화 서버에 연결하지 못했습니다. 잠시 후 새로고침해 주세요."}
-            </small>
-          </div>
-        </div>
+        {connectionStatus === "offline" ? <div className="operations-notice" role="alert">콘텐츠를 불러오지 못했습니다. 잠시 후 새로고침해주세요.</div> : null}
 
         <section className="status-strip" aria-label="오늘의 콘텐츠 상태">
           <button type="button" onClick={() => setActiveFilter("review")}>
@@ -217,7 +175,7 @@ export function DashboardPage() {
           </button>
           <button type="button" onClick={() => navigate("/trends")}>
             <span className="status-strip__icon status-strip__icon--positive"><FileCheck2 size={21} /></span>
-            <span><small>트렌드 수집</small><strong>{capabilities?.integrations.naverSearch.configured ? "ON" : "-"}</strong></span>
+            <span><small>전체 콘텐츠</small><strong>{connectionStatus === "connecting" ? "-" : contents.length}</strong></span>
           </button>
         </section>
 

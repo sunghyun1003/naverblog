@@ -76,19 +76,19 @@ export function SchedulePage() {
 
   return (
     <div className="operations-page">
-      <header className="operations-heading"><div><h1>발행 일정</h1><p>승인된 원고의 발행 예정 시간과 실제 게시 URL을 기록하세요.</p></div><Button icon={<RefreshCw size={17} />} onClick={() => void refresh(undefined, true).catch((error: unknown) => setMessage(error instanceof Error ? error.message : "발행 일정을 불러오지 못했습니다."))} disabled={loading || actionBusy !== null}>새로고침</Button></header>
+      <header className="operations-heading"><h1>발행 일정</h1><Button icon={<RefreshCw size={17} />} onClick={() => void refresh(undefined, true).catch((error: unknown) => setMessage(error instanceof Error ? error.message : "발행 일정을 불러오지 못했습니다."))} disabled={loading || actionBusy !== null}>새로고침</Button></header>
       {message ? <div className="operations-notice" role="status">{message}</div> : null}
       {freshness?.stale ? (
-        <div className="operations-notice" role="alert">GitHub 최신 조회가 지연되어 마지막 동기화 데이터를 표시합니다. 예약·발행 전에 새로고침해주세요.</div>
+        <div className="operations-notice" role="alert">최신 조회가 지연되어 마지막 저장 내용을 표시합니다. 예약·발행 전에 새로고침해주세요.</div>
       ) : freshness?.source === "postgres-cache" ? (
-        <div className="operations-notice" role="status">마지막 동기화된 발행 상태를 표시합니다. 필요하면 새로고침으로 GitHub 최신 상태를 확인해주세요.</div>
+        <div className="operations-notice" role="status">마지막 저장 내용을 표시합니다. 필요하면 새로고침해주세요.</div>
       ) : null}
       <section className="schedule-list">
         {loading && !contents.length ? <PageLoadingState label="발행 일정을 불러오는 중입니다." /> : contents.map((content) => {
           const mapped = mapContent(content);
           return (
             <article key={content.id}>
-              <header><div><h2>{content.title}</h2><p>실행 ID {content.id}</p></div><StatusBadge status={mapped.status} /></header>
+              <header><h2>{content.title}</h2><StatusBadge status={mapped.status} /></header>
               {content.state === "approved" ? <div className="schedule-control"><label><span>발행 예정</span><input type="datetime-local" value={dates[content.id] ?? ""} disabled={loading || actionBusy !== null} onChange={(event) => setDates((current) => ({ ...current, [content.id]: event.target.value }))} /></label><Button variant="brand" onClick={() => void schedule(content)} disabled={loading || actionBusy !== null || !dates[content.id]}>{actionBusy?.contentId === content.id && actionBusy.action === "schedule" ? "저장 중..." : "예약 저장"}</Button></div> : null}
               {content.state === "scheduled" ? <div className="schedule-control"><label><span>네이버 게시 URL</span><input type="url" placeholder="https://blog.naver.com/..." value={urls[content.id] ?? ""} disabled={loading || actionBusy !== null} onChange={(event) => setUrls((current) => ({ ...current, [content.id]: event.target.value }))} /></label><Button variant="brand" icon={<CheckCircle2 size={17} />} onClick={() => void published(content)} disabled={loading || actionBusy !== null || !urls[content.id]?.trim()}>{actionBusy?.contentId === content.id && actionBusy.action === "publish" ? "처리 중..." : "발행 완료"}</Button></div> : null}
               {content.state === "published" && content.publishedAt ? <p className="published-link">발행 기록 {new Date(content.publishedAt).toLocaleString("ko-KR")}</p> : null}

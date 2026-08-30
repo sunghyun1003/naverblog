@@ -9,28 +9,6 @@
   padding: var(--space-10) var(--space-8) var(--space-12);
 }
 
-.page-heading {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-6);
-  margin-bottom: var(--space-8);
-}
-
-.page-heading h1 {
-  color: var(--color-text);
-  font-size: 32px;
-  line-height: 42px;
-  letter-spacing: -0.025em;
-}
-
-.page-heading p {
-  margin-top: var(--space-2);
-  color: var(--color-text-secondary);
-  font-size: 16px;
-  line-height: 22px;
-}
-
 .status-strip {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-3);
@@ -41,47 +19,7 @@
   background: var(--color-bg);
 }
 
-.system-status {
-  min-height: 52px;
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-2);
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  margin-bottom: var(--space-5);
-  padding: var(--space-2) var(--space-4);
-  background: var(--color-bg-subtle);
-}
-
-.system-status__dot {
-  width: 9px;
-  height: 9px;
-  flex: 0 0 auto;
-  border-radius: var(--radius-full);
-  background: var(--color-text-muted);
-}
-
-.system-status--connected .system-status__dot { background: var(--color-positive); }
-.system-status--connecting .system-status__dot { background: var(--color-info); }
-.system-status--offline .system-status__dot { background: var(--color-warning); }
 .content-list-loading { min-height: 220px; display: flex; align-items: center; justify-content: center; gap: var(--space-3); color: var(--color-text-secondary); font-size: 14px; }
-
-.system-status > div {
-  min-width: 0;
-  display: grid;
-  gap: 1px;
-}
-
-.system-status strong {
-  font-size: 13px;
-  line-height: 18px;
-}
-
-.system-status small {
-  color: var(--color-text-muted);
-  font-size: 11px;
-  line-height: 16px;
-}
 
 .status-strip button {
   position: relative;
@@ -617,26 +555,6 @@
 
   .dashboard-main {
     padding: var(--space-6) var(--space-4) var(--space-10);
-  }
-
-  .page-heading {
-    align-items: stretch;
-    flex-direction: column;
-    margin-bottom: var(--space-6);
-  }
-
-  .page-heading h1 {
-    font-size: 26px;
-    line-height: 35px;
-  }
-
-  .page-heading p {
-    font-size: 14px;
-    line-height: 19px;
-  }
-
-  .page-heading .button {
-    align-self: flex-start;
   }
 
   .status-strip {

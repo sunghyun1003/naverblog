@@ -54,7 +54,6 @@ export function LoginPage() {
             {submitting ? "로그인 중..." : "로그인"}
           </Button>
         </form>
-        <p className="login-panel__notice">초기 운영 계정입니다. 팀 사용 전 Google 로그인으로 전환할 예정입니다.</p>
       </section>
     </main>
   );

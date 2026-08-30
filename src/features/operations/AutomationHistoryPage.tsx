@@ -1,4 +1,4 @@
-import { ExternalLink, RefreshCw } from "lucide-react";
+import { ChevronLeft, ChevronRight, ExternalLink, RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { listAutomationHistory } from "../../api/client";
@@ -35,9 +35,22 @@ function formatDuration(value: number | null): string {
 }
 
 function formatTokens(item: ApiAutomationHistoryItem): string {
-  if (!item.codex.calls) return item.workflow === "collect" ? "Codex 미사용" : "기록 없음";
-  return `${new Intl.NumberFormat("ko-KR").format(item.codex.totalTokens)} 토큰 · ${item.codex.calls}회`;
+  if (!item.codex.calls) return item.workflow === "collect" ? "AI 미사용" : "사용량 기록 전";
+  return `${new Intl.NumberFormat("ko-KR").format(item.codex.totalTokens)}개`;
 }
+
+function formatFailedStage(item: ApiAutomationHistoryItem): string | null {
+  if (!item.failedStage) return null;
+  const stage = item.failedStage.toLocaleLowerCase("en");
+  if (stage.includes("preflight")) return "생성 전 점검에서 중단";
+  if (stage.includes("image")) return "이미지 처리 중 중단";
+  if (stage.includes("tone") || stage.includes("rewrite")) return "문장 보정 중 중단";
+  if (stage.includes("save") || stage.includes("push")) return "결과 저장 중 중단";
+  if (stage.includes("codex") || stage.includes("generate")) return "원고 생성 중 중단";
+  return "세부 처리 단계에서 중단";
+}
+
+const pageSize = 10;
 
 export function AutomationHistoryPage() {
   const cached = readRuntimeCache<{ items: ApiAutomationHistoryItem[] }>("automation:history");
@@ -46,6 +59,7 @@ export function AutomationHistoryPage() {
   const [error, setError] = useState("");
   const [workflow, setWorkflow] = useState<"all" | ApiAutomationHistoryItem["workflow"]>("all");
   const [status, setStatus] = useState<"all" | "success" | "failure">("all");
+  const [page, setPage] = useState(1);
 
   const refresh = async (signal?: AbortSignal) => {
     setLoading(true);
@@ -72,11 +86,16 @@ export function AutomationHistoryPage() {
     const statusMatches = status === "all" || item.status === status;
     return workflowMatches && statusMatches;
   }), [items, status, workflow]);
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const pageItems = filtered.slice((page - 1) * pageSize, page * pageSize);
+
+  useEffect(() => setPage(1), [status, workflow]);
+  useEffect(() => setPage((current) => Math.min(current, pageCount)), [pageCount]);
 
   return (
     <div className="operations-page history-page">
       <header className="operations-heading">
-        <div><h1>실행 이력</h1><p>수집·원고·이미지 작업의 결과와 Codex 사용량을 확인하세요.</p></div>
+        <h1>실행 이력</h1>
         <Button icon={<RefreshCw size={17} />} onClick={() => void refresh()} disabled={loading}>{loading ? "확인 중..." : "새로고침"}</Button>
       </header>
       <section className="operations-section history-section">
@@ -87,20 +106,31 @@ export function AutomationHistoryPage() {
         {loading && !items.length ? <PageLoadingState label="실행 이력을 불러오는 중입니다." compact /> : null}
         {error ? <div className="operations-notice" role="alert">{error}</div> : null}
         <div className="history-table" role="table" aria-label="자동화 실행 이력">
-          <div className="history-table__head" role="row"><span>작업</span><span>시작 시각</span><span>대상 콘텐츠</span><span>결과</span><span>소요 시간</span><span>Codex 사용량</span><span>상세</span></div>
-          {filtered.map((item) => (
+          <div className="history-table__head" role="row"><span>작업</span><span>시작 시각</span><span>대상 콘텐츠</span><span>결과</span><span>소요 시간</span><span>AI 사용량</span><span>상세</span></div>
+          {pageItems.map((item) => (
             <article className="history-table__row" role="row" key={item.id}>
               <div data-label="작업"><strong>{workflowLabels[item.workflow]}</strong><small>{item.event === "schedule" ? "자동 예약" : "직접 실행"}</small></div>
               <time data-label="시작 시각">{formatDateTime(item.startedAt)}</time>
               <div data-label="대상 콘텐츠">{item.contentRunId && item.contentTitle ? <Link to={`/contents/${item.contentRunId}`}>{item.contentTitle}</Link> : item.contentRunId ? <span>원고 {item.contentRunId}</span> : <span>-</span>}</div>
-              <div data-label="결과"><span className={`history-status history-status--${item.status}`}>{statusLabels[item.status]}</span>{item.failedStage ? <small>{item.failedStage}</small> : null}</div>
+              <div data-label="결과"><span className={`history-status history-status--${item.status}`}>{statusLabels[item.status]}</span>{formatFailedStage(item) ? <small>{formatFailedStage(item)}</small> : null}</div>
               <span data-label="소요 시간">{formatDuration(item.durationSeconds)}</span>
-              <div data-label="Codex 사용량"><strong>{formatTokens(item)}</strong>{item.codex.calls ? <small>입력 {item.codex.inputTokens.toLocaleString("ko-KR")} · 출력 {item.codex.outputTokens.toLocaleString("ko-KR")}</small> : null}</div>
-              <a data-label="상세" href={item.url} target="_blank" rel="noreferrer" aria-label={`${workflowLabels[item.workflow]} GitHub 실행 보기`}><ExternalLink size={17} /></a>
+              <div data-label="AI 사용량"><strong>{formatTokens(item)}</strong>{item.codex.calls ? <small>입력 {item.codex.inputTokens.toLocaleString("ko-KR")} · 캐시 {item.codex.cachedInputTokens.toLocaleString("ko-KR")} · 출력 {item.codex.outputTokens.toLocaleString("ko-KR")} · 호출 {item.codex.calls}회</small> : null}</div>
+              <a data-label="상세" href={item.url} target="_blank" rel="noreferrer" aria-label={`${workflowLabels[item.workflow]} 실행 상세 보기`}><ExternalLink size={17} /></a>
             </article>
           ))}
           {!filtered.length && !loading ? <div className="operations-empty">조건에 맞는 실행 이력이 없습니다.</div> : null}
         </div>
+        {filtered.length ? (
+          <footer className="history-pagination">
+            <span>{(page - 1) * pageSize + 1}–{Math.min(page * pageSize, filtered.length)} / {filtered.length}개</span>
+            <nav aria-label="실행 이력 페이지 이동">
+              <button type="button" aria-label="이전 페이지" disabled={page === 1} onClick={() => setPage((current) => Math.max(1, current - 1))}><ChevronLeft size={18} /></button>
+              <strong>{page} / {pageCount}</strong>
+              <button type="button" aria-label="다음 페이지" disabled={page === pageCount} onClick={() => setPage((current) => Math.min(pageCount, current + 1))}><ChevronRight size={18} /></button>
+            </nav>
+            <span>10개씩</span>
+          </footer>
+        ) : null}
       </section>
     </div>
   );

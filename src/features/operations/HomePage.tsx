@@ -8,15 +8,13 @@ import {
   ExternalLink,
   FileCheck2,
   RefreshCw,
-  Sparkles,
   TriangleAlert,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { getCapabilities, getTrends, listContents, listWorkflowRuns } from "../../api/client";
+import { getTrends, listContents, listWorkflowRuns } from "../../api/client";
 import { mapContent } from "../../api/mapping";
 import type {
-  ApiCapabilities,
   ApiContent,
   ApiFreshness,
   ApiTrendSnapshot,
@@ -26,14 +24,6 @@ import { Button } from "../../components/Button";
 import { PageLoadingState } from "../../components/PageLoadingState";
 import { StatusBadge } from "../../components/StatusBadge";
 import { readRuntimeCache, writeRuntimeCache } from "../../api/runtimeCache";
-
-const integrationLabels: Record<string, string> = {
-  ai: "Codex 원고 생성",
-  naverSearch: "네이버 블로그 수집",
-  publisher: "네이버 복사용 패키지",
-  database: "운영 데이터 저장",
-  automation: "GitHub Actions",
-};
 
 function runLabel(run: ApiWorkflowRun | undefined): string {
   if (!run) return "실행 기록 없음";
@@ -69,14 +59,12 @@ export function HomePage() {
   const cachedContents = readRuntimeCache<{ items: ApiContent[]; freshness?: ApiFreshness }>("home:contents")
     ?? readRuntimeCache<{ contents: ApiContent[]; freshness: ApiFreshness | null }>("contents");
   const cachedTrends = readRuntimeCache<ApiTrendSnapshot>("trends");
-  const cachedCapabilities = readRuntimeCache<ApiCapabilities>("capabilities");
   const initialContents = cachedContents && "items" in cachedContents ? cachedContents.items : cachedContents?.contents ?? [];
   const [contents, setContents] = useState<ApiContent[]>(initialContents);
   const [runs, setRuns] = useState<ApiWorkflowRun[]>([]);
-  const [capabilities, setCapabilities] = useState<ApiCapabilities | null>(cachedCapabilities);
   const [freshness, setFreshness] = useState<ApiFreshness | null>(cachedContents?.freshness ?? null);
   const [trends, setTrends] = useState<ApiTrendSnapshot | null>(cachedTrends);
-  const [loading, setLoading] = useState(!cachedContents && !cachedCapabilities && !cachedTrends);
+  const [loading, setLoading] = useState(!cachedContents && !cachedTrends);
   const [error, setError] = useState("");
 
   const refresh = async (signal?: AbortSignal) => {
@@ -85,22 +73,17 @@ export function HomePage() {
     const results = await Promise.allSettled([
       listContents(signal),
       listWorkflowRuns(signal),
-      getCapabilities(signal),
       getTrends(signal),
     ]);
     if (signal?.aborted) return;
 
-    const [contentResult, runResult, capabilityResult, trendResult] = results;
+    const [contentResult, runResult, trendResult] = results;
     if (contentResult.status === "fulfilled") {
       setContents(contentResult.value.items);
       setFreshness(contentResult.value.freshness ?? null);
       writeRuntimeCache("home:contents", contentResult.value);
     }
     if (runResult.status === "fulfilled") setRuns(runResult.value.items);
-    if (capabilityResult.status === "fulfilled") {
-      setCapabilities(capabilityResult.value);
-      writeRuntimeCache("capabilities", capabilityResult.value);
-    }
     if (trendResult.status === "fulfilled") {
       setTrends(trendResult.value);
       writeRuntimeCache("trends", trendResult.value);
@@ -131,10 +114,7 @@ export function HomePage() {
     () => [...contents].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)).slice(0, 5),
     [contents],
   );
-  const visibleIntegrations = Object.entries(capabilities?.integrations ?? {})
-    .filter(([key]) => key in integrationLabels);
-  const connectedCount = visibleIntegrations.filter(([, value]) => value.configured).length;
-  const hasOverview = Boolean(capabilities || contents.length || runs.length || trends);
+  const hasOverview = Boolean(contents.length || runs.length || trends);
 
   const nextAction = activeRun
     ? {
@@ -184,7 +164,7 @@ export function HomePage() {
   return (
     <div className="operations-page home-page">
       <header className="operations-heading home-heading">
-        <div><span className="home-eyebrow">BLOG OPERATIONS</span><h1>블로그 운영 현황</h1><p>소재 수집부터 원고 검토까지, 지금 확인할 내용을 한눈에 보세요.</p></div>
+        <h1>운영 현황</h1>
         <div className="operations-actions">
           <Button icon={<RefreshCw size={17} />} onClick={() => void refresh()} disabled={loading}>{loading ? "확인 중..." : "새로고침"}</Button>
           <Button variant="brand" onClick={() => navigate("/contents")}>콘텐츠 관리</Button>
@@ -197,7 +177,7 @@ export function HomePage() {
         <>
           {error ? <div className="operations-notice" role="alert">{error}</div> : null}
           {freshness?.stale ? (
-            <div className="operations-notice" role="alert">GitHub 최신 조회가 지연되어 마지막 동기화 데이터를 표시합니다.</div>
+            <div className="operations-notice" role="alert">최신 조회가 지연되어 마지막 저장 내용을 표시합니다.</div>
           ) : null}
 
           <section className={`home-next-action home-next-action--${nextAction.tone}`} aria-labelledby="next-action-title">
@@ -216,7 +196,7 @@ export function HomePage() {
 
           <div className="home-overview-grid">
             <section className="operations-section home-card">
-              <header><div><h2>자동화 실행</h2><p>최근 수집·생성 작업의 실제 결과입니다.</p></div></header>
+              <header><h2>최근 자동 실행</h2></header>
               <div className="home-run-list">
                 {[{ label: "소재 수집", run: collectRun, icon: <Database size={19} /> }, { label: "원고 생성", run: generateRun, icon: <Bot size={19} /> }].map(({ label, run, icon }) => (
                   <a key={label} href={run?.url ?? undefined} target={run?.url ? "_blank" : undefined} rel={run?.url ? "noreferrer" : undefined} aria-disabled={!run?.url}>
@@ -230,7 +210,7 @@ export function HomePage() {
             </section>
 
             <section className="operations-section home-card">
-              <header><div><h2>최신 소재 수집</h2><p>원고 기획에 사용할 네이버 블로그 후보입니다.</p></div><Link className="home-text-link" to="/trends">전체 보기 <ArrowRight size={15} /></Link></header>
+              <header><h2>최근 트렌드</h2><Link className="home-text-link" to="/trends">전체 보기 <ArrowRight size={15} /></Link></header>
               {trends ? (
                 <div className="home-trend-summary">
                   <div><small>수집일</small><strong>{formatCollectionDate(trends.collectionDate)}</strong></div>
@@ -242,19 +222,17 @@ export function HomePage() {
             </section>
 
             <section className="operations-section home-card">
-              <header><div><h2>운영 환경</h2><p>현재 사용하는 핵심 연결만 표시합니다.</p></div><Link className="home-text-link" to="/settings">설정 보기 <ArrowRight size={15} /></Link></header>
-              <div className="home-connection-summary">
-                <span className="operation-icon operation-icon--positive"><Sparkles size={20} /></span>
-                <div><strong>{connectedCount}/{visibleIntegrations.length} 연결</strong><p>{capabilities?.mode === "github-actions" ? "클라우드 자동화 운영 중" : "로컬 검증 환경"}</p></div>
-              </div>
-              <div className="home-connection-dots" aria-label="연동별 상태">
-                {visibleIntegrations.map(([name, integration]) => <span key={name} title={`${integrationLabels[name]}: ${integration.configured ? "연결됨" : "미연동"}`} className={integration.configured ? "is-connected" : ""} />)}
+              <header><h2>발행 준비</h2><Link className="home-text-link" to="/schedule">일정 보기 <ArrowRight size={15} /></Link></header>
+              <div className="home-trend-summary home-publishing-summary">
+                <div><small>승인 완료</small><strong>{approvedCount}건</strong></div>
+                <div><small>발행 예약</small><strong>{scheduledCount}건</strong></div>
+                <div><small>발행 완료</small><strong>{publishedCount}건</strong></div>
               </div>
             </section>
           </div>
 
           <section className="operations-section home-recent-section">
-            <header><div><h2>최근 원고</h2><p>가장 최근에 변경된 원고와 현재 단계를 확인하세요.</p></div><Link className="home-text-link" to="/contents">전체 콘텐츠 <ArrowRight size={15} /></Link></header>
+            <header><h2>최근 원고</h2><Link className="home-text-link" to="/contents">전체 보기 <ArrowRight size={15} /></Link></header>
             <div className="home-recent-list">
               {recentContents.map((content) => {
                 const mapped = mapContent(content);

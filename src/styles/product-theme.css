@@ -1,8 +1,8 @@
 /*
  * Blog Operations Center — workspace visual system
  *
- * A quiet, editorial operations surface: a charcoal command rail, a warm
- * neutral canvas and focused white work surfaces. The rules in this file are
+ * A quiet, editorial operations surface: a light command rail, a warm neutral
+ * canvas and focused white work surfaces. The rules in this file are
  * deliberately shared by every route so the product reads as one tool.
  */
 :root {
@@ -26,9 +26,9 @@
   --color-warning-weak: #fff6df;
   --color-critical: #d6423a;
   --color-critical-weak: #fff0ef;
-  --shell-ink: #22252a;
-  --shell-ink-soft: #2b2f35;
-  --shell-text: #f6f7f8;
+  --shell-ink: #ffffff;
+  --shell-ink-soft: #f1f3f1;
+  --shell-text: #191b1f;
   --shadow-panel: 0 1px 2px rgba(24, 28, 32, 0.05), 0 8px 24px rgba(24, 28, 32, 0.035);
   --shadow-popover: 0 12px 32px rgba(24, 28, 32, 0.16);
   --radius-panel: 14px;
@@ -80,7 +80,8 @@ select:focus-visible,
   width: 232px;
   gap: 11px;
   padding: 0 24px;
-  background: var(--shell-ink);
+  border-right: 1px solid var(--color-border);
+  background: #fff;
   color: var(--shell-text);
   font-size: 16px;
   letter-spacing: -0.035em;
@@ -168,7 +169,7 @@ select:focus-visible,
 .sidebar {
   top: 68px;
   width: 232px;
-  border-right: 0;
+  border-right: 1px solid var(--color-border);
   display: flex;
   flex-direction: column;
   padding: 22px 12px 18px;
@@ -188,7 +189,7 @@ select:focus-visible,
 
 .sidebar__group-label {
   padding: 0 13px 8px;
-  color: #8f949d;
+  color: #a1a6ad;
   font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.09em;
@@ -199,7 +200,7 @@ select:focus-visible,
   border-radius: 9px;
   gap: 11px;
   padding: 0 13px;
-  color: #c9cdd3;
+  color: #626870;
   font-size: 13px;
   font-weight: 600;
   letter-spacing: -0.02em;
@@ -207,18 +208,18 @@ select:focus-visible,
 }
 
 .sidebar__item svg {
-  color: #9aa1aa;
+  color: #8d949c;
 }
 
 .sidebar__item:hover {
-  background: rgba(255, 255, 255, 0.07);
-  color: #fff;
+  background: #f5f6f4;
+  color: var(--color-text);
   transform: translateX(1px);
 }
 
 .sidebar__item--active {
-  background: var(--shell-ink-soft);
-  color: #fff;
+  background: var(--color-brand-weak);
+  color: var(--color-brand);
   box-shadow: inset 3px 0 0 var(--color-brand);
 }
 
@@ -232,8 +233,8 @@ select:focus-visible,
   gap: 8px;
   margin: auto 12px 0;
   padding-top: 18px;
-  border-top: 1px solid rgba(255, 255, 255, 0.09);
-  color: #8f949d;
+  border-top: 1px solid var(--color-border-subtle);
+  color: #9aa0a7;
   font-size: 11px;
   line-height: 16px;
 }
@@ -963,7 +964,9 @@ select:focus-visible,
 
 .snackbar {
   border-radius: 9px;
-  background: var(--shell-ink);
+  border: 1px solid var(--color-border);
+  background: #eef0ee;
+  color: var(--color-text);
   box-shadow: var(--shadow-popover);
   font-size: 12px;
 }
@@ -997,6 +1000,7 @@ select:focus-visible,
   .topbar__brand {
     width: auto;
     padding: 0 16px;
+    border-right: 0;
     background: #fff;
     color: var(--color-text);
   }
@@ -1008,10 +1012,10 @@ select:focus-visible,
     top: 0;
     width: min(292px, 86vw);
     padding-top: 18px;
-    background: var(--shell-ink);
+    background: #fff;
   }
-  .sidebar__mobile-heading { color: #fff; }
-  .sidebar__mobile-heading .icon-button { color: #c9cdd3; }
+  .sidebar__mobile-heading { color: var(--color-text); }
+  .sidebar__mobile-heading .icon-button { color: var(--color-text-secondary); }
   .app-main { width: 100%; margin-left: 0; }
   .operations-page { min-height: calc(100vh - 64px); padding: 24px 16px 48px; }
   .operations-heading { margin-bottom: 20px; }

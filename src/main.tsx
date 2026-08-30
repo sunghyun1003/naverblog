@@ -10,6 +10,7 @@ import "./styles/dashboard.css";
 import "./styles/review.css";
 import "./styles/auth.css";
 import "./styles/operations.css";
+import "./styles/product-theme.css";
 
 const Router = import.meta.env.PROD ? HashRouter : BrowserRouter;
 

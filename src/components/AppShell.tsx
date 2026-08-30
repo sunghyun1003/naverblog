@@ -16,14 +16,21 @@ import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { BrandMark } from "./BrandMark";
 import { useAuth } from "../features/auth/AuthProvider";
 
-const navigation = [
-  { label: "홈", path: "/home", icon: Home, exact: true },
-  { label: "트렌드 수집", path: "/trends", icon: Sparkles },
-  { label: "콘텐츠", path: "/contents", icon: FileText },
-  { label: "발행 일정", path: "/schedule", icon: CalendarDays },
-  { label: "성과", path: "/analytics", icon: BarChart3 },
-  { label: "실행 이력", path: "/history", icon: ListChecks },
-  { label: "설정", path: "/settings", icon: Settings },
+const navigationGroups = [
+  {
+    label: "운영",
+    items: [
+      { label: "홈", path: "/home", icon: Home, exact: true },
+      { label: "트렌드 수집", path: "/trends", icon: Sparkles },
+      { label: "콘텐츠", path: "/contents", icon: FileText },
+      { label: "발행 일정", path: "/schedule", icon: CalendarDays },
+      { label: "성과", path: "/analytics", icon: BarChart3 },
+    ],
+  },
+  {
+    label: "관리",
+    items: [{ label: "실행 이력", path: "/history", icon: ListChecks }, { label: "설정", path: "/settings", icon: Settings }],
+  },
 ];
 
 export function AppShell() {
@@ -67,24 +74,30 @@ export function AppShell() {
             </button>
           </div>
           <nav aria-label="주요 메뉴">
-            {navigation.map(({ label, path, icon: Icon, exact }) => {
-              const contentSelected = label === "콘텐츠" && isContentPath;
-              return (
-                <NavLink
-                  key={label}
-                  to={path}
-                  end={exact}
-                  className={({ isActive }) =>
-                    `sidebar__item ${contentSelected || isActive ? "sidebar__item--active" : ""}`
-                  }
-                  onClick={() => setMobileOpen(false)}
-                >
-                  <Icon size={22} strokeWidth={2.1} aria-hidden="true" />
-                  <span>{label}</span>
-                </NavLink>
-              );
-            })}
+            {navigationGroups.map((group) => (
+              <div className="sidebar__group" key={group.label}>
+                <span className="sidebar__group-label">{group.label}</span>
+                {group.items.map(({ label, path, icon: Icon, exact }) => {
+                  const contentSelected = label === "콘텐츠" && isContentPath;
+                  return (
+                    <NavLink
+                      key={label}
+                      to={path}
+                      end={exact}
+                      className={({ isActive }) =>
+                        `sidebar__item ${contentSelected || isActive ? "sidebar__item--active" : ""}`
+                      }
+                      onClick={() => setMobileOpen(false)}
+                    >
+                      <Icon size={19} strokeWidth={2} aria-hidden="true" />
+                      <span>{label}</span>
+                    </NavLink>
+                  );
+                })}
+              </div>
+            ))}
           </nav>
+          <div className="sidebar__footer"><span className="sidebar__footer-dot" />오늘도 차분하게 운영해요</div>
         </aside>
         <main className="app-main">
           <Outlet />

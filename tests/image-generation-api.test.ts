@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { buildApp } from "../server/http/app.js";
 import type { AutomationDraftDetail, GitHubAutomationService } from "../server/services/github-automation.js";
+import { SessionAuthService } from "../server/services/session-auth.js";
 
 test("image generation can be requested before editorial approval", async (context) => {
   const draft = {
@@ -34,4 +35,33 @@ test("image generation can be requested before editorial approval", async (conte
       feedback: "Show all four coverage roles in one natural scene.",
     },
   }]);
+});
+
+test("local copy validation returns an empty signed asset list instead of blocking text copy", async (context) => {
+  const app = buildApp({ databaseProvider: "memory" });
+  context.after(() => app.close());
+
+  const response = await app.inject({ method: "GET", url: "/api/contents/local-draft/copy-assets" });
+
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.json<{ items: unknown[] }>().items, []);
+});
+
+test("복사용 이미지는 로그인 없이도 짧게 유효한 서명 주소로 제공한다", async (context) => {
+  const imageBytes = Buffer.from("signed-image");
+  const githubAutomation = {
+    getDraft: async () => ({ imageManifest: { assets: [{ id: "hero", path: "hero.jpg" }] } }),
+    getDraftImage: async () => ({ body: imageBytes, contentType: "image/jpeg", etag: "etag-1" }),
+  } as unknown as GitHubAutomationService;
+  const auth = new SessionAuthService({ username: "carrot", password: "carrot", sessionSecret: "copy-test-session-secret", secureCookie: false });
+  const app = buildApp({ githubAutomation, auth, databaseProvider: "memory" });
+  context.after(() => app.close());
+  const session = auth.login("carrot", "carrot", "test")!;
+  const assets = await app.inject({ method: "GET", url: "/api/contents/123/copy-assets", headers: { cookie: auth.sessionCookie(session), host: "dashboard.example" } });
+  assert.equal(assets.statusCode, 200);
+  const url = new URL(assets.json<{ items: Array<{ url: string }> }>().items[0]!.url);
+  const image = await app.inject({ method: "GET", url: `${url.pathname}${url.search}` });
+  assert.equal(image.statusCode, 200);
+  assert.equal(image.headers["cache-control"], "public, max-age=900");
+  assert.deepEqual(image.rawPayload, imageBytes);
 });

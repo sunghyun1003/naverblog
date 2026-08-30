@@ -257,13 +257,58 @@ export interface GeneratedToneAttempts {
   }>;
 }
 
+export type AutomationWorkflow = "collect" | "generate" | "images" | "rewrite";
+
 export interface WorkflowRunSummary {
   id: number;
-  workflow: "collect" | "generate";
+  workflow: AutomationWorkflow;
   status: string;
   conclusion: string | null;
   createdAt: string;
   updatedAt: string;
+  url: string;
+}
+
+export type AutomationFrequency = "daily" | "weekdays" | "weekly";
+
+export interface AutomationSchedule {
+  enabled: boolean;
+  frequency: AutomationFrequency;
+  time: string;
+  weekday: number;
+}
+
+export interface AutomationSettings {
+  schemaVersion: 1;
+  timezone: "Asia/Seoul";
+  collection: AutomationSchedule;
+  generation: AutomationSchedule & { count: number };
+}
+
+export interface AutomationTokenUsage {
+  calls: number;
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+}
+
+export interface AutomationHistoryItem {
+  id: string;
+  workflowRunId: number;
+  workflow: AutomationWorkflow;
+  job: string;
+  event: string;
+  status: "success" | "failure" | "cancelled" | "running" | "queued" | "skipped";
+  startedAt: string;
+  finishedAt: string | null;
+  durationSeconds: number | null;
+  contentRunId: string | null;
+  contentTitle: string | null;
+  codex: AutomationTokenUsage;
+  failedStage: string | null;
+  failureCode: string | null;
+  error: string | null;
   url: string;
 }
 
@@ -359,6 +404,8 @@ interface GeneratedStatus {
   toneVerdict?: "PASS" | "REWRITE_REQUIRED" | null;
   imageGenerationStatus?: "queued" | "ready" | "failed" | null;
   imageGenerationWarning?: string | null;
+  codexCalls?: number;
+  codexUsage?: AutomationTokenUsage;
 }
 
 interface WorkflowRunsResponse {
@@ -369,7 +416,38 @@ interface WorkflowRunsResponse {
     created_at: string;
     updated_at: string;
     html_url: string;
+    event?: string;
+    path?: string;
+    display_title?: string;
   }>;
+}
+
+interface GitHubJobsResponse {
+  jobs: Array<{
+    name: string;
+    status: string;
+    conclusion: string | null;
+    steps?: Array<{ name: string; status: string; conclusion: string | null }>;
+  }>;
+}
+
+interface StoredAutomationHistory {
+  workflowRunId: number | string;
+  workflow: AutomationWorkflow;
+  job: string;
+  event?: string;
+  status: "success" | "failure" | "cancelled" | "skipped";
+  startedAt: string;
+  finishedAt: string;
+  durationSeconds: number;
+  contentRunId?: string | null;
+  contentTitle?: string | null;
+  codex?: Partial<AutomationTokenUsage>;
+  lastStage?: string | null;
+  failedStage?: string | null;
+  failureCode?: string | null;
+  error?: string | null;
+  url?: string | null;
 }
 
 interface CollectedTrendSnapshot {
@@ -452,6 +530,56 @@ function imageContentType(value: string): string {
   return "image/jpeg";
 }
 
+const defaultAutomationSettings: AutomationSettings = {
+  schemaVersion: 1,
+  timezone: "Asia/Seoul",
+  collection: { enabled: true, frequency: "daily", time: "06:30", weekday: 1 },
+  generation: { enabled: true, frequency: "daily", time: "07:00", weekday: 1, count: 1 },
+};
+
+function workflowFromPath(value: string | undefined): AutomationWorkflow | null {
+  const match = value?.match(/\/(collect|generate|images|rewrite)\.yml(?:@|$)/);
+  return match?.[1] as AutomationWorkflow | undefined ?? null;
+}
+
+function zeroTokenUsage(value?: Partial<AutomationTokenUsage>): AutomationTokenUsage {
+  return {
+    calls: Number(value?.calls ?? 0),
+    inputTokens: Number(value?.inputTokens ?? 0),
+    cachedInputTokens: Number(value?.cachedInputTokens ?? 0),
+    outputTokens: Number(value?.outputTokens ?? 0),
+    totalTokens: Number(value?.totalTokens ?? 0),
+  };
+}
+
+function scheduleCron(schedule: AutomationSchedule, minuteOffset = 0): string {
+  const [hourText, minuteText] = schedule.time.split(":");
+  const totalMinutes = Number(hourText) * 60 + Number(minuteText) + minuteOffset;
+  const hour = Math.floor(totalMinutes / 60);
+  const minute = totalMinutes % 60;
+  const day = schedule.frequency === "weekdays" ? "1-5" : schedule.frequency === "weekly" ? String(schedule.weekday) : "*";
+  return `${minute} ${hour} * * ${day}`;
+}
+
+function renderScheduleBlock(schedule: AutomationSchedule, count = 1): string {
+  const lines = ["  # dashboard-schedule:start"];
+  if (schedule.enabled) {
+    lines.push("  schedule:");
+    for (let index = 0; index < count; index += 1) {
+      lines.push(`    - cron: "${scheduleCron(schedule, index * 10)}"`);
+      lines.push("      timezone: \"Asia/Seoul\"");
+    }
+  }
+  lines.push("  # dashboard-schedule:end");
+  return lines.join("\n");
+}
+
+function replaceScheduleBlock(source: string, schedule: AutomationSchedule, count = 1): string {
+  const marker = /  # dashboard-schedule:start[\s\S]*?  # dashboard-schedule:end/;
+  if (!marker.test(source)) throw new Error("워크플로우에서 대시보드 일정 영역을 찾지 못했습니다.");
+  return source.replace(marker, renderScheduleBlock(schedule, count));
+}
+
 function defaultState(runId: string, generatedAt: string): DashboardDraftState {
   return {
     schemaVersion: 1,
@@ -473,6 +601,9 @@ function defaultState(runId: string, generatedAt: string): DashboardDraftState {
 }
 
 export class GitHubAutomationService {
+  private automationSettingsCache: { value: AutomationSettings; expiresAt: number } | null = null;
+  private automationHistoryCache: { value: AutomationHistoryItem[]; expiresAt: number } | null = null;
+
   constructor(private readonly config: GitHubAutomationConfig, private readonly request: Fetcher = fetch) {}
 
   async capabilities() {
@@ -503,6 +634,101 @@ export class GitHubAutomationService {
       }));
     }));
     return responses.flat().sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+  }
+
+  async getAutomationSettings(): Promise<AutomationSettings> {
+    if (this.automationSettingsCache && this.automationSettingsCache.expiresAt > Date.now()) return this.automationSettingsCache.value;
+    const value = await this.readOptionalJson<AutomationSettings>("config/automation-settings.json") ?? defaultAutomationSettings;
+    this.automationSettingsCache = { value, expiresAt: Date.now() + 60_000 };
+    return value;
+  }
+
+  async updateAutomationSettings(settings: AutomationSettings): Promise<AutomationSettings> {
+    const [collectWorkflow, generateWorkflow] = await Promise.all([
+      this.readText(".github/workflows/collect.yml"),
+      this.readText(".github/workflows/generate.yml"),
+    ]);
+    const files = {
+      "config/automation-settings.json": `${JSON.stringify(settings, null, 2)}\n`,
+      ".github/workflows/collect.yml": `${replaceScheduleBlock(collectWorkflow, settings.collection).trimEnd()}\n`,
+      ".github/workflows/generate.yml": `${replaceScheduleBlock(generateWorkflow, settings.generation, settings.generation.count).trimEnd()}\n`,
+    };
+    await this.commitFiles(files, "dashboard: update automation schedule");
+    this.automationSettingsCache = { value: settings, expiresAt: Date.now() + 60_000 };
+    return settings;
+  }
+
+  async listAutomationHistory(limit = 50): Promise<AutomationHistoryItem[]> {
+    if (this.automationHistoryCache && this.automationHistoryCache.expiresAt > Date.now()) {
+      return this.automationHistoryCache.value.slice(0, limit);
+    }
+    const [runsPayload, repositoryTree] = await Promise.all([
+      this.github<WorkflowRunsResponse>(`/actions/runs?branch=${encodeURIComponent(this.config.branch)}&per_page=${Math.min(100, limit)}`),
+      this.tree(),
+    ]);
+    const runs = runsPayload.workflow_runs.flatMap((run) => {
+      const workflow = workflowFromPath(run.path);
+      return workflow ? [{ ...run, workflow }] : [];
+    });
+    const historyPaths = repositoryTree
+      .map((item) => item.path)
+      .filter((value) => /^output\/history\/\d+-.+\.json$/.test(value))
+      .sort((left, right) => right.localeCompare(left))
+      .slice(0, limit * 2);
+    const stored = (await Promise.all(historyPaths.map((value) => this.readOptionalJson<StoredAutomationHistory>(value))))
+      .filter((value): value is StoredAutomationHistory => Boolean(value));
+    const runById = new Map(runs.map((run) => [run.id, run]));
+    const enriched = await Promise.all(stored.map(async (record): Promise<AutomationHistoryItem> => {
+      const workflowRunId = Number(record.workflowRunId);
+      const run = runById.get(workflowRunId);
+      const failedStage = record.failedStage ?? (record.status === "failure" && run ? await this.failedStep(workflowRunId) : null);
+      return {
+        id: `${workflowRunId}-${record.job}`,
+        workflowRunId,
+        workflow: record.workflow,
+        job: record.job,
+        event: record.event ?? run?.event ?? "unknown",
+        status: record.status,
+        startedAt: record.startedAt || run?.created_at || new Date(0).toISOString(),
+        finishedAt: record.finishedAt || run?.updated_at || null,
+        durationSeconds: Number.isFinite(record.durationSeconds) ? record.durationSeconds : null,
+        contentRunId: record.contentRunId ?? null,
+        contentTitle: record.contentTitle ?? null,
+        codex: zeroTokenUsage(record.codex),
+        failedStage,
+        failureCode: record.failureCode ?? null,
+        error: record.error ?? null,
+        url: record.url ?? run?.html_url ?? "",
+      };
+    }));
+    const storedRunIds = new Set(stored.map((record) => Number(record.workflowRunId)));
+    const fallback = await Promise.all(runs.filter((run) => !storedRunIds.has(run.id)).map(async (run): Promise<AutomationHistoryItem> => {
+      const running = run.status !== "completed";
+      const status = running ? (run.status === "queued" ? "queued" : "running") : run.conclusion === "success" ? "success" : run.conclusion === "cancelled" ? "cancelled" : "failure";
+      return {
+        id: `${run.id}-${run.workflow}`,
+        workflowRunId: run.id,
+        workflow: run.workflow,
+        job: run.workflow,
+        event: run.event ?? "unknown",
+        status,
+        startedAt: run.created_at,
+        finishedAt: running ? null : run.updated_at,
+        durationSeconds: running ? null : Math.max(0, Math.round((Date.parse(run.updated_at) - Date.parse(run.created_at)) / 1000)),
+        contentRunId: run.workflow === "generate" && status === "success" ? String(run.id) : null,
+        contentTitle: null,
+        codex: zeroTokenUsage(),
+        failedStage: status === "failure" ? await this.failedStep(run.id) : null,
+        failureCode: null,
+        error: null,
+        url: run.html_url,
+      };
+    }));
+    const result = [...enriched, ...fallback]
+      .sort((left, right) => right.startedAt.localeCompare(left.startedAt))
+      .slice(0, limit);
+    this.automationHistoryCache = { value: result, expiresAt: Date.now() + 30_000 };
+    return result;
   }
 
   async dispatch(workflow: "collect" | "generate" | "rewrite" | "images", inputs: Record<string, string> = {}): Promise<void> {
@@ -927,6 +1153,42 @@ export class GitHubAutomationService {
     });
     if (response.status === 409 || response.status === 422) throw this.stateConflict();
     if (!response.ok) throw await this.githubError(response);
+  }
+
+  private async failedStep(runId: number): Promise<string | null> {
+    try {
+      const payload = await this.github<GitHubJobsResponse>(`/actions/runs/${runId}/jobs?filter=latest&per_page=20`);
+      const failedJob = payload.jobs.find((job) => job.conclusion === "failure");
+      const failedStep = failedJob?.steps?.find((step) => step.conclusion === "failure");
+      return failedStep?.name ?? failedJob?.name ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async commitFiles(files: Record<string, string>, message: string): Promise<void> {
+    const refName = encodeURIComponent(this.config.branch);
+    const ref = await this.github<{ object: { sha: string } }>(`/git/ref/heads/${refName}`);
+    const head = await this.github<{ tree: { sha: string } }>(`/git/commits/${encodeURIComponent(ref.object.sha)}`);
+    const blobs = await Promise.all(Object.entries(files).map(async ([filePath, content]) => {
+      const blob = await this.github<{ sha: string }>("/git/blobs", {
+        method: "POST",
+        body: JSON.stringify({ content, encoding: "utf-8" }),
+      });
+      return { path: filePath, mode: "100644", type: "blob", sha: blob.sha };
+    }));
+    const nextTree = await this.github<{ sha: string }>("/git/trees", {
+      method: "POST",
+      body: JSON.stringify({ base_tree: head.tree.sha, tree: blobs }),
+    });
+    const commit = await this.github<{ sha: string }>("/git/commits", {
+      method: "POST",
+      body: JSON.stringify({ message, tree: nextTree.sha, parents: [ref.object.sha] }),
+    });
+    await this.github(`/git/refs/heads/${refName}`, {
+      method: "PATCH",
+      body: JSON.stringify({ sha: commit.sha, force: false }),
+    });
   }
 
   private async raw(path: string, init: RequestInit = {}): Promise<Response> {

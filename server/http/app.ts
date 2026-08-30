@@ -6,7 +6,7 @@ import { isDomainError } from "../domain/errors.js";
 import { userRoles, type Actor, type UserRole } from "../domain/types.js";
 import { randomId } from "../domain/utils.js";
 import { draftToContent, draftToDetail } from "../services/github-content-mapper.js";
-import type { AutomationDraftDetail, DashboardDraftState, GitHubAutomationService } from "../services/github-automation.js";
+import type { AutomationDraftDetail, AutomationSettings, DashboardDraftState, GitHubAutomationService } from "../services/github-automation.js";
 import { persistGitHubDraftDetail, persistGitHubDraftSummaries, persistGitHubTrends } from "../services/github-persistence.js";
 import type { SessionAuthService } from "../services/session-auth.js";
 import { createAutomationSystem, type AutomationSystem } from "../system.js";
@@ -49,6 +49,27 @@ const imageGenerationSchema = z.object({
   feedback: z.string().trim().max(1000).optional(),
 }).default({});
 const refreshQuerySchema = z.object({ refresh: z.enum(["true", "false"]).default("false") });
+const automationScheduleSchema = z.object({
+  enabled: z.boolean(),
+  frequency: z.enum(["daily", "weekdays", "weekly"]),
+  time: z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/, "시간은 24시간 형식으로 입력해주세요."),
+  weekday: z.number().int().min(0).max(6),
+});
+const automationSettingsSchema = z.object({
+  schemaVersion: z.literal(1),
+  timezone: z.literal("Asia/Seoul"),
+  collection: automationScheduleSchema,
+  generation: automationScheduleSchema.extend({ count: z.number().int().min(1).max(3) }),
+}).superRefine((value, context) => {
+  const [hour = 0, minute = 0] = value.generation.time.split(":").map(Number);
+  if (hour * 60 + minute + (value.generation.count - 1) * 10 >= 24 * 60) {
+    context.addIssue({ code: "custom", path: ["generation", "time"], message: "여러 건 생성은 마지막 실행이 자정을 넘지 않도록 설정해주세요." });
+  }
+});
+const publicImageQuerySchema = z.object({
+  expires: z.coerce.number().int().positive(),
+  signature: z.string().min(20).max(200),
+});
 
 export interface AppOptions {
   system?: AutomationSystem;
@@ -255,7 +276,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     reply.header("Access-Control-Allow-Origin", origin);
     reply.header("Access-Control-Allow-Credentials", "true");
     reply.header("Access-Control-Allow-Headers", "Content-Type, X-User-Id, X-User-Roles, X-Idempotency-Key, X-Requested-With");
-    reply.header("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
+    reply.header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
     if (request.method === "OPTIONS") return reply.status(204).send();
     if (!auth || !request.url.startsWith("/api/")) return;
     if (request.url.startsWith("/api/auth/login")) return;
@@ -331,6 +352,15 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     return { ...(await githubAutomation.capabilities()), runs: await githubAutomation.listWorkflowRuns() };
   });
   app.get("/api/automation/runs", async () => ({ items: githubAutomation ? await githubAutomation.listWorkflowRuns() : [] }));
+  app.get("/api/automation/history", async () => ({ items: githubAutomation ? await githubAutomation.listAutomationHistory() : [] }));
+  app.get("/api/automation/settings", async () => ({
+    settings: githubAutomation ? await githubAutomation.getAutomationSettings() : null,
+  }));
+  app.put("/api/automation/settings", async (request, reply) => {
+    if (!githubAutomation) return reply.status(503).send({ error: { code: "AUTOMATION_NOT_CONFIGURED", message: "GitHub 자동화가 연결되지 않았습니다.", details: null } });
+    const settings = automationSettingsSchema.parse(request.body) as AutomationSettings;
+    return { settings: await githubAutomation.updateAutomationSettings(settings) };
+  });
   app.post("/api/automation/collect", async (_request, reply) => {
     if (!githubAutomation) return reply.status(503).send({ error: { code: "AUTOMATION_NOT_CONFIGURED", message: "GitHub 자동화가 연결되지 않았습니다.", details: null } });
     await githubAutomation.dispatch("collect");
@@ -423,6 +453,43 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     return reply
       .header("Content-Type", image.contentType)
       .header("Cache-Control", "private, max-age=300")
+      .header("ETag", `"${image.etag}"`)
+      .send(image.body);
+  });
+  app.get("/api/contents/:id/copy-assets", async (request, reply) => {
+    const { id } = idParamsSchema.parse(request.params);
+    // 로컬 목 데이터에는 원격 이미지가 없지만, 본문 서식 복사는 그대로 검증할 수 있어야 한다.
+    if (!githubAutomation) {
+      const expiresAt = Date.now() + 15 * 60 * 1000;
+      return { expiresAt: new Date(expiresAt).toISOString(), items: [] };
+    }
+    if (!auth) return reply.status(404).send({ error: { code: "IMAGE_NOT_FOUND", message: "복사용 이미지를 찾을 수 없습니다.", details: null } });
+    const draft = await githubAutomation.getDraft(id);
+    const assets = draft.imageManifest?.assets ?? [];
+    const expiresAt = Date.now() + 15 * 60 * 1000;
+    const forwardedProtocol = request.headers["x-forwarded-proto"];
+    const protocol = (Array.isArray(forwardedProtocol) ? forwardedProtocol[0] : forwardedProtocol) ?? request.protocol;
+    const host = request.headers.host;
+    const items = assets.map((asset) => {
+      const resource = `${id}:${asset.id}`;
+      const signature = auth.signPublicResource(resource, expiresAt);
+      return {
+        assetId: asset.id,
+        url: `${protocol}://${host}/public/content-images/${encodeURIComponent(id)}/${encodeURIComponent(asset.id)}?expires=${expiresAt}&signature=${encodeURIComponent(signature)}`,
+      };
+    });
+    return { expiresAt: new Date(expiresAt).toISOString(), items };
+  });
+  app.get("/public/content-images/:id/:assetId", async (request, reply) => {
+    const { id, assetId } = imageParamsSchema.parse(request.params);
+    const { expires, signature } = publicImageQuerySchema.parse(request.query);
+    if (!githubAutomation || !auth || !auth.verifyPublicResource(`${id}:${assetId}`, expires, signature)) {
+      return reply.status(404).send({ error: { code: "IMAGE_NOT_FOUND", message: "이미지 주소가 만료되었거나 올바르지 않습니다.", details: null } });
+    }
+    const image = await githubAutomation.getDraftImage(id, assetId);
+    return reply
+      .header("Content-Type", image.contentType)
+      .header("Cache-Control", "public, max-age=900")
       .header("ETag", `"${image.etag}"`)
       .send(image.body);
   });

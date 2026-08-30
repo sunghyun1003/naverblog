@@ -1,4 +1,4 @@
-import type { ApiCapabilities, ApiContent, ApiContentDetail, ApiContentList, ApiJob, ApiTrendSnapshot, ApiUser, ApiWorkflowRun } from "./types";
+import type { ApiAutomationHistoryItem, ApiAutomationSettings, ApiCapabilities, ApiContent, ApiContentDetail, ApiContentList, ApiJob, ApiTrendSnapshot, ApiUser, ApiWorkflowRun } from "./types";
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "";
 
@@ -126,6 +126,10 @@ export function contentImageUrl(contentId: string, assetId: string, version?: st
   return version ? `${base}?v=${encodeURIComponent(version)}` : base;
 }
 
+export function getContentCopyAssets(contentId: string): Promise<{ expiresAt: string; items: Array<{ assetId: string; url: string }> }> {
+  return request(`/api/contents/${encodeURIComponent(contentId)}/copy-assets`);
+}
+
 export function collectTrends(): Promise<{ accepted: boolean }> {
   return request("/api/automation/collect", { method: "POST" });
 }
@@ -139,6 +143,18 @@ export function generateContent(topic: string, strategy: "trend" | "original"): 
 
 export function listWorkflowRuns(signal?: AbortSignal): Promise<{ items: ApiWorkflowRun[] }> {
   return request("/api/automation/runs", { signal });
+}
+
+export function listAutomationHistory(signal?: AbortSignal): Promise<{ items: ApiAutomationHistoryItem[] }> {
+  return request("/api/automation/history", { signal });
+}
+
+export function getAutomationSettings(signal?: AbortSignal): Promise<{ settings: ApiAutomationSettings | null }> {
+  return request("/api/automation/settings", { signal });
+}
+
+export function updateAutomationSettings(settings: ApiAutomationSettings): Promise<{ settings: ApiAutomationSettings }> {
+  return request("/api/automation/settings", { method: "PUT", body: JSON.stringify(settings) });
 }
 
 export function getTrends(signal?: AbortSignal, refresh = false): Promise<ApiTrendSnapshot> {

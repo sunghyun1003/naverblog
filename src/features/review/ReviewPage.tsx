@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { contentImageUrl, generateContentImages } from "../../api/client";
+import { contentImageUrl, generateContentImages, getContentCopyAssets } from "../../api/client";
 import type { ApiContent, ApiContentVersion, ApiGeneratedImagePackage } from "../../api/types";
 import { Button } from "../../components/Button";
 import { PageLoadingState } from "../../components/PageLoadingState";
@@ -353,7 +353,32 @@ export function ReviewPage() {
   const nativeKoreanQuality = nativeKoreanQualityFrom(latestVersion);
   const copyPackage = typeof latestVersion?.metadata.copyPackage === "string" ? latestVersion.metadata.copyPackage : latestVersion?.body ?? "";
   const storedCopyHtml = detail.automation?.manualEdit ? "" : typeof latestVersion?.metadata.copyPackageHtml === "string" ? latestVersion.metadata.copyPackageHtml : "";
-  const copyHtml = buildCopyHtml(storedCopyHtml, latestVersion?.title ?? detail.content.title, latestVersion?.body ?? "", detail.content.id, imagePackage);
+  const hasCopyContent = Boolean(storedCopyHtml.trim() || latestVersion?.body?.trim());
+  const prepareCopyHtml = async () => {
+    const response = await getContentCopyAssets(detail.content.id);
+    const imageUrls = Object.fromEntries(response.items.map((item) => [item.assetId, item.url]));
+    return buildCopyHtml(storedCopyHtml, latestVersion?.title ?? detail.content.title, latestVersion?.body ?? "", detail.content.id, imagePackage, imageUrls);
+  };
+  const copySource = async () => {
+    setCopyBusy(true);
+    try {
+      await copyHtmlSource(await prepareCopyHtml(), setToast);
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "HTML 소스 복사에 실패했습니다.");
+    } finally {
+      setCopyBusy(false);
+    }
+  };
+  const copyWithImages = async () => {
+    setCopyBusy(true);
+    try {
+      await copyRichContent(await prepareCopyHtml(), copyPackage, setToast);
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "이미지 포함 복사에 실패했습니다.");
+    } finally {
+      setCopyBusy(false);
+    }
+  };
   const jumpTo = (id: string) => {
     setActiveOutline(id);
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -497,10 +522,10 @@ export function ReviewPage() {
         <div className="review-header__actions">
           <Button icon={<Pencil size={17} />} disabled={status === "deleted" || connectionStatus !== "connected" || staleDetail || editBusy || deleteBusy} onClick={() => setEditOpen(true)}>직접 수정</Button>
           <Button variant="danger" icon={<Trash2 size={17} />} disabled={status === "deleted" || connectionStatus !== "connected" || staleDetail || editBusy || deleteBusy} onClick={() => void remove()}>삭제</Button>
-          <Button icon={<Code2 size={17} />} disabled={!copyHtml.trim()} onClick={() => void copyHtmlSource(copyHtml, setToast)}>
+          <Button icon={<Code2 size={17} />} disabled={!hasCopyContent || copyBusy} onClick={() => void copySource()}>
             HTML 소스 복사
           </Button>
-          <Button icon={<Copy size={17} />} disabled={!copyHtml.trim() || copyBusy} onClick={() => void copyRichContent(copyHtml, copyPackage, setCopyBusy, setToast)}>
+          <Button icon={<Copy size={17} />} disabled={!hasCopyContent || copyBusy} onClick={() => void copyWithImages()}>
             이미지 포함 복사
           </Button>
           <Button icon={<Copy size={17} />} disabled={!copyPackage.trim()} onClick={() => {
@@ -910,7 +935,14 @@ function escapeCopyHtml(value: string): string {
     .replaceAll("'", "&#39;");
 }
 
-function buildCopyHtml(storedHtml: string, title: string, body: string, contentId: string, imagePackage: ApiGeneratedImagePackage | null): string {
+function buildCopyHtml(
+  storedHtml: string,
+  title: string,
+  body: string,
+  contentId: string,
+  imagePackage: ApiGeneratedImagePackage | null,
+  imageUrls: Record<string, string> = {},
+): string {
   const assets = imagePackage?.assets ?? [];
   const source = storedHtml.trim() || `<article><h1>${escapeCopyHtml(title)}</h1>${body.split("\n\n").map((block) => {
     const text = block.trim();
@@ -922,68 +954,90 @@ function buildCopyHtml(storedHtml: string, title: string, body: string, contentI
     if (text.startsWith("> ")) return `<blockquote><p>${escapeCopyHtml(text.slice(2))}</p></blockquote>`;
     return `<p>${escapeCopyHtml(text)}</p>`;
   }).join("")}</article>`;
-  return source.replace(/(src=["'])images\/([^"']+)(["'])/g, (_match, prefix: string, fileName: string, suffix: string) => {
+  const withResolvedImages = source.replace(/(src=["'])images\/([^"']+)(["'])/g, (_match, prefix: string, fileName: string, suffix: string) => {
     const asset = assets.find((item) => item.path === fileName || `${item.id}.jpg` === fileName);
-    return asset ? `${prefix}${contentImageUrl(contentId, asset.id, imagePackage?.generatedAt)}${suffix}` : `${prefix}images/${fileName}${suffix}`;
+    const url = asset ? imageUrls[asset.id] ?? contentImageUrl(contentId, asset.id, imagePackage?.generatedAt) : `images/${fileName}`;
+    return `${prefix}${url}${suffix}`;
   });
+  return decorateNaverCopyHtml(withResolvedImages, assets, imageUrls, contentId, imagePackage?.generatedAt);
 }
 
-async function imageDataUrl(url: string): Promise<string | null> {
-  const response = await fetch(url, { credentials: "include" });
-  if (!response.ok) return null;
-  const blob = await response.blob();
-  return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : null);
-    reader.onerror = () => resolve(null);
-    reader.readAsDataURL(blob);
-  });
-}
-
-async function inlineCopyImages(html: string): Promise<string> {
-  const sources = [...html.matchAll(/src=["']([^"']+)["']/g)].map((match) => match[1]).filter((source, index, all) => all.indexOf(source) === index);
-  const replacements = await Promise.all(sources.map(async (source) => [source, await imageDataUrl(source)] as const));
-  return replacements.reduce((result, [source, dataUrl]) => dataUrl ? result.split(source).join(dataUrl) : result, html);
+function decorateNaverCopyHtml(
+  html: string,
+  assets: NonNullable<ApiGeneratedImagePackage["assets"]>,
+  imageUrls: Record<string, string>,
+  contentId: string,
+  version?: string,
+): string {
+  const documentCopy = new DOMParser().parseFromString(html, "text/html");
+  const article = documentCopy.querySelector("article") ?? documentCopy.body;
+  if (!article.querySelector("img") && assets.length) {
+    const headings = [...article.querySelectorAll("h2")];
+    for (const asset of assets) {
+      const figure = documentCopy.createElement("figure");
+      const image = documentCopy.createElement("img");
+      image.src = imageUrls[asset.id] ?? contentImageUrl(contentId, asset.id, version);
+      image.alt = asset.altText;
+      figure.append(image);
+      if (asset.role === "hero") (article.querySelector("h1") ?? article.firstElementChild)?.after(figure);
+      else (headings[Math.max(0, asset.afterSection - 1)] ?? article.lastElementChild)?.after(figure);
+    }
+  }
+  article.setAttribute("style", "max-width:760px;margin:0 auto;color:#202124;font-family:Arial,'Noto Sans KR',sans-serif;font-size:16px;line-height:1.9;word-break:keep-all;");
+  article.querySelectorAll("h1").forEach((element) => element.setAttribute("style", "margin:0 0 32px;font-size:32px;line-height:1.35;font-weight:800;word-break:keep-all;"));
+  article.querySelectorAll("h2").forEach((element) => element.setAttribute("style", "margin:44px 0 18px;font-size:24px;line-height:1.45;font-weight:800;word-break:keep-all;"));
+  article.querySelectorAll("h3").forEach((element) => element.setAttribute("style", "margin:32px 0 14px;font-size:20px;line-height:1.5;font-weight:750;word-break:keep-all;"));
+  article.querySelectorAll("p").forEach((element) => element.setAttribute("style", "margin:0 0 22px;line-height:1.9;white-space:pre-wrap;word-break:keep-all;"));
+  article.querySelectorAll("ul,ol").forEach((element) => element.setAttribute("style", "margin:0 0 24px;padding-left:24px;"));
+  article.querySelectorAll("li").forEach((element) => element.setAttribute("style", "margin:0 0 10px;line-height:1.8;word-break:keep-all;"));
+  article.querySelectorAll("blockquote").forEach((element) => element.setAttribute("style", "margin:24px 0;padding:18px 20px;border-left:4px solid #ff6f0f;background:#fff6f0;"));
+  article.querySelectorAll("figure").forEach((element) => element.setAttribute("style", "margin:30px 0 34px;text-align:center;"));
+  article.querySelectorAll("img").forEach((element) => element.setAttribute("style", "display:block;width:100%;max-width:760px;height:auto;margin:0 auto;border:0;"));
+  return article.outerHTML;
 }
 
 async function copyHtmlSource(html: string, setToast: (message: string) => void): Promise<void> {
+  await navigator.clipboard.writeText(html);
+  setToast("이미지 주소와 줄 간격을 포함한 HTML 소스를 복사했습니다.");
+}
+
+function copyViaSelection(html: string): boolean {
+  const container = document.createElement("div");
+  container.contentEditable = "true";
+  container.style.position = "fixed";
+  container.style.left = "-10000px";
+  container.style.top = "0";
+  container.innerHTML = html;
+  document.body.append(container);
+  const selection = window.getSelection();
+  const range = document.createRange();
+  range.selectNodeContents(container);
+  selection?.removeAllRanges();
+  selection?.addRange(range);
   try {
-    const hydrated = await inlineCopyImages(html);
-    await navigator.clipboard.writeText(hydrated);
-    setToast("이미지가 포함된 HTML 소스를 복사했습니다. 네이버 블로그 HTML 편집기에 붙여넣으세요.");
-  } catch {
-    setToast("HTML 소스 복사에 실패했습니다. 브라우저의 클립보드 권한을 확인해주세요.");
+    return document.execCommand("copy");
+  } finally {
+    selection?.removeAllRanges();
+    container.remove();
   }
 }
 
-async function copyRichContent(
-  html: string,
-  plainText: string,
-  setBusy: (value: boolean) => void,
-  setToast: (message: string) => void,
-): Promise<void> {
-  setBusy(true);
+async function copyRichContent(html: string, plainText: string, setToast: (message: string) => void): Promise<void> {
+  const normalizedText = plainText.replace(/\r\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
   try {
-    const hydrated = await inlineCopyImages(html);
-    if (typeof ClipboardItem !== "undefined" && navigator.clipboard.write) {
+    if (typeof ClipboardItem !== "undefined" && typeof navigator.clipboard.write === "function") {
       const item = new ClipboardItem({
-        "text/html": new Blob([hydrated], { type: "text/html" }),
-        "text/plain": new Blob([plainText], { type: "text/plain" }),
+        "text/html": new Blob([html], { type: "text/html" }),
+        "text/plain": new Blob([normalizedText], { type: "text/plain" }),
       });
       await navigator.clipboard.write([item]);
-    } else {
-      await navigator.clipboard.writeText(plainText);
+    } else if (!copyViaSelection(html)) {
+      throw new Error("서식 클립보드를 지원하지 않는 브라우저입니다.");
     }
-    setToast("이미지가 포함된 원고를 복사했습니다. 네이버 블로그 편집기에 바로 붙여넣으세요.");
+    setToast("이미지와 문단 간격을 포함해 복사했습니다. 15분 안에 네이버 편집기에 붙여넣으세요.");
   } catch {
-    try {
-      await navigator.clipboard.writeText(plainText);
-      setToast("서식 복사는 제한되어 일반 원고로 복사했습니다.");
-    } catch {
-      setToast("원고 복사에 실패했습니다. 브라우저의 클립보드 권한을 확인해주세요.");
-    }
-  } finally {
-    setBusy(false);
+    if (copyViaSelection(html)) setToast("이미지와 문단 간격을 포함해 복사했습니다. 15분 안에 붙여넣으세요.");
+    else throw new Error("브라우저의 서식 복사 권한을 확인해주세요.");
   }
 }
 

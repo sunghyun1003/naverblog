@@ -209,11 +209,52 @@ export interface ApiUser {
 
 export interface ApiWorkflowRun {
   id: number;
-  workflow: "collect" | "generate";
+  workflow: "collect" | "generate" | "images" | "rewrite";
   status: string;
   conclusion: string | null;
   createdAt: string;
   updatedAt: string;
+  url: string;
+}
+
+export type ApiAutomationFrequency = "daily" | "weekdays" | "weekly";
+
+export interface ApiAutomationSchedule {
+  enabled: boolean;
+  frequency: ApiAutomationFrequency;
+  time: string;
+  weekday: number;
+}
+
+export interface ApiAutomationSettings {
+  schemaVersion: 1;
+  timezone: "Asia/Seoul";
+  collection: ApiAutomationSchedule;
+  generation: ApiAutomationSchedule & { count: number };
+}
+
+export interface ApiAutomationHistoryItem {
+  id: string;
+  workflowRunId: number;
+  workflow: "collect" | "generate" | "images" | "rewrite";
+  job: string;
+  event: string;
+  status: "success" | "failure" | "cancelled" | "running" | "queued" | "skipped";
+  startedAt: string;
+  finishedAt: string | null;
+  durationSeconds: number | null;
+  contentRunId: string | null;
+  contentTitle: string | null;
+  codex: {
+    calls: number;
+    inputTokens: number;
+    cachedInputTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+  };
+  failedStage: string | null;
+  failureCode: string | null;
+  error: string | null;
   url: string;
 }
 

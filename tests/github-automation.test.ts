@@ -76,6 +76,54 @@ test("GitHub Actions 실행 상태와 생성 원고를 읽는다", async () => {
   assert.match(dispatches[2]?.body ?? "", /"run_id":"123"/);
 });
 
+test("대시보드 일정 설정을 워크플로우와 설정 파일에 한 커밋으로 반영한다", async () => {
+  const writtenBlobs: string[] = [];
+  const workflowSource = `name: test\n\non:\n  # dashboard-schedule:start\n  schedule:\n    - cron: \"0 7 * * *\"\n      timezone: \"Asia/Seoul\"\n  # dashboard-schedule:end\n  workflow_dispatch:\n`;
+  const mockFetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = String(input);
+    const method = init?.method ?? "GET";
+    if (url.includes(".github/workflows/collect.yml") || url.includes(".github/workflows/generate.yml")) return file(workflowSource);
+    if (url.endsWith("/git/ref/heads/main")) return json({ object: { sha: "head-sha" } });
+    if (url.endsWith("/git/commits/head-sha")) return json({ tree: { sha: "base-tree" } });
+    if (url.endsWith("/git/blobs") && method === "POST") {
+      const body = JSON.parse(String(init?.body)) as { content: string };
+      writtenBlobs.push(body.content);
+      return json({ sha: `blob-${writtenBlobs.length}` });
+    }
+    if (url.endsWith("/git/trees") && method === "POST") return json({ sha: "next-tree" });
+    if (url.endsWith("/git/commits") && method === "POST") return json({ sha: "next-commit" });
+    if (url.endsWith("/git/refs/heads/main") && method === "PATCH") return json({ ref: "refs/heads/main" });
+    return json({ message: "Unexpected request" }, 500);
+  }) as typeof fetch;
+  const service = new GitHubAutomationService({ owner: "owner", repository: "repo", branch: "main", token: "token" }, mockFetch);
+  const settings = {
+    schemaVersion: 1 as const,
+    timezone: "Asia/Seoul" as const,
+    collection: { enabled: true, frequency: "weekdays" as const, time: "06:20", weekday: 1 },
+    generation: { enabled: true, frequency: "daily" as const, time: "07:10", weekday: 1, count: 2 },
+  };
+  await service.updateAutomationSettings(settings);
+  assert.equal(writtenBlobs.length, 3);
+  assert.ok(writtenBlobs.some((value) => value.includes('"frequency": "weekdays"')));
+  assert.ok(writtenBlobs.some((value) => value.includes('cron: "10 7 * * *"') && value.includes('cron: "20 7 * * *"')));
+});
+
+test("실패 단계와 Codex 사용량을 실행 이력으로 합친다", async () => {
+  const mockFetch = (async (input: string | URL | Request) => {
+    const url = String(input);
+    if (url.includes("/actions/runs/55/jobs")) return json({ jobs: [{ name: "generate", conclusion: "failure", status: "completed", steps: [{ name: "원고 생성", conclusion: "failure", status: "completed" }] }] });
+    if (url.includes("/actions/runs?")) return json({ workflow_runs: [{ id: 55, status: "completed", conclusion: "failure", created_at: "2026-08-30T00:00:00Z", updated_at: "2026-08-30T00:05:00Z", html_url: "https://github.com/run/55", event: "schedule", path: ".github/workflows/generate.yml@refs/heads/main" }] });
+    if (url.includes("/git/trees/main")) return json({ truncated: false, tree: [{ path: "output/history/55-generate.json", type: "blob" }] });
+    if (url.includes("output/history/55-generate.json") || url.includes("output%2Fhistory%2F55-generate.json")) return file({ workflowRunId: 55, workflow: "generate", job: "generate", event: "schedule", status: "failure", startedAt: "2026-08-30T00:00:00Z", finishedAt: "2026-08-30T00:05:00Z", durationSeconds: 300, contentRunId: "55", codex: { calls: 5, inputTokens: 1000, outputTokens: 200, totalTokens: 1200 } });
+    return json({ message: "Unexpected request" }, 500);
+  }) as typeof fetch;
+  const service = new GitHubAutomationService({ owner: "owner", repository: "repo", branch: "main", token: "token" }, mockFetch);
+  const items = await service.listAutomationHistory();
+  assert.equal(items[0]?.failedStage, "원고 생성");
+  assert.equal(items[0]?.codex.totalTokens, 1200);
+  assert.equal(items[0]?.event, "schedule");
+});
+
 test("이미지 manifest에 등록된 파일만 GitHub에서 읽는다", async () => {
   const imageBytes = Buffer.from("generated-image");
   const mockFetch = (async (input: string | URL | Request) => {

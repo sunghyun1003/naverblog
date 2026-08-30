@@ -55,3 +55,13 @@ test("잘못된 비밀번호와 요청 출처 없는 변경 요청을 거부한�
   const rejected = await app.inject({ method: "POST", url: "/api/auth/logout", headers: { cookie: login.headers["set-cookie"] } });
   assert.equal(rejected.statusCode, 403);
 });
+
+test("복사용 공개 이미지 주소는 서명과 만료 시각을 검증한다", () => {
+  const auth = authService();
+  const now = Date.UTC(2026, 7, 30, 0, 0, 0);
+  const expiresAt = now + 15 * 60 * 1000;
+  const signature = auth.signPublicResource("123:hero", expiresAt);
+  assert.equal(auth.verifyPublicResource("123:hero", expiresAt, signature, now), true);
+  assert.equal(auth.verifyPublicResource("123:visual-01", expiresAt, signature, now), false);
+  assert.equal(auth.verifyPublicResource("123:hero", expiresAt, signature, expiresAt + 1), false);
+});

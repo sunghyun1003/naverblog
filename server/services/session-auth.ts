@@ -94,6 +94,15 @@ export class SessionAuthService {
     return `${sessionCookieName}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${secure}`;
   }
 
+  signPublicResource(resource: string, expiresAt: number): string {
+    return this.sign(`resource:${resource}:${expiresAt}`);
+  }
+
+  verifyPublicResource(resource: string, expiresAt: number, signature: string, now = Date.now()): boolean {
+    if (!Number.isInteger(expiresAt) || expiresAt <= now || expiresAt > now + 60 * 60 * 1000) return false;
+    return secureEqual(signature, this.signPublicResource(resource, expiresAt));
+  }
+
   private sign(payload: string): string {
     return createHmac("sha256", this.config.sessionSecret).update(payload).digest("base64url");
   }

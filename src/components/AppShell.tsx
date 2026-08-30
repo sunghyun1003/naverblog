@@ -9,6 +9,7 @@ import {
   Sparkles,
   X,
   LogOut,
+  ListChecks,
 } from "lucide-react";
 import { useState } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
@@ -21,6 +22,7 @@ const navigation = [
   { label: "콘텐츠", path: "/contents", icon: FileText },
   { label: "발행 일정", path: "/schedule", icon: CalendarDays },
   { label: "성과", path: "/analytics", icon: BarChart3 },
+  { label: "실행 이력", path: "/history", icon: ListChecks },
   { label: "설정", path: "/settings", icon: Settings },
 ];
 

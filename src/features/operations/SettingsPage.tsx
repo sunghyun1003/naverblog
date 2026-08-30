@@ -75,7 +75,7 @@ export function SettingsPage() {
         {loading ? <PageLoadingState label="설정을 불러오는 중입니다." compact /> : null}
         {!loading ? <><div className="automation-setting-card"><div><strong>콘텐츠 수집</strong></div><ScheduleFields value={settings.collection} onChange={(collection) => setSettings((current) => ({ ...current, collection }))} /></div>
         <div className="automation-setting-card"><div><strong>원고 생성</strong></div><ScheduleFields value={settings.generation} count={settings.generation.count} onCountChange={(count) => setSettings((current) => ({ ...current, generation: { ...current.generation, count } }))} onChange={(generation) => setSettings((current) => ({ ...current, generation: { ...current.generation, ...generation } }))} /></div></> : null}
-        <div className="automation-setting-actions"><span className={message.includes("못했습니다") || message.includes("오류") ? "settings-message settings-message--error" : "settings-message"} role="status">{message}</span><Button variant="brand" icon={<Save size={17} />} disabled={loading || saving} onClick={() => void save()}>{saving ? "저장 중..." : "설정 저장"}</Button></div>
+        <div className="automation-setting-actions"><span className={message.includes("실패") || message.includes("못했습니다") || message.includes("오류") ? "settings-message settings-message--error" : "settings-message"} role="status">{message}</span><Button variant="brand" icon={<Save size={17} />} disabled={loading || saving} onClick={() => void save()}>{saving ? "저장 중..." : "설정 저장"}</Button></div>
       </section>
     </div>
   );

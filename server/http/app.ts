@@ -464,18 +464,19 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       return { expiresAt: new Date(expiresAt).toISOString(), items: [] };
     }
     if (!auth) return reply.status(404).send({ error: { code: "IMAGE_NOT_FOUND", message: "복사용 이미지를 찾을 수 없습니다.", details: null } });
-    const draft = await githubAutomation.getDraft(id);
-    const assets = draft.imageManifest?.assets ?? [];
+    // 이미지 존재 여부는 상세 화면에서 이미 확인했다. 복사할 때 GitHub 원고를 다시
+    // 읽으면 불필요한 지연이 생기므로, 생성 파이프라인의 고정 asset ID만 서명한다.
+    const assetIds = ["hero", "visual-01", "visual-02"];
     const expiresAt = Date.now() + 15 * 60 * 1000;
     const forwardedProtocol = request.headers["x-forwarded-proto"];
     const protocol = (Array.isArray(forwardedProtocol) ? forwardedProtocol[0] : forwardedProtocol) ?? request.protocol;
     const host = request.headers.host;
-    const items = assets.map((asset) => {
-      const resource = `${id}:${asset.id}`;
+    const items = assetIds.map((assetId) => {
+      const resource = `${id}:${assetId}`;
       const signature = auth.signPublicResource(resource, expiresAt);
       return {
-        assetId: asset.id,
-        url: `${protocol}://${host}/public/content-images/${encodeURIComponent(id)}/${encodeURIComponent(asset.id)}?expires=${expiresAt}&signature=${encodeURIComponent(signature)}`,
+        assetId,
+        url: `${protocol}://${host}/public/content-images/${encodeURIComponent(id)}/${encodeURIComponent(assetId)}?expires=${expiresAt}&signature=${encodeURIComponent(signature)}`,
       };
     });
     return { expiresAt: new Date(expiresAt).toISOString(), items };

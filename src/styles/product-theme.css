@@ -338,8 +338,8 @@ select:focus-visible,
 }
 
 .operations-heading {
-  max-width: 1520px;
-  margin: 0 auto 28px;
+  max-width: none;
+  margin: 0 0 28px;
 }
 
 .operations-page > .operations-notice,
@@ -348,9 +348,9 @@ select:focus-visible,
 .operations-page > .schedule-list,
 .operations-page > .operations-section {
   width: 100%;
-  max-width: 1520px;
-  margin-right: auto;
-  margin-left: auto;
+  max-width: none;
+  margin-right: 0;
+  margin-left: 0;
 }
 
 .operations-page > .operations-notice {
@@ -498,11 +498,11 @@ select:focus-visible,
 }
 
 .home-next-action {
-  max-width: 1520px;
+  max-width: none;
   min-height: 110px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-panel);
-  margin: 0 auto 16px;
+  margin: 0 0 16px;
   padding: 22px 24px;
   background: #fff;
   box-shadow: var(--shadow-panel);
@@ -545,8 +545,8 @@ select:focus-visible,
 }
 
 .home-status-grid {
-  max-width: 1520px;
-  margin: 0 auto 18px;
+  max-width: none;
+  margin: 0 0 18px;
   overflow: hidden;
 }
 
@@ -572,9 +572,9 @@ select:focus-visible,
 
 .home-overview-grid,
 .home-recent-section {
-  max-width: 1520px;
-  margin-right: auto;
-  margin-left: auto;
+  max-width: none;
+  margin-right: 0;
+  margin-left: 0;
 }
 
 .home-overview-grid {
@@ -695,8 +695,8 @@ select:focus-visible,
 
 /* History table */
 .history-section {
-  max-width: 1520px;
-  margin: 0 auto;
+  max-width: none;
+  margin: 0;
   padding: 22px 24px 16px;
 }
 

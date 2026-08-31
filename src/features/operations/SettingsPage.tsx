@@ -69,7 +69,6 @@ export function SettingsPage() {
 
   return (
     <div className="operations-page settings-page">
-      <header className="operations-heading"><h1>설정</h1></header>
       <section className="operations-section automation-settings-section">
         <header className="settings-section-heading"><div><h2>자동 실행</h2><p>수집과 원고 생성을 한 화면에서 관리합니다.</p></div><span className="settings-timezone">한국 시간 기준</span></header>
         {loading ? <PageLoadingState label="설정을 불러오는 중입니다." compact /> : null}

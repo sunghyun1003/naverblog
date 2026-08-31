@@ -172,7 +172,6 @@ export function HomePage() {
   return (
     <div className="operations-page home-page" aria-busy={loading}>
       <header className="operations-heading home-heading">
-        <h1>운영 현황</h1>
         <div className="operations-actions">
           <Button icon={<RefreshCw size={17} />} onClick={() => void refresh()} disabled={loading}>{loading ? "확인 중..." : "새로고침"}</Button>
           <Button variant="brand" onClick={() => navigate("/contents")}>콘텐츠 관리</Button>

@@ -103,7 +103,6 @@ export function AutomationHistoryPage() {
   return (
     <div className="operations-page history-page">
       <header className="operations-heading">
-        <h1>실행 이력</h1>
         <Button icon={<RefreshCw size={17} />} onClick={() => void refresh()} disabled={loading}>{loading ? "확인 중..." : "새로고침"}</Button>
       </header>
       <section className="operations-section history-section">

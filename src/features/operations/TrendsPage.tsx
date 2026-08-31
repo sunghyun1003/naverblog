@@ -93,7 +93,6 @@ export function TrendsPage() {
   return (
     <div className="operations-page" aria-busy={loading || refreshing}>
       <header className="operations-heading">
-        <h1>트렌드 수집</h1>
         <div className="operations-actions"><Button onClick={() => void refresh()} icon={<RefreshCw size={17} />} disabled={loading || refreshing}>{refreshing ? "최신화 중..." : "새로고침"}</Button><Button variant="brand" onClick={() => void collect()} disabled={busy || loading || refreshing}>{busy ? "요청 중..." : "지금 수집"}</Button></div>
       </header>
       {message ? <div className="operations-notice" role="status">{message}</div> : null}

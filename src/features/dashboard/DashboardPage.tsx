@@ -156,7 +156,6 @@ export function DashboardPage() {
     <div className="dashboard-page">
       <section className="dashboard-main">
         <header className="operations-heading">
-          <h1>콘텐츠</h1>
           <Button variant="brand" icon={<Plus size={18} />} onClick={() => setCreateOpen(true)} disabled={connectionStatus !== "connected"}>
             콘텐츠 만들기
           </Button>

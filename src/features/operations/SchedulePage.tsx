@@ -75,7 +75,7 @@ export function SchedulePage() {
 
   return (
     <div className="operations-page" aria-busy={loading || actionBusy !== null}>
-      <header className="operations-heading"><h1>발행 일정</h1><Button icon={<RefreshCw size={17} />} onClick={() => void refresh(undefined, true).catch((error: unknown) => setMessage(error instanceof Error ? error.message : "발행 일정을 불러오지 못했습니다."))} disabled={loading || actionBusy !== null}>새로고침</Button></header>
+      <header className="operations-heading"><Button icon={<RefreshCw size={17} />} onClick={() => void refresh(undefined, true).catch((error: unknown) => setMessage(error instanceof Error ? error.message : "발행 일정을 불러오지 못했습니다."))} disabled={loading || actionBusy !== null}>새로고침</Button></header>
       {message ? <div className="operations-notice" role="status">{message}</div> : null}
       {freshness?.stale ? (
         <div className="operations-notice" role="alert">최신 조회가 지연되어 마지막 저장 내용을 표시합니다. 예약·발행 전에 새로고침해주세요.</div>

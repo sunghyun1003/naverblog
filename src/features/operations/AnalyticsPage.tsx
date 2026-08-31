@@ -3,7 +3,6 @@ import { BarChart3 } from "lucide-react";
 export function AnalyticsPage() {
   return (
     <div className="operations-page">
-      <header className="operations-heading"><h1>성과</h1></header>
       <section className="operations-section analytics-empty">
         <BarChart3 size={30} aria-hidden="true" />
         <strong>아직 집계된 성과가 없습니다</strong>

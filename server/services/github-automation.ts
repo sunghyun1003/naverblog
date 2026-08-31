@@ -315,6 +315,7 @@ export interface AutomationHistoryItem {
 interface GitHubTreeItem {
   path: string;
   type: "blob" | "tree";
+  sha?: string;
 }
 
 interface GitHubFileResponse {
@@ -528,6 +529,10 @@ function imageContentType(value: string): string {
   if (/\.png$/i.test(value)) return "image/png";
   if (/\.webp$/i.test(value)) return "image/webp";
   return "image/jpeg";
+}
+
+function isLargeGitHubFileError(error: unknown): boolean {
+  return error instanceof Error && /(?:1\s*MB|large file|file is too large|blob api)/i.test(error.message);
 }
 
 const defaultAutomationSettings: AutomationSettings = {
@@ -1085,9 +1090,25 @@ export class GitHubAutomationService {
   }
 
   private async readText(path: string): Promise<string> {
-    const file = await this.file(path);
-    if (file.encoding !== "base64") throw new Error(`지원하지 않는 GitHub 파일 인코딩입니다: ${file.encoding}`);
-    return Buffer.from(file.content.replace(/\s/g, ""), "base64").toString("utf8");
+    try {
+      const file = await this.file(path);
+      if (file.encoding !== "base64") throw new Error(`지원하지 않는 GitHub 파일 인코딩입니다: ${file.encoding}`);
+      return Buffer.from(file.content.replace(/\s/g, ""), "base64").toString("utf8");
+    } catch (error) {
+      // GitHub's Contents API refuses files larger than 1 MB. Trend snapshots
+      // can exceed that limit as the candidate history grows, so fall back to
+      // the Git Blob API, which returns the complete blob by SHA.
+      if (!isLargeGitHubFileError(error)) throw error;
+      return this.readBlobText(path);
+    }
+  }
+
+  private async readBlobText(path: string): Promise<string> {
+    const entry = (await this.tree()).find((item) => item.path === path && item.type === "blob");
+    if (!entry?.sha) throw new Error(`GitHub 파일 SHA를 확인할 수 없습니다: ${path}`);
+    const blob = await this.github<{ content: string; encoding: string }>(`/git/blobs/${encodeURIComponent(entry.sha)}`);
+    if (blob.encoding !== "base64") throw new Error(`지원하지 않는 GitHub Blob 인코딩입니다: ${blob.encoding}`);
+    return Buffer.from(blob.content.replace(/\s/g, ""), "base64").toString("utf8");
   }
 
   private async readJson<T = unknown>(path: string): Promise<T> {

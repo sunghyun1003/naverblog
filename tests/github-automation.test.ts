@@ -76,6 +76,28 @@ test("GitHub Actions 실행 상태와 생성 원고를 읽는다", async () => {
   assert.match(dispatches[2]?.body ?? "", /"run_id":"123"/);
 });
 
+test("1MB를 넘는 트렌드 스냅샷은 Git Blob API로 읽는다", async () => {
+  const latest = {
+    collectionDate: "2026-08-31",
+    collectedAt: "2026-08-31T00:00:00Z",
+    queryCount: 1,
+    itemCount: 1,
+    items: [{ title: "자동차보험", link: "https://example.com", description: "후보", bloggerName: "블로그", postDate: "2026-08-31" }],
+  };
+  const encoded = Buffer.from(JSON.stringify(latest)).toString("base64");
+  const mockFetch = (async (input: string | URL | Request) => {
+    const url = String(input);
+    if (url.includes("/contents/data/latest.json")) return json({ message: "This API returns blobs up to 1 MB" }, 403);
+    if (url.includes("/git/trees/main")) return json({ truncated: false, tree: [{ path: "data/latest.json", type: "blob", sha: "latest-sha" }] });
+    if (url.includes("/git/blobs/latest-sha")) return json({ content: encoded, encoding: "base64" });
+    return json({ message: "Unexpected request" }, 500);
+  }) as typeof fetch;
+  const service = new GitHubAutomationService({ owner: "owner", repository: "repo", branch: "main", token: "token" }, mockFetch);
+  const trends = await service.getTrends();
+  assert.equal(trends.collectionDate, "2026-08-31");
+  assert.equal(trends.items[0]?.title, "자동차보험");
+});
+
 test("대시보드 일정 설정을 워크플로우와 설정 파일에 한 커밋으로 반영한다", async () => {
   const writtenBlobs: string[] = [];
   const workflowSource = `name: test\n\non:\n  # dashboard-schedule:start\n  schedule:\n    - cron: \"0 7 * * *\"\n      timezone: \"Asia/Seoul\"\n  # dashboard-schedule:end\n  workflow_dispatch:\n`;

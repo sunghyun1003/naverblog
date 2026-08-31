@@ -25,8 +25,8 @@ import { StatusBadge } from "../../components/StatusBadge";
 import { readRuntimeCache, writeRuntimeCache } from "../../api/runtimeCache";
 import { isCurrentSeoulDate } from "../../api/date";
 
-function runLabel(run: ApiWorkflowRun | undefined): string {
-  if (!run) return "실행 기록 없음";
+function runLabel(run: ApiWorkflowRun | undefined, loading = false): string {
+  if (!run) return loading ? "불러오는 중..." : "실행 기록 없음";
   if (run.status !== "completed") return "실행 중";
   if (run.conclusion === "success") return "정상 완료";
   if (run.conclusion === "cancelled") return "실행 취소";
@@ -207,7 +207,7 @@ export function HomePage() {
                   <a key={label} href={run?.url ?? undefined} target={run?.url ? "_blank" : undefined} rel={run?.url ? "noreferrer" : undefined} aria-disabled={!run?.url}>
                     <span className="home-run-icon">{icon}</span>
                     <span><strong>{label}</strong><small>{formatDateTime(run?.updatedAt)}</small></span>
-                    <b className={`home-run-state home-run-state--${runTone(run)}`}>{runLabel(run)}</b>
+                    <b className={`home-run-state home-run-state--${runTone(run)}`}>{runLabel(run, loading)}</b>
                     {run?.url ? <ExternalLink size={15} /> : null}
                   </a>
                 ))}
@@ -223,7 +223,7 @@ export function HomePage() {
                   <div><small>후보</small><strong>{trends.itemCount}개</strong></div>
                   <p>{trends.items[0]?.title ?? "수집된 소재 후보가 없습니다."}</p>
                 </div>
-              ) : <div className="home-card-empty">오늘 수집 결과가 없습니다. 소재 수집을 실행해주세요.</div>}
+              ) : <div className="home-card-empty">{loading ? "최신 수집 결과를 불러오는 중입니다." : "오늘 수집 결과가 없습니다. 소재 수집을 실행해주세요."}</div>}
             </section>
 
             <section className="operations-section home-card">
@@ -248,7 +248,7 @@ export function HomePage() {
                   <ArrowRight size={17} />
                 </Link>;
               })}
-              {!recentContents.length ? <div className="home-card-empty">아직 생성된 원고가 없습니다.</div> : null}
+              {!recentContents.length ? <div className="home-card-empty">{loading ? "최근 원고를 불러오는 중입니다." : "아직 생성된 원고가 없습니다."}</div> : null}
             </div>
           </section>
     </div>

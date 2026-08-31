@@ -1096,6 +1096,11 @@ select:focus-visible,
   outline-offset: 0;
 }
 
+.login-input input:focus,
+.search-field input:focus {
+  box-shadow: none;
+}
+
 .modal-backdrop {
   background: rgba(25, 27, 31, 0.48);
 }

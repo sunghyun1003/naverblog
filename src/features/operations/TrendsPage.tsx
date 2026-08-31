@@ -51,7 +51,11 @@ export function TrendsPage() {
     setMessage("");
     try {
       const next = await getTrends(signal, !usableCachedSnapshot || !initial);
-      setSnapshot(writeRuntimeCache("trends", next));
+      writeRuntimeCache("trends", next);
+      setSnapshot(isCurrentSeoulDate(next.collectionDate) ? next : null);
+      if (!isCurrentSeoulDate(next.collectionDate)) {
+        setMessage(`${next.collectionDate} 수집 결과만 있습니다. 오늘 자료를 보려면 지금 수집을 실행해주세요.`);
+      }
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") return;
       setMessage(error instanceof Error ? error.message : "수집 결과를 불러오지 못했습니다.");
@@ -93,7 +97,7 @@ export function TrendsPage() {
         <div className="operations-empty">표시할 수집 결과가 없습니다. 잠시 후 새로고침해주세요.</div>
       ) : (
         <>
-          {snapshot.source === "postgres-cache" ? <div className="operations-notice" role="alert">최신 조회가 지연되어 {snapshot.collectionDate}에 저장된 수집 결과를 표시합니다.</div> : null}
+          {!isCurrentSeoulDate(snapshot.collectionDate) ? <div className="operations-notice" role="alert">오늘 수집 결과가 아직 없습니다. 현재 표시된 자료는 {snapshot.collectionDate} 기준입니다.</div> : snapshot.source === "postgres-cache" ? <div className="operations-notice" role="alert">최신 조회가 지연되어 {snapshot.collectionDate}에 저장된 수집 결과를 표시합니다.</div> : null}
           <section className="snapshot-summary">
             <div><small>수집일</small><strong>{snapshot.collectionDate}</strong></div>
             <div><small>검색어</small><strong>{snapshot.queryCount}개</strong></div>

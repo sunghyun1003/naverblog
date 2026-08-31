@@ -92,7 +92,8 @@ export function HomePage() {
     }
     if (runResult.status === "fulfilled") setRuns(runResult.value.items);
     if (trendResult.status === "fulfilled") {
-      setTrends(trendResult.value);
+      const nextTrends = trendResult.value;
+      setTrends(isCurrentSeoulDate(nextTrends.collectionDate) ? nextTrends : null);
       writeRuntimeCache("trends", trendResult.value);
     }
 
@@ -225,7 +226,7 @@ export function HomePage() {
                   <div><small>후보</small><strong>{trends.itemCount}개</strong></div>
                   <p>{trends.items[0]?.title ?? "수집된 소재 후보가 없습니다."}</p>
                 </div>
-              ) : <div className="home-card-empty">수집 현황을 불러오지 못했습니다.</div>}
+              ) : <div className="home-card-empty">오늘 수집 결과가 없습니다. 소재 수집을 실행해주세요.</div>}
             </section>
 
             <section className="operations-section home-card">

@@ -54,11 +54,11 @@
 .automation-setting-card { border-top: 1px solid var(--color-border-subtle); display: grid; grid-template-columns: minmax(180px, 0.7fr) minmax(0, 2fr); gap: var(--space-6); padding: var(--space-5) 0; }
 .automation-setting-card > div:first-child { display: grid; align-content: start; gap: 4px; }
 .automation-setting-card > div:first-child small { color: var(--color-text-muted); font-size: 12px; line-height: 18px; }
-.automation-setting { display: flex; align-items: end; justify-content: flex-end; gap: var(--space-3); }
+.automation-setting { display: flex; align-items: end; justify-content: flex-start; gap: var(--space-3); }
 .automation-setting > label:not(.automation-toggle) { min-width: 120px; display: grid; gap: 7px; }
 .automation-setting label > span { color: var(--color-text-secondary); font-size: 12px; font-weight: 700; }
 .automation-setting input[type="time"], .automation-setting select, .history-toolbar select { height: 42px; border: 1px solid var(--color-border); border-radius: var(--radius-2); padding: 0 11px; color: var(--color-text-primary); background: var(--color-bg); font: inherit; }
-.automation-toggle { min-height: 42px; display: inline-flex; align-items: center; gap: 8px; margin-right: auto; }
+.automation-toggle { min-height: 42px; display: inline-flex; align-items: center; gap: 8px; margin-right: 12px; min-width: 76px; }
 .automation-toggle input { width: 18px; height: 18px; accent-color: var(--color-brand); }
 .automation-setting--disabled > label:not(.automation-toggle) { opacity: 0.48; }
 .automation-setting-actions { border-top: 1px solid var(--color-border-subtle); display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); padding-top: var(--space-5); }

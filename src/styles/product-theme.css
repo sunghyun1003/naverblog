@@ -329,6 +329,8 @@ select:focus-visible,
 
 /* Shared page rhythm */
 .operations-page {
+  width: 100%;
+  max-width: 1600px;
   min-height: calc(100vh - 68px);
   padding: 36px 40px 68px;
 }
@@ -494,7 +496,12 @@ select:focus-visible,
 .settings-page,
 .trends-page,
 .analytics-page {
-  max-width: none;
+  max-width: 1600px;
+}
+
+.dashboard-page {
+  width: 100%;
+  max-width: 1600px;
 }
 
 .home-next-action {

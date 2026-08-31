@@ -255,7 +255,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (response.status === 204) return undefined as T;
   try {
     return await response.json() as T;
-  } catch {
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") throw error;
     throw new ApiError("서버 응답을 읽지 못했습니다.", response.status, "INVALID_RESPONSE");
   }
 }

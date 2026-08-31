@@ -71,7 +71,7 @@ export function SettingsPage() {
     <div className="operations-page settings-page">
       <header className="operations-heading"><h1>설정</h1></header>
       <section className="operations-section automation-settings-section">
-        <header className="settings-section-heading"><div><h2>자동 실행</h2><p>수집과 원고 생성을 한 화면에서 관리합니다.</p></div><span className="settings-timezone">한국 시간 · {settings.timezone}</span></header>
+        <header className="settings-section-heading"><div><h2>자동 실행</h2><p>수집과 원고 생성을 한 화면에서 관리합니다.</p></div><span className="settings-timezone">한국 시간 기준</span></header>
         {loading ? <PageLoadingState label="설정을 불러오는 중입니다." compact /> : null}
         {!loading ? <><div className="automation-setting-card"><div><strong>콘텐츠 수집</strong><small>네이버 블로그 후보를 모읍니다.</small></div><ScheduleFields value={settings.collection} onChange={(collection) => setSettings((current) => ({ ...current, collection }))} /></div>
         <div className="automation-setting-card"><div><strong>원고 생성</strong><small>수집된 후보를 바탕으로 원고를 만듭니다.</small></div><ScheduleFields value={settings.generation} count={settings.generation.count} onCountChange={(count) => setSettings((current) => ({ ...current, generation: { ...current.generation, count } }))} onChange={(generation) => setSettings((current) => ({ ...current, generation: { ...current.generation, ...generation } }))} /></div></> : null}

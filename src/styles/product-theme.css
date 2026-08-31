@@ -110,11 +110,86 @@ select:focus-visible,
 }
 
 .notification-button {
+  position: relative;
   width: 36px;
   height: 36px;
   margin-right: 8px;
   border-radius: 9px;
 }
+
+.notification-center {
+  position: relative;
+}
+
+.notification-popover {
+  position: absolute;
+  z-index: 80;
+  top: calc(100% + 12px);
+  right: 0;
+  width: min(340px, calc(100vw - 32px));
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-panel);
+  padding: 8px;
+  background: #fff;
+  box-shadow: var(--shadow-popover);
+}
+
+.notification-popover > header {
+  display: grid;
+  gap: 3px;
+  padding: 12px 12px 10px;
+}
+
+.notification-popover > header strong {
+  color: var(--color-text);
+  font-size: 14px;
+}
+
+.notification-popover > header span {
+  color: var(--color-text-muted);
+  font-size: 11px;
+}
+
+.notification-popover > a {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  border-radius: 9px;
+  padding: 11px 12px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.notification-popover > a:hover {
+  background: var(--color-bg-subtle);
+}
+
+.notification-popover > a > span:last-child {
+  display: grid;
+  gap: 3px;
+}
+
+.notification-popover > a strong {
+  color: var(--color-text);
+  font-size: 12px;
+}
+
+.notification-popover > a small {
+  color: var(--color-text-muted);
+  font-size: 11px;
+}
+
+.notification-popover__dot {
+  width: 7px;
+  height: 7px;
+  margin-top: 4px;
+  border-radius: 50%;
+}
+
+.notification-popover__dot--brand { background: var(--color-brand); }
+.notification-popover__dot--critical { background: var(--color-critical); }
+.notification-popover__dot--positive { background: var(--color-positive); }
 
 .notification-button:hover,
 .logout-button:hover {
@@ -220,7 +295,6 @@ select:focus-visible,
 .sidebar__item--active {
   background: var(--color-brand-weak);
   color: var(--color-brand);
-  box-shadow: inset 3px 0 0 var(--color-brand);
 }
 
 .sidebar__item--active svg {
@@ -259,9 +333,28 @@ select:focus-visible,
   padding: 36px 40px 68px;
 }
 
+.dashboard-main {
+  padding: 36px 40px 68px;
+}
+
 .operations-heading {
   max-width: 1520px;
   margin: 0 auto 28px;
+}
+
+.operations-page > .operations-notice,
+.operations-page > .snapshot-summary,
+.operations-page > .operations-toolbar,
+.operations-page > .schedule-list,
+.operations-page > .operations-section {
+  width: 100%;
+  max-width: 1520px;
+  margin-right: auto;
+  margin-left: auto;
+}
+
+.operations-page > .operations-notice {
+  margin-bottom: 18px;
 }
 
 .operations-heading h1 {
@@ -719,6 +812,34 @@ select:focus-visible,
   padding: 20px 0;
 }
 
+.settings-section-heading {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.settings-section-heading > div {
+  display: grid;
+  gap: 4px;
+}
+
+.settings-section-heading p {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+.settings-timezone {
+  flex: 0 0 auto;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 999px;
+  padding: 6px 10px;
+  color: var(--color-text-muted);
+  background: var(--color-bg-subtle);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
 .automation-setting-card > div:first-child small,
 .automation-setting label > span,
 .schedule-control label span {
@@ -1021,6 +1142,8 @@ select:focus-visible,
   .operations-heading { margin-bottom: 20px; }
   .operations-heading h1 { font-size: 26px; line-height: 34px; }
   .operations-section { padding: 18px; }
+  .settings-section-heading { align-items: flex-start; flex-direction: column; gap: 10px; }
+  .settings-timezone { white-space: normal; }
   .home-next-action { padding: 18px; }
   .home-next-action h2 { font-size: 17px; }
   .home-status-grid { border-radius: 12px; }

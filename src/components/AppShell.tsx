@@ -1,5 +1,4 @@
 import {
-  BarChart3,
   Bell,
   CalendarDays,
   FileText,
@@ -11,7 +10,7 @@ import {
   LogOut,
   ListChecks,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { BrandMark } from "./BrandMark";
 import { useAuth } from "../features/auth/AuthProvider";
@@ -24,7 +23,6 @@ const navigationGroups = [
       { label: "트렌드 수집", path: "/trends", icon: Sparkles },
       { label: "콘텐츠", path: "/contents", icon: FileText },
       { label: "발행 일정", path: "/schedule", icon: CalendarDays },
-      { label: "성과", path: "/analytics", icon: BarChart3 },
     ],
   },
   {
@@ -36,9 +34,27 @@ const navigationGroups = [
 export function AppShell() {
   const { user, logout } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const location = useLocation();
 
   const isContentPath = location.pathname.startsWith("/contents");
+
+  useEffect(() => {
+    if (!notificationsOpen) return;
+    const closeOnOutsideClick = (event: MouseEvent) => {
+      if (!(event.target instanceof Element) || event.target.closest(".notification-center")) return;
+      setNotificationsOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setNotificationsOpen(false);
+    };
+    document.addEventListener("click", closeOnOutsideClick);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("click", closeOnOutsideClick);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [notificationsOpen]);
 
   return (
     <div className="app-shell">
@@ -51,10 +67,36 @@ export function AppShell() {
           <span>블로그 운영센터</span>
         </div>
         <div className="topbar__account">
-          <Link className="notification-button" to="/contents?filter=review" aria-label="검토 대기 콘텐츠 보기">
+          <div className="notification-center">
+            <button
+              className="notification-button"
+              type="button"
+              aria-label="알림"
+              aria-expanded={notificationsOpen}
+              aria-controls="notification-popover"
+              onClick={() => setNotificationsOpen((current) => !current)}
+            >
             <Bell size={21} />
             <span aria-hidden="true" />
-          </Link>
+            </button>
+            {notificationsOpen ? (
+              <div className="notification-popover" id="notification-popover" role="dialog" aria-label="확인할 내용">
+                <header><strong>확인할 내용</strong><span>운영 상태를 빠르게 확인하세요.</span></header>
+                <Link to="/contents?filter=review" onClick={() => setNotificationsOpen(false)}>
+                  <span className="notification-popover__dot notification-popover__dot--brand" />
+                  <span><strong>검토할 원고</strong><small>근거와 표현을 확인할 콘텐츠</small></span>
+                </Link>
+                <Link to="/history?status=failure" onClick={() => setNotificationsOpen(false)}>
+                  <span className="notification-popover__dot notification-popover__dot--critical" />
+                  <span><strong>실행 이력 확인</strong><small>실패하거나 중단된 자동화 작업</small></span>
+                </Link>
+                <Link to="/trends" onClick={() => setNotificationsOpen(false)}>
+                  <span className="notification-popover__dot notification-popover__dot--positive" />
+                  <span><strong>최근 소재 수집</strong><small>최신 수집일과 후보를 확인</small></span>
+                </Link>
+              </div>
+            ) : null}
+          </div>
           <span className="avatar avatar--large">C</span>
           <span className="account-name">{user?.name ?? "carrot"}</span>
           <button className="logout-button" type="button" onClick={() => void logout()} aria-label="로그아웃">

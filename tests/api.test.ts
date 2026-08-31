@@ -119,13 +119,15 @@ test("Neon 동기화가 실패해도 GitHub 트렌드는 화면에 반환한다"
   assert.equal(response.json<{ items: unknown[] }>().items.length, 1);
 });
 
-test("Neon 캐시가 있으면 목록 화면은 GitHub 응답을 기다리지 않는다", async (context) => {
+test("오늘 수집한 Neon 캐시는 목록 화면에서 GitHub 응답을 기다리지 않는다", async (context) => {
   const system = testSystem();
   const content = await system.contentService.create(
     { title: "실손보험 전환 확인", topic: "실손보험", strategy: "trend", idempotencyKey: "cached-content" },
     { id: "admin", roles: ["admin"] },
   );
   await system.contentService.runPipeline(content.id, "cached-pipeline", { id: "admin", roles: ["admin"] });
+  const cachedSignals = await system.repository.listTrendSignals();
+  await system.repository.saveTrendSignals(cachedSignals.map((signal) => ({ ...signal, collectedAt: new Date().toISOString() })));
   let githubRequests = 0;
   const githubAutomation = new GitHubAutomationService(
     { owner: "owner", repository: "automation", branch: "main", token: "test-token" },

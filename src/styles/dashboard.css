@@ -369,7 +369,7 @@
 
 .task-rail {
   border-left: 1px solid var(--color-border-subtle);
-  padding: var(--space-10) var(--space-7);
+  padding: 36px 40px 68px;
   background: var(--color-bg);
 }
 

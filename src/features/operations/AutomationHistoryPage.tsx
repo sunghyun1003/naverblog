@@ -1,11 +1,12 @@
 import { ChevronLeft, ChevronRight, ExternalLink, RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { listAutomationHistory } from "../../api/client";
 import { readRuntimeCache, writeRuntimeCache } from "../../api/runtimeCache";
 import type { ApiAutomationHistoryItem } from "../../api/types";
 import { Button } from "../../components/Button";
 import { PageLoadingState } from "../../components/PageLoadingState";
+import { estimateTokenCostUsd, formatUsd } from "../../api/tokenCost";
 
 const workflowLabels: Record<ApiAutomationHistoryItem["workflow"], string> = {
   collect: "콘텐츠 수집",
@@ -35,8 +36,8 @@ function formatDuration(value: number | null): string {
 }
 
 function formatTokens(item: ApiAutomationHistoryItem): string {
-  if (!item.codex.calls) return item.workflow === "collect" ? "AI 미사용" : "사용량 기록 전";
-  return `${new Intl.NumberFormat("ko-KR").format(item.codex.totalTokens)}개`;
+  if (!item.codex.calls) return item.workflow === "collect" ? "0 토큰" : "기록 없음";
+  return `${new Intl.NumberFormat("ko-KR").format(item.codex.totalTokens)} 토큰`;
 }
 
 function formatFailedStage(item: ApiAutomationHistoryItem): string | null {
@@ -53,12 +54,16 @@ function formatFailedStage(item: ApiAutomationHistoryItem): string | null {
 const pageSize = 10;
 
 export function AutomationHistoryPage() {
+  const [searchParams] = useSearchParams();
   const cached = readRuntimeCache<{ items: ApiAutomationHistoryItem[] }>("automation:history");
   const [items, setItems] = useState(cached?.items ?? []);
   const [loading, setLoading] = useState(!cached);
   const [error, setError] = useState("");
   const [workflow, setWorkflow] = useState<"all" | ApiAutomationHistoryItem["workflow"]>("all");
-  const [status, setStatus] = useState<"all" | "success" | "failure">("all");
+  const requestedStatus = searchParams.get("status");
+  const [status, setStatus] = useState<"all" | "success" | "failure">(
+    requestedStatus === "success" || requestedStatus === "failure" ? requestedStatus : "all",
+  );
   const [page, setPage] = useState(1);
 
   const refresh = async (signal?: AbortSignal) => {
@@ -91,6 +96,9 @@ export function AutomationHistoryPage() {
 
   useEffect(() => setPage(1), [status, workflow]);
   useEffect(() => setPage((current) => Math.min(current, pageCount)), [pageCount]);
+  useEffect(() => {
+    if (requestedStatus === "success" || requestedStatus === "failure") setStatus(requestedStatus);
+  }, [requestedStatus]);
 
   return (
     <div className="operations-page history-page">
@@ -106,7 +114,7 @@ export function AutomationHistoryPage() {
         {loading && !items.length ? <PageLoadingState label="실행 이력을 불러오는 중입니다." compact /> : null}
         {error ? <div className="operations-notice" role="alert">{error}</div> : null}
         <div className="history-table" role="table" aria-label="자동화 실행 이력">
-          <div className="history-table__head" role="row"><span>작업</span><span>시작 시각</span><span>대상 콘텐츠</span><span>결과</span><span>소요 시간</span><span>AI 사용량</span><span>상세</span></div>
+          <div className="history-table__head" role="row"><span>작업</span><span>시작 시각</span><span>대상 콘텐츠</span><span>결과</span><span>소요 시간</span><span>토큰 사용량</span><span>상세</span></div>
           {pageItems.map((item) => (
             <article className="history-table__row" role="row" key={item.id}>
               <div data-label="작업"><strong>{workflowLabels[item.workflow]}</strong><small>{item.event === "schedule" ? "자동 예약" : "직접 실행"}</small></div>
@@ -114,7 +122,7 @@ export function AutomationHistoryPage() {
               <div data-label="대상 콘텐츠">{item.contentRunId && item.contentTitle ? <Link to={`/contents/${item.contentRunId}`}>{item.contentTitle}</Link> : item.contentRunId ? <span>원고 {item.contentRunId}</span> : <span>-</span>}</div>
               <div data-label="결과"><span className={`history-status history-status--${item.status}`}>{statusLabels[item.status]}</span>{formatFailedStage(item) ? <small>{formatFailedStage(item)}</small> : null}</div>
               <span data-label="소요 시간">{formatDuration(item.durationSeconds)}</span>
-              <div data-label="AI 사용량"><strong>{formatTokens(item)}</strong>{item.codex.calls ? <small>입력 {item.codex.inputTokens.toLocaleString("ko-KR")} · 캐시 {item.codex.cachedInputTokens.toLocaleString("ko-KR")} · 출력 {item.codex.outputTokens.toLocaleString("ko-KR")} · 호출 {item.codex.calls}회</small> : null}</div>
+              <div data-label="토큰 사용량"><strong>{formatTokens(item)}</strong><small>{item.codex.calls ? `예상 비용 ${formatUsd(estimateTokenCostUsd(item))} · Luna 단가 참고(검증 Sol 호출은 분리되지 않음)` : item.workflow === "collect" ? "AI를 사용하지 않은 수집 작업" : "토큰 사용량이 기록되지 않은 실행"}</small>{item.codex.calls ? <small>입력 {item.codex.inputTokens.toLocaleString("ko-KR")} · 캐시 {item.codex.cachedInputTokens.toLocaleString("ko-KR")} · 출력 {item.codex.outputTokens.toLocaleString("ko-KR")} · 호출 {item.codex.calls}회</small> : null}</div>
               <a data-label="상세" href={item.url} target="_blank" rel="noreferrer" aria-label={`${workflowLabels[item.workflow]} 실행 상세 보기`}><ExternalLink size={17} /></a>
             </article>
           ))}

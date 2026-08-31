@@ -8,7 +8,8 @@ import { readRuntimeCache, writeRuntimeCache } from "../../api/runtimeCache";
 type ConnectionStatus = "connecting" | "connected" | "offline";
 
 export function useContents() {
-  const cached = readRuntimeCache<{ contents: ContentItem[]; capabilities: ApiCapabilities | null; freshness: ApiFreshness | null }>("contents");
+  const cachedValue = readRuntimeCache<{ contents: ContentItem[]; capabilities: ApiCapabilities | null; freshness: ApiFreshness | null }>("contents");
+  const cached = cachedValue && cachedValue.freshness?.stale !== true ? cachedValue : null;
   const [contents, setContents] = useState<ContentItem[]>(cached?.contents ?? []);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(cached ? "connected" : "connecting");
   const [capabilities, setCapabilities] = useState<ApiCapabilities | null>(cached?.capabilities ?? null);

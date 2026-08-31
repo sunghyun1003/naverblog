@@ -24,6 +24,7 @@ import { Button } from "../../components/Button";
 import { PageLoadingState } from "../../components/PageLoadingState";
 import { StatusBadge } from "../../components/StatusBadge";
 import { readRuntimeCache, writeRuntimeCache } from "../../api/runtimeCache";
+import { isCurrentSeoulDate } from "../../api/date";
 
 function runLabel(run: ApiWorkflowRun | undefined): string {
   if (!run) return "실행 기록 없음";
@@ -56,9 +57,15 @@ function formatCollectionDate(value: string): string {
 
 export function HomePage() {
   const navigate = useNavigate();
-  const cachedContents = readRuntimeCache<{ items: ApiContent[]; freshness?: ApiFreshness }>("home:contents")
+  const cachedContentValue = readRuntimeCache<{ items: ApiContent[]; freshness?: ApiFreshness }>("home:contents")
     ?? readRuntimeCache<{ contents: ApiContent[]; freshness: ApiFreshness | null }>("contents");
-  const cachedTrends = readRuntimeCache<ApiTrendSnapshot>("trends");
+  const cachedContents = cachedContentValue && (cachedContentValue.freshness?.stale !== true)
+    ? cachedContentValue
+    : null;
+  const cachedTrendValue = readRuntimeCache<ApiTrendSnapshot>("trends");
+  const cachedTrends = cachedTrendValue && isCurrentSeoulDate(cachedTrendValue.collectionDate)
+    ? cachedTrendValue
+    : null;
   const initialContents = cachedContents && "items" in cachedContents ? cachedContents.items : cachedContents?.contents ?? [];
   const [contents, setContents] = useState<ApiContent[]>(initialContents);
   const [runs, setRuns] = useState<ApiWorkflowRun[]>([]);

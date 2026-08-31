@@ -5,6 +5,7 @@ import type { ApiTrendSnapshot } from "../../api/types";
 import { Button } from "../../components/Button";
 import { PageLoadingState } from "../../components/PageLoadingState";
 import { readRuntimeCache, writeRuntimeCache } from "../../api/runtimeCache";
+import { isCurrentSeoulDate } from "../../api/date";
 
 function searchTrendLabel(item: ApiTrendSnapshot["items"][number]) {
   const trend = item.bestSearchTrend;
@@ -31,10 +32,16 @@ function scoreBreakdownLabel(item: ApiTrendSnapshot["items"][number]) {
 
 export function TrendsPage() {
   const cachedSnapshot = readRuntimeCache<ApiTrendSnapshot>("trends");
-  const [snapshot, setSnapshot] = useState<ApiTrendSnapshot | null>(cachedSnapshot);
+  // Do not paint a several-day-old snapshot for a moment and then replace it
+  // with the current response. A stale snapshot is still available as a
+  // server fallback, but the first render should represent today's state.
+  const usableCachedSnapshot = cachedSnapshot && isCurrentSeoulDate(cachedSnapshot.collectionDate)
+    ? cachedSnapshot
+    : null;
+  const [snapshot, setSnapshot] = useState<ApiTrendSnapshot | null>(usableCachedSnapshot);
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
-  const [loading, setLoading] = useState(!cachedSnapshot);
+  const [loading, setLoading] = useState(!usableCachedSnapshot);
   const [refreshing, setRefreshing] = useState(false);
   const [message, setMessage] = useState("");
 
@@ -43,7 +50,7 @@ export function TrendsPage() {
     else setRefreshing(true);
     setMessage("");
     try {
-      const next = await getTrends(signal, !cachedSnapshot || !initial);
+      const next = await getTrends(signal, !usableCachedSnapshot || !initial);
       setSnapshot(writeRuntimeCache("trends", next));
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") return;
@@ -55,7 +62,7 @@ export function TrendsPage() {
   };
   useEffect(() => {
     const controller = new AbortController();
-    void refresh(controller.signal, !cachedSnapshot);
+    void refresh(controller.signal, !usableCachedSnapshot);
     return () => controller.abort();
   }, []);
   const items = useMemo(() => {

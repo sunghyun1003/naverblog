@@ -9,7 +9,6 @@ import { TrendsPage } from "./features/operations/TrendsPage";
 import { SchedulePage } from "./features/operations/SchedulePage";
 import { SettingsPage } from "./features/operations/SettingsPage";
 import { AutomationHistoryPage } from "./features/operations/AutomationHistoryPage";
-import { AnalyticsPage } from "./features/operations/AnalyticsPage";
 import { BrandMark } from "./components/BrandMark";
 
 function KeyedReviewPage() {
@@ -47,7 +46,6 @@ export default function App() {
           path="schedule"
           element={<SchedulePage />}
         />
-        <Route path="analytics" element={<AnalyticsPage />} />
         <Route path="history" element={<AutomationHistoryPage />} />
         <Route
           path="settings"

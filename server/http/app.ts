@@ -640,6 +640,17 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     }
     return system.contentService.publish(id, actor);
   });
+  function currentSeoulDate(): string {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: "Asia/Seoul",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(new Date());
+    const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    return `${values.year}-${values.month}-${values.day}`;
+  }
+
   function trendSnapshotFromCache(cached: Awaited<ReturnType<typeof system.repository.listTrendSignals>>) {
     return {
       collectionDate: cached[0]!.collectedAt.slice(0, 10),
@@ -672,7 +683,12 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     if (githubAutomation) {
       if (persistGitHubData && query.refresh !== "true") {
         const cached = await system.repository.listTrendSignals();
-        if (cached.length) return trendSnapshotFromCache(cached);
+        // A cache from a previous collection day is useful as a fallback, but
+        // it must not mask a newer GitHub snapshot. This was the reason the UI
+        // could remain stuck on an old collection date for several days.
+        if (cached.length && cached[0]!.collectedAt.slice(0, 10) === currentSeoulDate()) {
+          return trendSnapshotFromCache(cached);
+        }
       }
       let trends;
       try {

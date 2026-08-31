@@ -565,7 +565,7 @@ function zeroTokenUsage(value?: Partial<AutomationTokenUsage>): AutomationTokenU
 
 function scheduleCron(schedule: AutomationSchedule, minuteOffset = 0): string {
   const [hourText, minuteText] = schedule.time.split(":");
-  const totalMinutes = Number(hourText) * 60 + Number(minuteText) + minuteOffset;
+  const totalMinutes = (Number(hourText) * 60 + Number(minuteText) + minuteOffset) % (24 * 60);
   const hour = Math.floor(totalMinutes / 60);
   const minute = totalMinutes % 60;
   const day = schedule.frequency === "weekdays" ? "1-5" : schedule.frequency === "weekly" ? String(schedule.weekday) : "*";
@@ -576,9 +576,14 @@ function renderScheduleBlock(schedule: AutomationSchedule, count = 1): string {
   const lines = ["  # dashboard-schedule:start"];
   if (schedule.enabled) {
     lines.push("  schedule:");
-    for (let index = 0; index < count; index += 1) {
-      lines.push(`    - cron: "${scheduleCron(schedule, index * 10)}"`);
-      lines.push("      timezone: \"Asia/Seoul\"");
+    // GitHub explicitly documents that scheduled events may be delayed or
+    // dropped under load. Three waves provide recovery opportunities; the
+    // workflow's daily guard skips every duplicate after the target is met.
+    for (const retryOffset of [0, 47, 107]) {
+      for (let index = 0; index < count; index += 1) {
+        lines.push(`    - cron: "${scheduleCron(schedule, retryOffset + index * 10)}"`);
+        lines.push("      timezone: \"Asia/Seoul\"");
+      }
     }
   }
   lines.push("  # dashboard-schedule:end");

@@ -127,7 +127,12 @@ test("대시보드 일정 설정을 워크플로우와 설정 파일에 한 커�
   await service.updateAutomationSettings(settings);
   assert.equal(writtenBlobs.length, 3);
   assert.ok(writtenBlobs.some((value) => value.includes('"frequency": "weekdays"')));
-  assert.ok(writtenBlobs.some((value) => value.includes('cron: "10 7 * * *"') && value.includes('cron: "20 7 * * *"')));
+  assert.ok(writtenBlobs.some((value) => value.includes('cron: "10 7 * * *"')
+    && value.includes('cron: "20 7 * * *"')
+    && value.includes('cron: "57 7 * * *"')
+    && value.includes('cron: "7 8 * * *"')
+    && value.includes('cron: "57 8 * * *"')
+    && value.includes('cron: "7 9 * * *"')));
 });
 
 test("실패 단계와 Codex 사용량을 실행 이력으로 합친다", async () => {

@@ -52,7 +52,12 @@ export function TrendsPage() {
     try {
       const next = await getTrends(signal, !usableCachedSnapshot || !initial);
       writeRuntimeCache("trends", next);
-      setSnapshot(isCurrentSeoulDate(next.collectionDate) ? next : null);
+      // A collection can be delayed (for example, when the scheduled
+      // workflow is still queued). Keep the newest snapshot returned by the
+      // API visible instead of turning the page blank just because its date
+      // is not today. The notice below makes the freshness explicit and a
+      // later refresh replaces it with today's snapshot automatically.
+      setSnapshot(next);
       if (!isCurrentSeoulDate(next.collectionDate)) {
         setMessage(`${next.collectionDate} 수집 결과만 있습니다. 오늘 자료를 보려면 지금 수집을 실행해주세요.`);
       }

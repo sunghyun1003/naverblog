@@ -93,7 +93,10 @@ export function HomePage() {
     if (runResult.status === "fulfilled") setRuns(runResult.value.items);
     if (trendResult.status === "fulfilled") {
       const nextTrends = trendResult.value;
-      setTrends(isCurrentSeoulDate(nextTrends.collectionDate) ? nextTrends : null);
+      // Do not discard a valid but delayed collection. The trend card can
+      // show the latest available date while the page communicates that it
+      // is not today's snapshot yet.
+      setTrends(nextTrends);
       writeRuntimeCache("trends", trendResult.value);
     }
 

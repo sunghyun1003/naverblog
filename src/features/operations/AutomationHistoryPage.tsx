@@ -26,7 +26,9 @@ const statusLabels: Record<ApiAutomationHistoryItem["status"], string> = {
 
 function formatDateTime(value: string | null): string {
   if (!value) return "-";
-  return new Intl.DateTimeFormat("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date(value));
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "-";
+  return new Intl.DateTimeFormat("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(date);
 }
 
 function formatDuration(value: number | null): string {

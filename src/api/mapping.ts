@@ -16,7 +16,9 @@ const statusMap: Record<ApiContentState, ContentStatus> = {
 
 function formatDate(value: string | null): string | null {
   if (!value) return null;
-  return new Intl.DateTimeFormat("ko-KR", { month: "short", day: "numeric" }).format(new Date(value));
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return null;
+  return new Intl.DateTimeFormat("ko-KR", { month: "short", day: "numeric" }).format(date);
 }
 
 export function mapContent(content: ApiContent): ContentItem {

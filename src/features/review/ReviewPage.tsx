@@ -1052,7 +1052,9 @@ function HistoryView({ versions }: { versions: ApiContentVersion[] }) {
         `v${version.sequence}`,
         { human_tone: "사람 말투 보정", geo: "GEO 편집", seo: "SEO 편집", draft: "초안 생성", brief: "기획서 생성", manual: "사람 수정" }[version.stage],
         version.stage === "human_tone" ? "skill runner" : "자동화 작업",
-        new Intl.DateTimeFormat("ko-KR", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(version.createdAt)),
+        Number.isFinite(new Date(version.createdAt).getTime())
+          ? new Intl.DateTimeFormat("ko-KR", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(version.createdAt))
+          : "기록 없음",
       ]);
   return (
     <div className="history-view">

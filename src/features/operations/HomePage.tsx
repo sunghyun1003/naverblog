@@ -41,17 +41,21 @@ function runTone(run: ApiWorkflowRun | undefined): "neutral" | "running" | "succ
 
 function formatDateTime(value: string | null | undefined): string {
   if (!value) return "기록 없음";
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "기록 없음";
   return new Intl.DateTimeFormat("ko-KR", {
     month: "short",
     day: "numeric",
     hour: "2-digit",
     minute: "2-digit",
-  }).format(new Date(value));
+  }).format(date);
 }
 
 function formatCollectionDate(value: string): string {
   if (!value) return "확인 필요";
-  return new Intl.DateTimeFormat("ko-KR", { month: "short", day: "numeric" }).format(new Date(`${value}T00:00:00+09:00`));
+  const date = new Date(`${value}T00:00:00+09:00`);
+  if (!Number.isFinite(date.getTime())) return "확인 필요";
+  return new Intl.DateTimeFormat("ko-KR", { month: "short", day: "numeric" }).format(date);
 }
 
 export function HomePage() {

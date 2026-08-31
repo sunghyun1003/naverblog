@@ -3,7 +3,6 @@ import { useEffect, useMemo, useState } from "react";
 import { collectTrends, getTrends } from "../../api/client";
 import type { ApiTrendSnapshot } from "../../api/types";
 import { Button } from "../../components/Button";
-import { PageLoadingState } from "../../components/PageLoadingState";
 import { readRuntimeCache, writeRuntimeCache } from "../../api/runtimeCache";
 import { isCurrentSeoulDate } from "../../api/date";
 
@@ -92,14 +91,14 @@ export function TrendsPage() {
   };
 
   return (
-    <div className="operations-page">
+    <div className="operations-page" aria-busy={loading || refreshing}>
       <header className="operations-heading">
         <h1>트렌드 수집</h1>
         <div className="operations-actions"><Button onClick={() => void refresh()} icon={<RefreshCw size={17} />} disabled={loading || refreshing}>{refreshing ? "최신화 중..." : "새로고침"}</Button><Button variant="brand" onClick={() => void collect()} disabled={busy || loading || refreshing}>{busy ? "요청 중..." : "지금 수집"}</Button></div>
       </header>
       {message ? <div className="operations-notice" role="status">{message}</div> : null}
-      {loading ? <PageLoadingState label="최신 수집 결과를 불러오는 중입니다." /> : !snapshot ? (
-        <div className="operations-empty">표시할 수집 결과가 없습니다. 잠시 후 새로고침해주세요.</div>
+      {!snapshot ? (
+        <div className="operations-empty trend-loading-state" role={loading ? "status" : undefined}>{loading ? "최신 수집 결과를 불러오는 중입니다." : "표시할 수집 결과가 없습니다. 잠시 후 새로고침해주세요."}</div>
       ) : (
         <>
           {!isCurrentSeoulDate(snapshot.collectionDate) ? <div className="operations-notice" role="alert">오늘 수집 결과가 아직 없습니다. 현재 표시된 자료는 {snapshot.collectionDate} 기준입니다.</div> : snapshot.source === "postgres-cache" ? <div className="operations-notice" role="alert">최신 조회가 지연되어 {snapshot.collectionDate}에 저장된 수집 결과를 표시합니다.</div> : null}

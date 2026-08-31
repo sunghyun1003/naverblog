@@ -21,7 +21,6 @@ import type {
   ApiWorkflowRun,
 } from "../../api/types";
 import { Button } from "../../components/Button";
-import { PageLoadingState } from "../../components/PageLoadingState";
 import { StatusBadge } from "../../components/StatusBadge";
 import { readRuntimeCache, writeRuntimeCache } from "../../api/runtimeCache";
 import { isCurrentSeoulDate } from "../../api/date";
@@ -125,8 +124,6 @@ export function HomePage() {
     () => [...contents].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)).slice(0, 5),
     [contents],
   );
-  const hasOverview = Boolean(contents.length || runs.length || trends);
-
   const nextAction = activeRun
     ? {
       tone: "info",
@@ -173,7 +170,7 @@ export function HomePage() {
           };
 
   return (
-    <div className="operations-page home-page">
+    <div className="operations-page home-page" aria-busy={loading}>
       <header className="operations-heading home-heading">
         <h1>운영 현황</h1>
         <div className="operations-actions">
@@ -182,14 +179,11 @@ export function HomePage() {
         </div>
       </header>
 
-      {loading && !hasOverview ? <PageLoadingState label="최신 운영 현황을 불러오는 중입니다." /> : error && !hasOverview ? (
-        <div className="operations-empty">{error}</div>
-      ) : (
-        <>
-          {error ? <div className="operations-notice" role="alert">{error}</div> : null}
-          {freshness?.stale ? (
-            <div className="operations-notice" role="alert">최신 조회가 지연되어 마지막 저장 내용을 표시합니다.</div>
-          ) : null}
+      {loading && !contents.length && !runs.length && !trends ? <div className="operations-notice" role="status">최신 운영 현황을 불러오는 중입니다.</div> : null}
+      {error ? <div className="operations-notice" role="alert">{error}</div> : null}
+      {freshness?.stale ? (
+        <div className="operations-notice" role="alert">최신 조회가 지연되어 마지막 저장 내용을 표시합니다.</div>
+      ) : null}
 
           <section className={`home-next-action home-next-action--${nextAction.tone}`} aria-labelledby="next-action-title">
             <span className="home-next-action__icon">{nextAction.icon}</span>
@@ -257,8 +251,6 @@ export function HomePage() {
               {!recentContents.length ? <div className="home-card-empty">아직 생성된 원고가 없습니다.</div> : null}
             </div>
           </section>
-        </>
-      )}
     </div>
   );
 }

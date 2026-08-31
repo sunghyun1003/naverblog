@@ -5,7 +5,6 @@ import type { ApiContent, ApiFreshness } from "../../api/types";
 import { Button } from "../../components/Button";
 import { StatusBadge } from "../../components/StatusBadge";
 import { mapContent } from "../../api/mapping";
-import { PageLoadingState } from "../../components/PageLoadingState";
 
 export function SchedulePage() {
   const [contents, setContents] = useState<ApiContent[]>([]);
@@ -75,7 +74,7 @@ export function SchedulePage() {
   };
 
   return (
-    <div className="operations-page">
+    <div className="operations-page" aria-busy={loading || actionBusy !== null}>
       <header className="operations-heading"><h1>발행 일정</h1><Button icon={<RefreshCw size={17} />} onClick={() => void refresh(undefined, true).catch((error: unknown) => setMessage(error instanceof Error ? error.message : "발행 일정을 불러오지 못했습니다."))} disabled={loading || actionBusy !== null}>새로고침</Button></header>
       {message ? <div className="operations-notice" role="status">{message}</div> : null}
       {freshness?.stale ? (
@@ -84,7 +83,7 @@ export function SchedulePage() {
         <div className="operations-notice" role="status">마지막 저장 내용을 표시합니다. 필요하면 새로고침해주세요.</div>
       ) : null}
       <section className="schedule-list">
-        {loading && !contents.length ? <PageLoadingState label="발행 일정을 불러오는 중입니다." /> : contents.map((content) => {
+        {loading && !contents.length ? <div className="operations-empty schedule-loading-state" role="status">발행 일정을 불러오는 중입니다.</div> : contents.map((content) => {
           const mapped = mapContent(content);
           return (
             <article key={content.id}>

@@ -854,6 +854,10 @@ select:focus-visible,
   letter-spacing: 0.04em;
 }
 
+.automation-setting-card {
+  grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
+}
+
 .automation-setting-actions {
   padding-top: 18px;
 }

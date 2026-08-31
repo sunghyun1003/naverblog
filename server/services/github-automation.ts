@@ -1097,6 +1097,10 @@ export class GitHubAutomationService {
   private async readText(path: string): Promise<string> {
     try {
       const file = await this.file(path);
+      // GitHub returns `encoding: none` with an empty `content` field for
+      // files larger than 1 MB. Read that object through the Blob API instead
+      // of treating a successful metadata response as an unsupported file.
+      if (file.encoding === "none") return this.readBlobText(path);
       if (file.encoding !== "base64") throw new Error(`지원하지 않는 GitHub 파일 인코딩입니다: ${file.encoding}`);
       return Buffer.from(file.content.replace(/\s/g, ""), "base64").toString("utf8");
     } catch (error) {

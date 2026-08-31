@@ -543,12 +543,18 @@ function workflowFromPath(value: string | undefined): AutomationWorkflow | null 
 }
 
 function zeroTokenUsage(value?: Partial<AutomationTokenUsage>): AutomationTokenUsage {
+  const inputTokens = Number(value?.inputTokens ?? 0);
+  const cachedInputTokens = Number(value?.cachedInputTokens ?? 0);
+  const outputTokens = Number(value?.outputTokens ?? 0);
+  const recordedTotal = Number(value?.totalTokens ?? 0);
   return {
     calls: Number(value?.calls ?? 0),
-    inputTokens: Number(value?.inputTokens ?? 0),
-    cachedInputTokens: Number(value?.cachedInputTokens ?? 0),
-    outputTokens: Number(value?.outputTokens ?? 0),
-    totalTokens: Number(value?.totalTokens ?? 0),
+    inputTokens,
+    cachedInputTokens,
+    outputTokens,
+    // Older history files did not persist totalTokens. Derive it from the
+    // detailed counters so the dashboard never reports 0 for a real call.
+    totalTokens: recordedTotal > 0 ? recordedTotal : inputTokens + outputTokens,
   };
 }
 

@@ -143,6 +143,8 @@ function normalizeHistoryItem(value: unknown, index: number): ApiAutomationHisto
       cachedInputTokens: asNumber(codex.cachedInputTokens),
       outputTokens: asNumber(codex.outputTokens),
       totalTokens: asNumber(codex.totalTokens),
+      promptChars: asNumber(codex.promptChars),
+      estimatedPromptTokens: asNumber(codex.estimatedPromptTokens),
     },
     failedStage: typeof value.failedStage === "string" ? value.failedStage : null,
     failureCode: typeof value.failureCode === "string" ? value.failureCode : null,

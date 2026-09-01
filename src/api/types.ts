@@ -251,6 +251,8 @@ export interface ApiAutomationHistoryItem {
     cachedInputTokens: number;
     outputTokens: number;
     totalTokens: number;
+    promptChars: number;
+    estimatedPromptTokens: number;
   };
   failedStage: string | null;
   failureCode: string | null;

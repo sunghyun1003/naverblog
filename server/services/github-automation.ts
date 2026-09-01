@@ -291,6 +291,10 @@ export interface AutomationTokenUsage {
   cachedInputTokens: number;
   outputTokens: number;
   totalTokens: number;
+  /** Character count of prompts sent to Codex, recorded for cost diagnostics. */
+  promptChars: number;
+  /** Rough prompt-token estimate (UTF-8 bytes ÷ 4), not provider billing. */
+  estimatedPromptTokens: number;
 }
 
 export interface AutomationHistoryItem {
@@ -556,6 +560,8 @@ function zeroTokenUsage(value?: Partial<AutomationTokenUsage>): AutomationTokenU
   const cachedInputTokens = Number(value?.cachedInputTokens ?? 0);
   const outputTokens = Number(value?.outputTokens ?? 0);
   const recordedTotal = Number(value?.totalTokens ?? 0);
+  const promptChars = Number(value?.promptChars ?? 0);
+  const estimatedPromptTokens = Number(value?.estimatedPromptTokens ?? 0);
   return {
     calls: Number(value?.calls ?? 0),
     inputTokens,
@@ -564,6 +570,8 @@ function zeroTokenUsage(value?: Partial<AutomationTokenUsage>): AutomationTokenU
     // Older history files did not persist totalTokens. Derive it from the
     // detailed counters so the dashboard never reports 0 for a real call.
     totalTokens: recordedTotal > 0 ? recordedTotal : inputTokens + outputTokens,
+    promptChars: Number.isFinite(promptChars) ? promptChars : 0,
+    estimatedPromptTokens: Number.isFinite(estimatedPromptTokens) ? estimatedPromptTokens : 0,
   };
 }
 

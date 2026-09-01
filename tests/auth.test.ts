@@ -27,6 +27,7 @@ test("carrot 계정으로 로그인하고 HttpOnly 세션으로 API에 접근한
   });
   assert.equal(login.statusCode, 200);
   const cookie = login.headers["set-cookie"];
+  assert.match(cookie ?? "", /^__session=/);
   assert.match(cookie ?? "", /HttpOnly/);
   assert.match(cookie ?? "", /SameSite=Strict/);
 

@@ -1,6 +1,13 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-const sessionCookieName = "carrot_dashboard_session";
+// Firebase Hosting only forwards the specially named `__session` cookie when
+// it rewrites a request to Cloud Run.  Using a custom cookie name makes the
+// browser appear logged in while every proxied API request arrives without a
+// session.  Keep the legacy name readable so direct Cloud Run users with an
+// existing cookie are not logged out immediately, but always issue the
+// Firebase-compatible cookie going forward.
+const sessionCookieName = "__session";
+const legacySessionCookieName = "carrot_dashboard_session";
 const sessionLifetimeSeconds = 60 * 60 * 12;
 const maxLoginAttempts = 5;
 const loginWindowMs = 15 * 60 * 1000;
@@ -69,7 +76,8 @@ export class SessionAuthService {
   }
 
   verifyCookie(cookieHeader: string | undefined, now = Date.now()): DashboardSession | null {
-    const token = parseCookies(cookieHeader)[sessionCookieName];
+    const cookies = parseCookies(cookieHeader);
+    const token = cookies[sessionCookieName] ?? cookies[legacySessionCookieName];
     if (!token) return null;
     const [payload, signature, extra] = token.split(".");
     if (!payload || !signature || extra) return null;

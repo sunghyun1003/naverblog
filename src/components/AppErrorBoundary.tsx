@@ -48,7 +48,8 @@ export class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorB
   };
 
   private goHome = () => {
-    window.location.hash = "#/home";
+    if (window.location.hash) window.location.hash = "#/home";
+    else window.history.pushState({}, "", "/");
     window.location.reload();
   };
 

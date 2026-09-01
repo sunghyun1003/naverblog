@@ -1,0 +1,14 @@
+{
+  "projects": {
+    "default": "naverblog-automation-505904"
+  },
+  "targets": {
+    "naverblog-automation-505904": {
+      "hosting": {
+        "dashboard": [
+          "carrot-blog"
+        ]
+      }
+    }
+  }
+}

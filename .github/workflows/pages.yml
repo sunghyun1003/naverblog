@@ -27,6 +27,7 @@ jobs:
       - run: npm run build:web
         env:
           VITE_PREVIEW_MODE: "true"
+          VITE_USE_HASH_ROUTER: "true"
           GITHUB_PAGES: "true"
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4

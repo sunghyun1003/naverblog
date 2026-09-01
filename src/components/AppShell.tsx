@@ -127,7 +127,7 @@ export function AppShell() {
                       to={path}
                       end={exact}
                       className={({ isActive }) =>
-                        `sidebar__item ${contentSelected || isActive ? "sidebar__item--active" : ""}`
+                        `sidebar__item ${contentSelected || isActive || (path === "/home" && location.pathname === "/") ? "sidebar__item--active" : ""}`
                       }
                       onClick={() => setMobileOpen(false)}
                     >

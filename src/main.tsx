@@ -13,7 +13,9 @@ import "./styles/auth.css";
 import "./styles/operations.css";
 import "./styles/product-theme.css";
 
-const Router = import.meta.env.PROD ? HashRouter : BrowserRouter;
+// Firebase Hosting proxies clean paths to Cloud Run. Keep hash routing only
+// for the GitHub Pages preview, which cannot serve BrowserRouter fallbacks.
+const Router = import.meta.env.VITE_USE_HASH_ROUTER === "true" ? HashRouter : BrowserRouter;
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

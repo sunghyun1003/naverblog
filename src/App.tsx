@@ -31,7 +31,7 @@ export default function App() {
   return (
     <Routes>
       <Route element={<AppShell />}>
-        <Route index element={<Navigate to="/home" replace />} />
+        <Route index element={<HomePage />} />
         <Route
           path="home"
           element={<HomePage />}

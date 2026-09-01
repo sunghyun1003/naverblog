@@ -147,6 +147,8 @@ function normalizeHistoryItem(value: unknown, index: number): ApiAutomationHisto
     failedStage: typeof value.failedStage === "string" ? value.failedStage : null,
     failureCode: typeof value.failureCode === "string" ? value.failureCode : null,
     error: typeof value.error === "string" ? value.error : null,
+    draftSaved: value.draftSaved === true,
+    recoveryAction: value.recoveryAction === "tone_resume" ? "tone_resume" : null,
     url: asString(value.url),
   };
 }
@@ -322,6 +324,11 @@ export function rejectContent(contentId: string, reason: string): Promise<ApiCon
     method: "POST",
     body: JSON.stringify({ reason }),
   });
+}
+
+/** Resume only the saved tone-review cycle; this does not regenerate research or the article. */
+export function resumeToneReview(contentId: string): Promise<ApiContent> {
+  return request(`/api/contents/${encodeURIComponent(contentId)}/tone-resume`, { method: "POST" });
 }
 
 export function editContent(

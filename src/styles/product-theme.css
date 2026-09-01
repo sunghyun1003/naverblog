@@ -346,6 +346,12 @@ select:focus-visible,
   margin: 0 0 20px;
 }
 
+.operations-heading__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .operations-page > .operations-notice,
 .operations-page > .snapshot-summary,
 .operations-page > .operations-toolbar,

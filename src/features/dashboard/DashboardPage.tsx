@@ -6,6 +6,7 @@ import {
   FileCheck2,
   Filter,
   Plus,
+  RefreshCw,
   Search,
   Trash2,
 } from "lucide-react";
@@ -32,7 +33,7 @@ const filters: Array<{ key: "all" | ContentStatus; label: string }> = [
 export function DashboardPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { contents, connectionStatus, creating, createAndRun, removeMany } = useContents();
+  const { contents, connectionStatus, creating, refreshing, createAndRun, refreshNow, removeMany } = useContents();
   const requestedFilter = searchParams.get("filter");
   const activeFilter: "all" | ContentStatus = requestedFilter && filters.some((filter) => filter.key === requestedFilter)
     ? requestedFilter as ContentStatus
@@ -156,9 +157,14 @@ export function DashboardPage() {
     <div className="dashboard-page">
       <section className="dashboard-main">
         <header className="operations-heading">
-          <Button variant="brand" icon={<Plus size={18} />} onClick={() => setCreateOpen(true)} disabled={connectionStatus !== "connected"}>
-            콘텐츠 만들기
-          </Button>
+          <div className="operations-heading__actions">
+            <Button icon={<RefreshCw size={17} />} onClick={() => void refreshNow()} disabled={refreshing}>
+              {refreshing ? "불러오는 중..." : "새로고침"}
+            </Button>
+            <Button variant="brand" icon={<Plus size={18} />} onClick={() => setCreateOpen(true)} disabled={connectionStatus !== "connected"}>
+              콘텐츠 만들기
+            </Button>
+          </div>
         </header>
 
         {connectionStatus === "offline" ? <div className="operations-notice" role="alert">콘텐츠를 불러오지 못했습니다. 잠시 후 새로고침해주세요.</div> : null}

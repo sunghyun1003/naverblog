@@ -309,6 +309,8 @@ export interface AutomationHistoryItem {
   failedStage: string | null;
   failureCode: string | null;
   error: string | null;
+  draftSaved?: boolean;
+  recoveryAction?: "tone_resume" | null;
   url: string;
 }
 
@@ -448,6 +450,8 @@ interface StoredAutomationHistory {
   failedStage?: string | null;
   failureCode?: string | null;
   error?: string | null;
+  draftSaved?: boolean;
+  recoveryAction?: "tone_resume" | null;
   url?: string | null;
 }
 
@@ -694,6 +698,9 @@ export class GitHubAutomationService {
     const stored = (await Promise.all(historyPaths.map((value) => this.readOptionalJson<StoredAutomationHistory>(value))))
       .filter((value): value is StoredAutomationHistory => Boolean(value));
     const runById = new Map(runs.map((run) => [run.id, run]));
+    const savedDraftRunIds = new Set(repositoryTree
+      .map((item) => item.path.match(/^output\/drafts\/\d{4}-\d{2}-\d{2}\/run-(\d+)\/status\.json$/)?.[1])
+      .filter((value): value is string => Boolean(value)));
     const enriched = await Promise.all(stored.map(async (record): Promise<AutomationHistoryItem> => {
       const workflowRunId = Number(record.workflowRunId);
       const run = runById.get(workflowRunId);
@@ -714,6 +721,8 @@ export class GitHubAutomationService {
         failedStage,
         failureCode: record.failureCode ?? null,
         error: record.error ?? null,
+        draftSaved: record.draftSaved === true,
+        recoveryAction: record.recoveryAction ?? null,
         url: record.url ?? run?.html_url ?? "",
       };
     }));
@@ -731,12 +740,14 @@ export class GitHubAutomationService {
         startedAt: run.created_at,
         finishedAt: running ? null : run.updated_at,
         durationSeconds: running ? null : Math.max(0, Math.round((Date.parse(run.updated_at) - Date.parse(run.created_at)) / 1000)),
-        contentRunId: run.workflow === "generate" && status === "success" ? String(run.id) : null,
+        contentRunId: run.workflow === "generate" && (status === "success" || savedDraftRunIds.has(String(run.id))) ? String(run.id) : null,
         contentTitle: null,
         codex: zeroTokenUsage(),
         failedStage: status === "failure" ? await this.failedStep(run.id) : null,
         failureCode: null,
         error: null,
+        draftSaved: savedDraftRunIds.has(String(run.id)),
+        recoveryAction: savedDraftRunIds.has(String(run.id)) && status === "failure" ? "tone_resume" : null,
         url: run.html_url,
       };
     }));

@@ -255,6 +255,9 @@ export interface ApiAutomationHistoryItem {
   failedStage: string | null;
   failureCode: string | null;
   error: string | null;
+  /** Whether the workflow left a usable draft package despite a failed job. */
+  draftSaved?: boolean;
+  recoveryAction?: "tone_resume" | null;
   url: string;
 }
 

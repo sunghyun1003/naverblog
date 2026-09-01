@@ -67,13 +67,16 @@ test("GitHub Actions 실행 상태와 생성 원고를 읽는다", async () => {
 
   await service.dispatch("generate", { topic: "실손보험", strategy: "trend" });
   await service.dispatch("rewrite", { run_id: "123" });
+  await service.dispatch("rewrite", { run_id: "123", mode: "tone_resume" });
   await service.dispatch("images", { run_id: "123" });
   const dispatches = requests.filter((request) => request.method === "POST");
   assert.match(dispatches[0]?.body ?? "", /실손보험/);
   assert.match(dispatches[1]?.url ?? "", /rewrite\.yml\/dispatches$/);
   assert.match(dispatches[1]?.body ?? "", /"run_id":"123"/);
-  assert.match(dispatches[2]?.url ?? "", /images\.yml\/dispatches$/);
-  assert.match(dispatches[2]?.body ?? "", /"run_id":"123"/);
+  assert.match(dispatches[2]?.url ?? "", /rewrite\.yml\/dispatches$/);
+  assert.match(dispatches[2]?.body ?? "", /"mode":"tone_resume"/);
+  assert.match(dispatches[3]?.url ?? "", /images\.yml\/dispatches$/);
+  assert.match(dispatches[3]?.body ?? "", /"run_id":"123"/);
 });
 
 test("1MB를 넘는 트렌드 스냅샷은 Git Blob API로 읽는다", async () => {

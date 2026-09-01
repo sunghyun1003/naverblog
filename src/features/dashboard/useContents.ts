@@ -15,25 +15,34 @@ export function useContents() {
   const [capabilities, setCapabilities] = useState<ApiCapabilities | null>(cached?.capabilities ?? null);
   const [freshness, setFreshness] = useState<ApiFreshness | null>(cached?.freshness ?? null);
   const [creating, setCreating] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [refreshVersion, setRefreshVersion] = useState(0);
 
   const refresh = useCallback(async (signal?: AbortSignal, force = false) => {
-    const [contentResponse, capabilityResponse] = await Promise.all([
-      listContents(signal, force),
-      getCapabilities(signal),
-    ]);
-    const nextContents = contentResponse.items.map(mapContent);
-    const nextFreshness = contentResponse.freshness ?? null;
-    setContents(nextContents);
-    setFreshness(nextFreshness);
-    setCapabilities(capabilityResponse);
-    writeRuntimeCache("contents", { contents: nextContents, capabilities: capabilityResponse, freshness: nextFreshness });
-    setConnectionStatus("connected");
+    setRefreshing(true);
+    try {
+      const [contentResponse, capabilityResponse] = await Promise.all([
+        listContents(signal, force),
+        getCapabilities(signal),
+      ]);
+      const nextContents = contentResponse.items.map(mapContent);
+      const nextFreshness = contentResponse.freshness ?? null;
+      setContents(nextContents);
+      setFreshness(nextFreshness);
+      setCapabilities(capabilityResponse);
+      writeRuntimeCache("contents", { contents: nextContents, capabilities: capabilityResponse, freshness: nextFreshness });
+      setConnectionStatus("connected");
+    } finally {
+      setRefreshing(false);
+    }
   }, []);
 
   useEffect(() => {
     const controller = new AbortController();
-    void refresh(controller.signal).catch((error: unknown) => {
+    // A cached list is rendered immediately, but the first background read
+    // must bypass the Postgres mirror so a just-finished/failed GitHub run is
+    // visible without waiting for the 15-minute cache interval.
+    void refresh(controller.signal, true).catch((error: unknown) => {
       if (error instanceof DOMException && error.name === "AbortError") return;
       setConnectionStatus("offline");
     });
@@ -88,8 +97,10 @@ export function useContents() {
     capabilities,
     freshness,
     creating,
+    refreshing,
     createAndRun,
     removeMany,
+    refreshNow: () => refresh(undefined, true),
     reload: () => setRefreshVersion((current) => current + 1),
   };
 }

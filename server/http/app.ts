@@ -566,6 +566,50 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     });
     return reply.status(202).send({ accepted: true });
   });
+  app.post("/api/contents/:id/tone-resume", async (request, reply) => {
+    const { id } = idParamsSchema.parse(request.params);
+    if (!githubAutomation) return reply.status(409).send({ error: { code: "AUTOMATION_UNAVAILABLE", message: "자동화 연결이 설정되지 않았습니다.", details: null } });
+    const actor = actorFrom(request, auth?.verifyCookie(request.headers.cookie)?.username);
+    const draft = await githubAutomation.getDraft(id);
+    const toneFailed = draft.toneVerdict === "REWRITE_REQUIRED"
+      && draft.toneSkillApplied
+      && draftToDetail(draft).qualityResults.some((result) => result.category === "tone" && result.status === "failed");
+    if (draft.deleted || draft.publicationStatus !== "none") {
+      return reply.status(409).send({ error: { code: "CONTENT_NOT_RESUMABLE", message: "삭제·예약·발행된 원고는 말투 검수를 다시 실행할 수 없습니다.", details: null } });
+    }
+    if (!toneFailed) {
+      return reply.status(409).send({ error: { code: "TONE_RESUME_NOT_AVAILABLE", message: "저장된 말투 검수 실패 원고만 다시 실행할 수 있습니다.", details: null } });
+    }
+    if (draft.state.rewriteStatus === "queued") {
+      return reply.status(409).send({ error: { code: "CONTENT_REWRITE_IN_PROGRESS", message: "이미 말투 검수를 다시 실행하고 있습니다.", details: null } });
+    }
+    const requestedAt = new Date().toISOString();
+    let state = await githubAutomation.updateState(id, {
+      reviewStatus: "pending",
+      rewriteStatus: "queued",
+      rewriteRequestedAt: requestedAt,
+      reason: null,
+      updatedBy: actor.id,
+    }, actor.id, draft.state);
+    let updatedDraft = draftWithState(draft, state);
+    let mirrorSynced = await persistGitHubDetailSafely(updatedDraft, "tone-resume");
+    try {
+      // The workflow starts from the saved article and Sol feedback. It does
+      // not repeat research, planning, or the full article generation call.
+      await githubAutomation.dispatch("rewrite", { run_id: id, mode: "tone_resume" });
+      return { ...draftToContent(updatedDraft), mirrorSynced, rewriteQueued: true, recoveryMode: "tone_resume" as const };
+    } catch (error) {
+      app.log.warn({ err: error, contentId: id }, "저장 원고 말투 재시도 요청을 시작하지 못했습니다.");
+      try {
+        state = await githubAutomation.updateState(id, { rewriteStatus: "failed" }, actor.id, state);
+        updatedDraft = draftWithState(updatedDraft, state);
+        mirrorSynced = (await persistGitHubDetailSafely(updatedDraft, "tone-resume-dispatch-failed")) && mirrorSynced;
+      } catch (stateError) {
+        app.log.warn({ err: stateError, contentId: id }, "말투 재시도 실패 상태를 저장하지 못했습니다.");
+      }
+      return reply.status(502).send({ error: { code: "TONE_RESUME_DISPATCH_FAILED", message: "저장 원고 재시도를 시작하지 못했습니다. 원고는 그대로 보존되어 있습니다.", details: null } });
+    }
+  });
   app.post("/api/contents/:id/reject", async (request, reply) => {
     const { id } = idParamsSchema.parse(request.params);
     const body = rejectionSchema.parse(request.body);

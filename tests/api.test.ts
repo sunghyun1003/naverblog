@@ -381,6 +381,31 @@ test("GitHub 원고는 품질 검사가 실패해도 반려로 재작성을 요�
   assert.equal(response.json<{ rewriteQueued: boolean }>().rewriteQueued, true);
 });
 
+test("저장된 말투 피드백만 다시 실행하는 복구 요청은 전체 생성을 반복하지 않는다", async (context) => {
+  const draft = reviewDraft("tone-resume-1") as AutomationDraftDetail & { toneVerdict: "REWRITE_REQUIRED" };
+  draft.pipelineStatus = "TONE_REVIEW_REQUIRED";
+  draft.toneVerdict = "REWRITE_REQUIRED";
+  let dispatched: Record<string, string> | null = null;
+  const githubAutomation = new GitHubAutomationService({ owner: "owner", repository: "automation", branch: "main", token: "test-token" }, (async () => {
+    return new Response(JSON.stringify({ message: "unexpected GitHub request" }), { status: 500 });
+  }) as typeof fetch);
+  githubAutomation.getDraft = async () => draft;
+  githubAutomation.updateState = async (_runId, changes, actor, currentState) => changedState({ ...draft, state: currentState ?? draft.state }, changes, actor);
+  githubAutomation.dispatch = async (_workflow, inputs) => { dispatched = inputs; };
+  const app = buildApp({ githubAutomation, databaseProvider: "memory" });
+  context.after(() => app.close());
+
+  const response = await app.inject({
+    method: "POST",
+    url: "/api/contents/tone-resume-1/tone-resume",
+    headers: { "x-user-id": "carrot", "x-user-roles": "admin", "x-requested-with": "dashboard" },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.json<{ rewriteQueued: boolean; recoveryMode: string }>().rewriteQueued, true);
+  assert.equal(response.json<{ recoveryMode: string }>().recoveryMode, "tone_resume");
+  assert.deepEqual(dispatched, { run_id: "tone-resume-1", mode: "tone_resume" });
+});
+
 test("서로 다른 GitHub 원고를 연속으로 반려한다", async (context) => {
   const drafts = new Map([
     ["101", reviewDraft("101", "첫 번째 검토 원고")],

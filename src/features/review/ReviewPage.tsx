@@ -11,6 +11,7 @@ import {
   LayoutTemplate,
   Languages,
   Pencil,
+  RefreshCw,
   SearchCheck,
   ShieldAlert,
   Trash2,
@@ -123,7 +124,7 @@ const pipelineStageLabel: Record<string, string> = {
 export function ReviewPage() {
   const navigate = useNavigate();
   const { contentId } = useParams();
-  const { detail, connectionStatus, loadError, reload, refresh, approve: approveApi, reject: rejectApi, edit: editApi, remove: removeApi } = useContentDetail(contentId);
+  const { detail, connectionStatus, loadError, reload, refresh, approve: approveApi, reject: rejectApi, resumeTone: resumeToneApi, edit: editApi, remove: removeApi } = useContentDetail(contentId);
   const [tab, setTab] = useState<ReviewTab>("draft");
   const [activeOutline, setActiveOutline] = useState("summary");
   const [expandedQuality, setExpandedQuality] = useState("");
@@ -134,6 +135,7 @@ export function ReviewPage() {
   const [editBusy, setEditBusy] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [rewritePending, setRewritePending] = useState(false);
+  const [toneResumeBusy, setToneResumeBusy] = useState(false);
   const [imagePending, setImagePending] = useState(false);
   const [imageBusy, setImageBusy] = useState(false);
   const [imageRequestStartedAt, setImageRequestStartedAt] = useState<number | null>(null);
@@ -346,6 +348,11 @@ export function ReviewPage() {
         };
       });
   const failedQualityItems = effectiveQualityItems.filter((item) => item.status === "failed");
+  const toneResumeAvailable = failedQualityItems.some((item) => item.id === "tone")
+    && detail.content.rewriteStatus !== "queued"
+    && status !== "deleted"
+    && status !== "scheduled"
+    && status !== "published";
   const toneDiffSummary = Array.isArray(latestVersion?.metadata.diffSummary)
     ? latestVersion.metadata.diffSummary.filter((item): item is string => typeof item === "string")
     : [];
@@ -475,6 +482,21 @@ export function ReviewPage() {
     }
   };
 
+  const resumeTone = async () => {
+    if (!toneResumeAvailable || toneResumeBusy) return;
+    setToneResumeBusy(true);
+    try {
+      const updated = await resumeToneApi();
+      setRewritePending(updated?.rewriteQueued === true);
+      setToast("저장된 원고와 말투 피드백만 다시 검사하도록 요청했습니다. 새 원고를 처음부터 만들지 않습니다.");
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "저장 원고 재시도를 시작하지 못했습니다.");
+    } finally {
+      setToneResumeBusy(false);
+      window.setTimeout(() => setToast(""), 5200);
+    }
+  };
+
   const saveEdit = async (input: { title: string; body: string; reason: string | null }) => {
     setEditBusy(true);
     try {
@@ -534,6 +556,11 @@ export function ReviewPage() {
               window.setTimeout(() => setToast(""), 3200);
             });
           }}>텍스트 복사</Button>
+          {toneResumeAvailable ? (
+            <Button icon={<RefreshCw size={17} />} disabled={toneResumeBusy || connectionStatus !== "connected"} onClick={() => void resumeTone()}>
+              {toneResumeBusy ? "재시도 요청 중..." : "저장 원고 재시도"}
+            </Button>
+          ) : null}
           {status !== "deleted" ? (
             <Button onClick={() => setRejectOpen(true)} disabled={!canReject}>수정 요청</Button>
           ) : null}
@@ -628,6 +655,16 @@ export function ReviewPage() {
             })}
             {!effectiveQualityItems.length ? <p className="review-empty-inline">저장된 품질 검사 결과가 없습니다.</p> : null}
           </div>
+
+          {toneResumeAvailable ? (
+            <section className="inspector-section review-recovery" role="status">
+              <h3>원고 저장 완료 · 보완 가능</h3>
+              <p>원고와 출처는 저장되어 있습니다. 말투 검수만 다시 실행하면 되므로 처음부터 생성해 토큰을 다시 쓰지 않습니다.</p>
+              <Button icon={<RefreshCw size={16} />} disabled={toneResumeBusy} onClick={() => void resumeTone()}>
+                {toneResumeBusy ? "재시도 요청 중..." : "말투 검수만 다시 실행"}
+              </Button>
+            </section>
+          ) : null}
 
           <section className="inspector-section">
             <h3>말투 보정 변경</h3>

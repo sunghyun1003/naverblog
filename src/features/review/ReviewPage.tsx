@@ -911,7 +911,8 @@ function renderGeneratedBlocks(body: string): ReactNode[] {
 }
 
 function renderGeneratedBlocksWithImages(body: string, contentId: string, imagePackage: ApiGeneratedImagePackage | null): ReactNode[] {
-  const assets = imagePackage?.assets ?? [];
+  const usableImagePackage = isReadyImagePackage(imagePackage) ? imagePackage : null;
+  const assets = usableImagePackage?.assets ?? [];
   const imagesBySection = new Map<number, typeof assets>();
   for (const asset of assets.filter((item) => item.role === "inline")) {
     const current = imagesBySection.get(asset.afterSection) ?? [];
@@ -925,7 +926,7 @@ function renderGeneratedBlocksWithImages(body: string, contentId: string, imageP
     for (const asset of imagesBySection.get(index) ?? []) {
       output.push(
         <figure className="article-inline-image" key={`image-${asset.id}-${index}`}>
-          <img src={contentImageUrl(contentId, asset.id, imagePackage?.generatedAt)} alt={asset.altText} loading="lazy" />
+          <img src={contentImageUrl(contentId, asset.id, usableImagePackage?.generatedAt)} alt={asset.altText} loading="lazy" />
           <figcaption>{asset.altText}</figcaption>
         </figure>,
       );
@@ -949,7 +950,7 @@ function renderGeneratedBlocksWithImages(body: string, contentId: string, imageP
       if (hero) {
         output.push(
           <figure className="article-inline-image article-inline-image--hero" key={`image-${hero.id}`}>
-            <img src={contentImageUrl(contentId, hero.id, imagePackage?.generatedAt)} alt={hero.altText} />
+            <img src={contentImageUrl(contentId, hero.id, usableImagePackage?.generatedAt)} alt={hero.altText} />
             <figcaption>{hero.altText}</figcaption>
           </figure>,
         );

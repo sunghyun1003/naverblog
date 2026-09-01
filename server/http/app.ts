@@ -464,9 +464,14 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       return { expiresAt: new Date(expiresAt).toISOString(), items: [] };
     }
     if (!auth) return reply.status(404).send({ error: { code: "IMAGE_NOT_FOUND", message: "복사용 이미지를 찾을 수 없습니다.", details: null } });
-    // 이미지 존재 여부는 상세 화면에서 이미 확인했다. 복사할 때 GitHub 원고를 다시
-    // 읽으면 불필요한 지연이 생기므로, 생성 파이프라인의 고정 asset ID만 서명한다.
-    const assetIds = ["hero", "visual-01", "visual-02"];
+    // 실패한 manifest는 진단용 asset 메타데이터만 남기고 실제 파일을 삭제한다.
+    // 그런 상태에서 URL을 발급하면 복사 결과에 깨진 이미지가 들어가므로
+    // ready manifest의 실제 asset만 서명한다.
+    const draft = await githubAutomation.getDraft(id);
+    const assetIds = draft.imageManifest?.status === "ready"
+      ? (draft.imageManifest.assets ?? []).map((asset) => asset.id)
+      : [];
+    if (!assetIds.length) return { expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(), items: [] };
     const expiresAt = Date.now() + 15 * 60 * 1000;
     const forwardedProtocol = request.headers["x-forwarded-proto"];
     const protocol = (Array.isArray(forwardedProtocol) ? forwardedProtocol[0] : forwardedProtocol) ?? request.protocol;

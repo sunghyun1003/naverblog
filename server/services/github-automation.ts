@@ -318,7 +318,7 @@ export interface AutomationHistoryItem {
   failureCode: string | null;
   error: string | null;
   draftSaved?: boolean;
-  recoveryAction?: "tone_resume" | null;
+  recoveryAction?: "tone_resume" | "image_retry" | null;
   url: string;
 }
 
@@ -459,7 +459,7 @@ interface StoredAutomationHistory {
   failureCode?: string | null;
   error?: string | null;
   draftSaved?: boolean;
-  recoveryAction?: "tone_resume" | null;
+  recoveryAction?: "tone_resume" | "image_retry" | null;
   url?: string | null;
 }
 
@@ -735,7 +735,9 @@ export class GitHubAutomationService {
         error: record.error ?? null,
         draftSaved: record.draftSaved === true || savedDraftRunIds.has(String(workflowRunId)),
         recoveryAction: record.recoveryAction
-          ?? (record.status === "failure" && savedDraftRunIds.has(String(workflowRunId)) ? "tone_resume" : null),
+          ?? (record.status === "failure" && savedDraftRunIds.has(String(workflowRunId))
+            ? (record.job === "images" ? "image_retry" : "tone_resume")
+            : null),
         url: record.url ?? run?.html_url ?? "",
       };
     }));
@@ -760,7 +762,9 @@ export class GitHubAutomationService {
         failureCode: null,
         error: null,
         draftSaved: savedDraftRunIds.has(String(run.id)),
-        recoveryAction: savedDraftRunIds.has(String(run.id)) && status === "failure" ? "tone_resume" : null,
+         recoveryAction: savedDraftRunIds.has(String(run.id)) && status === "failure"
+           ? (run.workflow === "images" ? "image_retry" : "tone_resume")
+           : null,
         url: run.html_url,
       };
     }));
@@ -1001,6 +1005,7 @@ export class GitHubAutomationService {
     if (!statusPath) throw new DomainError("IMAGE_NOT_FOUND", "원고를 찾을 수 없습니다.", 404);
     const basePath = statusPath.slice(0, -"/status.json".length);
     const manifest = await this.readOptionalJson<GeneratedImageManifest>(`${basePath}/images/manifest.json`);
+    if (manifest?.status !== "ready") throw new DomainError("IMAGE_NOT_FOUND", "품질 검수를 통과한 이미지를 찾을 수 없습니다.", 404);
     const asset = manifest?.assets.find((candidate) => candidate.id === assetId);
     if (!asset || pathHasTraversal(asset.path)) throw new DomainError("IMAGE_NOT_FOUND", "생성된 이미지를 찾을 수 없습니다.", 404);
     const file = await this.file(`${basePath}/images/${asset.path}`);

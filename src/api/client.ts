@@ -150,7 +150,9 @@ function normalizeHistoryItem(value: unknown, index: number): ApiAutomationHisto
     failureCode: typeof value.failureCode === "string" ? value.failureCode : null,
     error: typeof value.error === "string" ? value.error : null,
     draftSaved: value.draftSaved === true,
-    recoveryAction: value.recoveryAction === "tone_resume" ? "tone_resume" : null,
+    recoveryAction: value.recoveryAction === "tone_resume" || value.recoveryAction === "image_retry"
+      ? value.recoveryAction
+      : null,
     url: asString(value.url),
   };
 }

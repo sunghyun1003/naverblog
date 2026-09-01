@@ -259,7 +259,7 @@ export interface ApiAutomationHistoryItem {
   error: string | null;
   /** Whether the workflow left a usable draft package despite a failed job. */
   draftSaved?: boolean;
-  recoveryAction?: "tone_resume" | null;
+  recoveryAction?: "tone_resume" | "image_retry" | null;
   url: string;
 }
 

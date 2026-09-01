@@ -50,7 +50,12 @@ test("local copy validation returns an empty signed asset list instead of blocki
 test("복사용 이미지는 로그인 없이도 짧게 유효한 서명 주소로 제공한다", async (context) => {
   const imageBytes = Buffer.from("signed-image");
   const githubAutomation = {
-    getDraft: async () => ({ imageManifest: { assets: [{ id: "hero", path: "hero.jpg" }] } }),
+    getDraft: async () => ({ imageManifest: {
+      status: "ready",
+      technicalQualityPassed: true,
+      visualQualityPassed: true,
+      assets: [{ id: "hero", path: "hero.jpg" }],
+    } }),
     getDraftImage: async () => ({ body: imageBytes, contentType: "image/jpeg", etag: "etag-1" }),
   } as unknown as GitHubAutomationService;
   const auth = new SessionAuthService({ username: "carrot", password: "carrot", sessionSecret: "copy-test-session-secret", secureCookie: false });

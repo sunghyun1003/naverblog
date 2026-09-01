@@ -721,8 +721,9 @@ export class GitHubAutomationService {
         failedStage,
         failureCode: record.failureCode ?? null,
         error: record.error ?? null,
-        draftSaved: record.draftSaved === true,
-        recoveryAction: record.recoveryAction ?? null,
+        draftSaved: record.draftSaved === true || savedDraftRunIds.has(String(workflowRunId)),
+        recoveryAction: record.recoveryAction
+          ?? (record.status === "failure" && savedDraftRunIds.has(String(workflowRunId)) ? "tone_resume" : null),
         url: record.url ?? run?.html_url ?? "",
       };
     }));

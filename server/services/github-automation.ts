@@ -245,6 +245,10 @@ export interface GeneratedToneAttempts {
   selectedReviewIndex?: number;
   selectedScore?: number;
   exhausted: boolean;
+  acceptedWithWarnings?: boolean;
+  warningCount?: number;
+  finalValidationVerdict?: "PASS" | "REWRITE_REQUIRED";
+  finalValidationSummary?: string;
   attempts: Array<{
     reviewIndex: number;
     stage: string;

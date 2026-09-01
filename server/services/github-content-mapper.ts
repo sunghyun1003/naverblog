@@ -82,6 +82,7 @@ export function draftToDetail(draft: AutomationDraftDetail): ContentDetail {
   const nativeKoreanPassed = !nativeKoreanQuality || nativeKoreanQuality.status !== "failed";
   const tonePassed = nativeKoreanPassed && (draft.toneVerdict === "PASS"
     || (draft.toneVerdict == null && draft.pipelineStatus === "TONE_REVIEW_COMPLETE" && draft.toneSkillApplied));
+  const toneAcceptedWithWarnings = draft.toneAttempts?.acceptedWithWarnings === true;
   const sourceByKey = new Map<string, ContentDetail["sources"][number]>();
   const sourceByEvidenceId = new Map<string, ContentDetail["sources"][number]>();
   const evidenceClaimById = new Map((draft.evidencePackage?.claims ?? []).map((claim) => [claim.id, claim]));
@@ -206,6 +207,9 @@ export function draftToDetail(draft: AutomationDraftDetail): ContentDetail {
   const nativeKoreanMessage = nativeKoreanQuality
     ? `번역체·추상 표현 검사 ${nativeKoreanQuality.status === "passed" ? "통과" : "확인 필요"}. HIGH ${nativeKoreanQuality.counts.high}건, MEDIUM ${nativeKoreanQuality.counts.medium}건, LOW ${nativeKoreanQuality.counts.low}건.`
     : "한국어 자연스러움 검사 결과가 없는 이전 원고입니다.";
+  const toneDisplayMessage = toneAcceptedWithWarnings
+    ? `제한된 자동 보정 후 완료했습니다. 잔여 말투 권고 ${draft.toneAttempts?.warningCount ?? 0}건은 참고용 경고로 남겼습니다.`
+    : toneMessage;
   const qualitySeeds = [
     ["facts", factsStatus, factsScore, draft.evidencePackage
       ? `공식 출처 ${draft.evidencePackage.sources.length}개, 검증 주장 ${supportedEvidenceClaims}개, 미해결 주장 ${unresolvedEvidenceClaims}개, 추가 확인 ${evidenceGaps.length}개입니다.`
@@ -213,7 +217,7 @@ export function draftToDetail(draft: AutomationDraftDetail): ContentDetail {
     ["seo", seoQuality?.status ?? "warning", seoQuality?.score ?? 60, discoveryQualitySummary("SEO", seoQuality)],
     ["geo", geoQuality?.status ?? "warning", geoQuality?.score ?? 60, discoveryQualitySummary("GEO", geoQuality)],
     ["editorial", editorialQuality?.status ?? "warning", editorialQuality?.score ?? 60, discoveryQualitySummary("편집 품질", editorialQuality)],
-    ["tone", tonePassed ? "passed" : "failed", tonePassed ? 100 : 0, toneMessage],
+    ["tone", tonePassed ? "passed" : "failed", tonePassed ? 100 : 0, toneDisplayMessage],
     ["native_korean", nativeKoreanQuality?.status ?? "warning", nativeKoreanQuality?.score ?? 60, nativeKoreanMessage],
     ["advertising", advertisingQuality?.status ?? "warning", advertisingQuality?.score ?? 60, advertisingMessage],
   ] as const;

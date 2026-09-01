@@ -60,15 +60,16 @@ const automationSettingsSchema = z.object({
   timezone: z.literal("Asia/Seoul"),
   collection: automationScheduleSchema,
   generation: automationScheduleSchema.extend({ count: z.number().int().min(1).max(3) }),
-}).superRefine((value, context) => {
-  const [hour = 0, minute = 0] = value.generation.time.split(":").map(Number);
-  if (hour * 60 + minute + (value.generation.count - 1) * 10 >= 24 * 60) {
-    context.addIssue({ code: "custom", path: ["generation", "time"], message: "여러 건 생성은 마지막 실행이 자정을 넘지 않도록 설정해주세요." });
-  }
 });
 const publicImageQuerySchema = z.object({
   expires: z.coerce.number().int().positive(),
   signature: z.string().min(20).max(200),
+});
+// Failed candidates are previewable only from the authenticated dashboard.
+// Signed/public image URLs remain limited to quality-gated ready packages.
+const imagePreviewQuerySchema = z.object({
+  preview: z.enum(["true", "false"]).default("false"),
+  v: z.string().optional(),
 });
 
 export interface AppOptions {
@@ -183,8 +184,11 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       };
     }
     try {
-      const knownRunIds = new Set(cachedBeforeSync.map((content) => content.id));
-      const syncLimit = persistGitHubData ? (cachedBeforeSync.length ? 20 : 100) : 20;
+      // An explicit refresh is also a reconciliation pass: include existing
+      // run IDs so image/rewrite/status changes made by GitHub Actions reach
+      // the mirror. The normal path keeps the cheap "new IDs only" sync.
+      const knownRunIds = forceRefresh ? new Set<string>() : new Set(cachedBeforeSync.map((content) => content.id));
+      const syncLimit = persistGitHubData ? (forceRefresh ? Math.max(20, Math.min(100, cachedBeforeSync.length + 10)) : cachedBeforeSync.length ? 20 : 100) : 20;
       const drafts = await githubAutomation!.listDrafts(syncLimit, knownRunIds);
       if (persistGitHubData) {
         if (drafts.length) await persistGitHubDraftSummaries(system.repository, drafts);
@@ -246,7 +250,12 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   async function getGitHubDetail(id: string, forceRefresh = false) {
     if (persistGitHubData && !forceRefresh) {
       const cached = await system.repository.getContentDetail(id);
-      if (cached?.versions.length) {
+      // Image generation runs in a separate GitHub job. While the mirror says
+      // queued, reading it as authoritative would hide the ready/failed
+      // manifest forever. Probe GitHub until the asynchronous job settles,
+      // then the normal Neon fast path resumes.
+      const imageStillPending = cached?.content.imageGenerationStatus === "queued";
+      if (cached?.versions.length && !imageStillPending) {
         return { ...cached, freshness: freshness("postgres-cache", false, cached.content.updatedAt) };
       }
     }
@@ -349,7 +358,8 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
 
   app.get("/api/automation/overview", async () => {
     if (!githubAutomation) return { mode: "mock", runs: [] };
-    return { ...(await githubAutomation.capabilities()), runs: await githubAutomation.listWorkflowRuns() };
+    const runs = await githubAutomation.listWorkflowRuns();
+    return { ...(await githubAutomation.capabilities(runs)), runs };
   });
   app.get("/api/automation/runs", async () => ({ items: githubAutomation ? await githubAutomation.listWorkflowRuns() : [] }));
   app.get("/api/automation/history", async () => ({ items: githubAutomation ? await githubAutomation.listAutomationHistory() : [] }));
@@ -449,7 +459,8 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   app.get("/api/contents/:id/images/:assetId", async (request, reply) => {
     const { id, assetId } = imageParamsSchema.parse(request.params);
     if (!githubAutomation) return reply.status(404).send({ error: { code: "IMAGE_NOT_FOUND", message: "생성된 이미지를 찾을 수 없습니다.", details: null } });
-    const image = await githubAutomation.getDraftImage(id, assetId);
+    const query = imagePreviewQuerySchema.parse(request.query);
+    const image = await githubAutomation.getDraftImage(id, assetId, { allowFailed: query.preview === "true" });
     return reply
       .header("Content-Type", image.contentType)
       .header("Cache-Control", "private, max-age=300")
@@ -467,10 +478,19 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     // 실패한 manifest는 진단용 asset 메타데이터만 남기고 실제 파일을 삭제한다.
     // 그런 상태에서 URL을 발급하면 복사 결과에 깨진 이미지가 들어가므로
     // ready manifest의 실제 asset만 서명한다.
-    const draft = await githubAutomation.getDraft(id);
-    const assetIds = draft.imageManifest?.status === "ready"
-      ? (draft.imageManifest.assets ?? []).map((asset) => asset.id)
-      : [];
+    // Failed candidates are retained for authenticated preview, but this
+    // endpoint intentionally reads ready-only IDs so copy/public URLs never
+    // expose a package that failed visual quality.
+    // Use the manifest-only reader in production. Keep a fallback for older
+    // adapters so the copy endpoint remains backwards compatible.
+    const assetIds = typeof githubAutomation.getDraftImageAssetIds === "function"
+      ? await githubAutomation.getDraftImageAssetIds(id)
+      : await (async () => {
+        const draft = await githubAutomation.getDraft(id);
+        return draft.imageManifest?.status === "ready"
+          ? (draft.imageManifest.assets ?? []).map((asset) => asset.id)
+          : [];
+      })();
     if (!assetIds.length) return { expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(), items: [] };
     const expiresAt = Date.now() + 15 * 60 * 1000;
     const forwardedProtocol = request.headers["x-forwarded-proto"];
@@ -536,6 +556,8 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
         rejectedBy: null,
         approvedAt: new Date().toISOString(),
         rejectedAt: null,
+        imageGenerationStatus: "queued",
+        imageGenerationWarning: null,
       }, actor.id, draft.state);
       const updatedDraft = draftWithState(draft, state);
       const mirrorSynced = await persistGitHubDetailSafely(updatedDraft, "approve");
@@ -561,15 +583,40 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       return reply.status(409).send({ error: { code: "CONTENT_REWRITE_IN_PROGRESS", message: "A rewrite is already in progress for this draft.", details: null } });
     }
     const body = imageGenerationSchema.parse(request.body);
+    const actor = actorFrom(request, auth?.verifyCookie(request.headers.cookie)?.username);
+    // Persist the asynchronous state before dispatching. This prevents a
+    // stale Neon mirror from masking the GitHub image result on the next poll.
+    let state = await githubAutomation.updateState(id, {
+      imageGenerationStatus: "queued",
+      imageGenerationWarning: null,
+    }, actor.id, draft.state);
+    let updatedDraft = draftWithState(draft, state);
+    let mirrorSynced = await persistGitHubDetailSafely(updatedDraft, "image-generation-queue");
     // Explicit generation and single-asset repairs are allowed before approval.
     // Pass force so the image preflight guard does not block an intentional rerun.
-    await githubAutomation.dispatch("images", {
-      run_id: id,
-      force: "true",
-      ...(body.assetId ? { asset_id: body.assetId } : {}),
-      ...(body.feedback ? { feedback: body.feedback } : {}),
-    });
-    return reply.status(202).send({ accepted: true });
+    try {
+      await githubAutomation.dispatch("images", {
+        run_id: id,
+        force: "true",
+        ...(body.assetId ? { asset_id: body.assetId } : {}),
+        ...(body.feedback ? { feedback: body.feedback } : {}),
+      });
+    } catch (error) {
+      // The request was accepted only after the state write. If dispatch
+      // fails, surface a retryable error and leave a truthful failed state.
+      try {
+        state = await githubAutomation.updateState(id, {
+          imageGenerationStatus: "failed",
+          imageGenerationWarning: error instanceof Error ? error.message : "이미지 작업을 시작하지 못했습니다.",
+        }, actor.id, state);
+        updatedDraft = draftWithState(updatedDraft, state);
+        mirrorSynced = (await persistGitHubDetailSafely(updatedDraft, "image-generation-dispatch-failed")) && mirrorSynced;
+      } catch (stateError) {
+        app.log.warn({ err: stateError, contentId: id }, "이미지 작업 실패 상태를 저장하지 못했습니다.");
+      }
+      return reply.status(502).send({ error: { code: "IMAGE_DISPATCH_FAILED", message: "이미지 작업을 시작하지 못했습니다. 잠시 후 다시 시도해 주세요.", details: null } });
+    }
+    return reply.status(202).send({ accepted: true, content: draftToContent(updatedDraft), mirrorSynced });
   });
   app.post("/api/contents/:id/tone-resume", async (request, reply) => {
     const { id } = idParamsSchema.parse(request.params);
@@ -741,7 +788,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       }
       let trends;
       try {
-        trends = await githubAutomation.getTrends();
+        trends = await githubAutomation.getTrends(query.refresh === "true");
       } catch (error) {
         if (!persistGitHubData) throw error;
         const cached = await system.repository.listTrendSignals();

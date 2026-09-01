@@ -16,7 +16,6 @@ export function useContents() {
   const [freshness, setFreshness] = useState<ApiFreshness | null>(cached?.freshness ?? null);
   const [creating, setCreating] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [refreshVersion, setRefreshVersion] = useState(0);
 
   const refresh = useCallback(async (signal?: AbortSignal, force = false) => {
     setRefreshing(true);
@@ -39,21 +38,21 @@ export function useContents() {
 
   useEffect(() => {
     const controller = new AbortController();
-    // A cached list is rendered immediately, but the first background read
-    // must bypass the Postgres mirror so a just-finished/failed GitHub run is
-    // visible without waiting for the 15-minute cache interval.
+    // Render cached/mirrored data immediately, then reconcile GitHub in the
+    // background. `refresh` never hides the current list, so this can safely
+    // use the authoritative pass without recreating the route flash.
     void refresh(controller.signal, true).catch((error: unknown) => {
       if (error instanceof DOMException && error.name === "AbortError") return;
       setConnectionStatus("offline");
     });
     const interval = window.setInterval(() => {
-      void refresh(controller.signal).catch(() => setConnectionStatus("offline"));
+      void refresh(controller.signal, true).catch(() => setConnectionStatus("offline"));
     }, 900_000);
     return () => {
       window.clearInterval(interval);
       controller.abort();
     };
-  }, [refresh, refreshVersion]);
+  }, [refresh]);
 
   const createAndRun = async (title: string, strategy: "trend" | "original") => {
     setCreating(true);
@@ -101,6 +100,5 @@ export function useContents() {
     createAndRun,
     removeMany,
     refreshNow: () => refresh(undefined, true),
-    reload: () => setRefreshVersion((current) => current + 1),
   };
 }

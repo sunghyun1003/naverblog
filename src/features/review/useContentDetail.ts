@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { approveContent, deleteContent, editContent, getContentDetail, rejectContent, resumeToneReview } from "../../api/client";
+import { deleteContent, editContent, getContentDetail, rejectContent, resumeToneReview } from "../../api/client";
 import type { ApiContentDetail } from "../../api/types";
 import { readRuntimeCache, writeRuntimeCache } from "../../api/runtimeCache";
 
@@ -10,7 +10,11 @@ export function useContentDetail(contentId: string | undefined) {
   const [loadError, setLoadError] = useState("");
   const [requestVersion, setRequestVersion] = useState(0);
 
-  const refresh = useCallback(async (force = true) => {
+  // Polling should read the mirrored detail first. Forcing a GitHub sync on
+  // every 15-second poll recreated the long-loading behaviour and multiplied
+  // remote API calls. Explicit mutations already return the new detail; a
+  // caller can still pass true for a deliberate manual refresh.
+  const refresh = useCallback(async (force = false) => {
     if (!contentId) throw new Error("Content ID is missing.");
     const response = await getContentDetail(contentId, undefined, force);
     setDetail(response);
@@ -45,18 +49,6 @@ export function useContentDetail(contentId: string | undefined) {
       });
     return () => controller.abort();
   }, [contentId, requestVersion]);
-
-  const approve = async (checks: { sources: boolean; advertising: boolean }) => {
-    if (!contentId || connectionStatus !== "connected" || !detail) throw new Error("원고 연결을 확인한 뒤 다시 시도해주세요.");
-    const content = await approveContent(contentId, checks);
-    setDetail((current) => {
-      if (!current) return current;
-      const next = { ...current, content };
-      writeRuntimeCache(`content:${contentId}`, next);
-      return next;
-    });
-    return content;
-  };
 
   const reject = async (reason: string) => {
     if (!contentId || connectionStatus !== "connected" || !detail) throw new Error("원고 연결을 확인한 뒤 다시 시도해주세요.");
@@ -108,5 +100,5 @@ export function useContentDetail(contentId: string | undefined) {
 
   const reload = () => setRequestVersion((current) => current + 1);
 
-  return { detail, connectionStatus, loadError, reload, refresh, approve, reject, resumeTone, edit, remove };
+  return { detail, connectionStatus, loadError, reload, refresh, reject, resumeTone, edit, remove };
 }

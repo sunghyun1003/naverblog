@@ -143,6 +143,8 @@ export interface GeneratedImageManifest {
   };
   checks: Array<{ id: string; label: string; passed: boolean; detail: string }>;
   assets: GeneratedImageAsset[];
+  /** True when failed candidates were retained for authenticated inspection. */
+  candidateAssetsPreserved?: boolean;
 }
 
 export interface GeneratedImageStatus {
@@ -588,28 +590,24 @@ function scheduleCron(schedule: AutomationSchedule, minuteOffset = 0): string {
   return `${minute} ${hour} * * ${day}`;
 }
 
-function renderScheduleBlock(schedule: AutomationSchedule, count = 1): string {
+function renderScheduleBlock(schedule: AutomationSchedule): string {
   const lines = ["  # dashboard-schedule:start"];
   if (schedule.enabled) {
     lines.push("  schedule:");
-    // GitHub explicitly documents that scheduled events may be delayed or
-    // dropped under load. Three waves provide recovery opportunities; the
-    // workflow's daily guard skips every duplicate after the target is met.
-    for (const retryOffset of [0, 47, 107]) {
-      for (let index = 0; index < count; index += 1) {
-        lines.push(`    - cron: "${scheduleCron(schedule, retryOffset + index * 10)}"`);
-        lines.push("      timezone: \"Asia/Seoul\"");
-      }
-    }
+    // A schedule represents one durable job, not a retry loop. Recovery is
+    // handled by the workflow guard and explicit dispatch instead of hidden
+    // cron waves that can consume Codex tokens more than once.
+    lines.push(`    - cron: "${scheduleCron(schedule)}"`);
+    lines.push("      timezone: \"Asia/Seoul\"");
   }
   lines.push("  # dashboard-schedule:end");
   return lines.join("\n");
 }
 
-function replaceScheduleBlock(source: string, schedule: AutomationSchedule, count = 1): string {
+function replaceScheduleBlock(source: string, schedule: AutomationSchedule): string {
   const marker = /  # dashboard-schedule:start[\s\S]*?  # dashboard-schedule:end/;
   if (!marker.test(source)) throw new Error("워크플로우에서 대시보드 일정 영역을 찾지 못했습니다.");
-  return source.replace(marker, renderScheduleBlock(schedule, count));
+  return source.replace(marker, renderScheduleBlock(schedule));
 }
 
 function defaultState(runId: string, generatedAt: string): DashboardDraftState {
@@ -635,11 +633,21 @@ function defaultState(runId: string, generatedAt: string): DashboardDraftState {
 export class GitHubAutomationService {
   private automationSettingsCache: { value: AutomationSettings; expiresAt: number } | null = null;
   private automationHistoryCache: { value: AutomationHistoryItem[]; expiresAt: number } | null = null;
+  private automationHistoryRequest: Promise<AutomationHistoryItem[]> | null = null;
+  private repositoryTreeCache: { value: GitHubTreeItem[]; expiresAt: number } | null = null;
+  private repositoryTreeRequest: Promise<GitHubTreeItem[]> | null = null;
+  private workflowRunsCache: { value: WorkflowRunSummary[]; expiresAt: number } | null = null;
+  private workflowRunsRequest: Promise<WorkflowRunSummary[]> | null = null;
+  private trendSnapshotCache: { value: CollectedTrendSnapshot; expiresAt: number } | null = null;
+  private trendSnapshotRequest: Promise<CollectedTrendSnapshot> | null = null;
+  private readonly repositoryTreeCacheTtlMs = 30_000;
+  private readonly workflowRunsCacheTtlMs = 15_000;
+  private readonly trendSnapshotCacheTtlMs = 30_000;
 
   constructor(private readonly config: GitHubAutomationConfig, private readonly request: Fetcher = fetch) {}
 
-  async capabilities() {
-    const runs = await this.listWorkflowRuns();
+  async capabilities(existingRuns?: WorkflowRunSummary[]) {
+    const runs = existingRuns ?? await this.listWorkflowRuns();
     return {
       mode: "github-actions",
       repository: `${this.config.owner}/${this.config.repository}`,
@@ -650,6 +658,17 @@ export class GitHubAutomationService {
   }
 
   async listWorkflowRuns(): Promise<WorkflowRunSummary[]> {
+    if (this.workflowRunsCache && this.workflowRunsCache.expiresAt > Date.now()) {
+      return this.workflowRunsCache.value;
+    }
+    if (this.workflowRunsRequest) return this.workflowRunsRequest;
+    this.workflowRunsRequest = this.loadWorkflowRuns().finally(() => {
+      this.workflowRunsRequest = null;
+    });
+    return this.workflowRunsRequest;
+  }
+
+  private async loadWorkflowRuns(): Promise<WorkflowRunSummary[]> {
     const workflows = ["collect", "generate"] as const;
     const responses = await Promise.all(workflows.map(async (workflow) => {
       const payload = await this.github<WorkflowRunsResponse>(
@@ -665,7 +684,9 @@ export class GitHubAutomationService {
         url: run.html_url,
       }));
     }));
-    return responses.flat().sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+    const value = responses.flat().sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+    this.workflowRunsCache = { value, expiresAt: Date.now() + this.workflowRunsCacheTtlMs };
+    return value;
   }
 
   async getAutomationSettings(): Promise<AutomationSettings> {
@@ -683,7 +704,7 @@ export class GitHubAutomationService {
     const files = {
       "config/automation-settings.json": `${JSON.stringify(settings, null, 2)}\n`,
       ".github/workflows/collect.yml": `${replaceScheduleBlock(collectWorkflow, settings.collection).trimEnd()}\n`,
-      ".github/workflows/generate.yml": `${replaceScheduleBlock(generateWorkflow, settings.generation, settings.generation.count).trimEnd()}\n`,
+      ".github/workflows/generate.yml": `${replaceScheduleBlock(generateWorkflow, settings.generation).trimEnd()}\n`,
     };
     await this.commitFiles(files, "dashboard: update automation schedule");
     this.automationSettingsCache = { value: settings, expiresAt: Date.now() + 60_000 };
@@ -694,6 +715,21 @@ export class GitHubAutomationService {
     if (this.automationHistoryCache && this.automationHistoryCache.expiresAt > Date.now()) {
       return this.automationHistoryCache.value.slice(0, limit);
     }
+    if (this.automationHistoryRequest) {
+      const value = await this.automationHistoryRequest;
+      return value.slice(0, limit);
+    }
+    // History combines a workflow-run request, a repository tree request, and
+    // one read per stored record. Deduplicate concurrent dashboard requests so
+    // tab changes and the home summary cannot multiply that fan-out.
+    this.automationHistoryRequest = this.loadAutomationHistory(limit).finally(() => {
+      this.automationHistoryRequest = null;
+    });
+    const value = await this.automationHistoryRequest;
+    return value.slice(0, limit);
+  }
+
+  private async loadAutomationHistory(limit = 50): Promise<AutomationHistoryItem[]> {
     const [runsPayload, repositoryTree] = await Promise.all([
       this.github<WorkflowRunsResponse>(`/actions/runs?branch=${encodeURIComponent(this.config.branch)}&per_page=${Math.min(100, limit)}`),
       this.tree(),
@@ -780,6 +816,9 @@ export class GitHubAutomationService {
       method: "POST",
       body: JSON.stringify({ ref: this.config.branch, ...(Object.keys(inputs).length ? { inputs } : {}) }),
     }, true);
+    this.workflowRunsCache = null;
+    this.automationHistoryCache = null;
+    if (workflow === "collect") this.trendSnapshotCache = null;
   }
 
   async listDrafts(limit = 20, knownRunIds: ReadonlySet<string> = new Set()): Promise<AutomationDraftSummary[]> {
@@ -993,10 +1032,11 @@ export class GitHubAutomationService {
       method: "PATCH",
       body: JSON.stringify({ sha: commit.sha, force: false }),
     });
+    this.invalidateRepositoryCaches();
     return { deletedAt: new Date().toISOString(), deletedFiles: paths.length };
   }
 
-  async getDraftImage(runId: string, assetId: string): Promise<{ body: Buffer; contentType: string; etag: string }> {
+  async getDraftImage(runId: string, assetId: string, options: { allowFailed?: boolean } = {}): Promise<{ body: Buffer; contentType: string; etag: string }> {
     if (!/^\d+$/.test(runId) || !/^[a-z0-9-]+$/.test(assetId)) {
       throw new DomainError("IMAGE_NOT_FOUND", "이미지 경로가 올바르지 않습니다.", 404);
     }
@@ -1005,6 +1045,11 @@ export class GitHubAutomationService {
     if (!statusPath) throw new DomainError("IMAGE_NOT_FOUND", "원고를 찾을 수 없습니다.", 404);
     const basePath = statusPath.slice(0, -"/status.json".length);
     const manifest = await this.readOptionalJson<GeneratedImageManifest>(`${basePath}/images/manifest.json`);
+    // The dashboard may explicitly request a failed candidate for diagnosis.
+    // Keep the normal ready-only guard below unchanged for every other caller.
+    if (options.allowFailed === true && manifest?.status === "failed") {
+      manifest.status = "ready";
+    }
     if (manifest?.status !== "ready") throw new DomainError("IMAGE_NOT_FOUND", "품질 검수를 통과한 이미지를 찾을 수 없습니다.", 404);
     const asset = manifest?.assets.find((candidate) => candidate.id === assetId);
     if (!asset || pathHasTraversal(asset.path)) throw new DomainError("IMAGE_NOT_FOUND", "생성된 이미지를 찾을 수 없습니다.", 404);
@@ -1017,8 +1062,41 @@ export class GitHubAutomationService {
     };
   }
 
-  async getTrends() {
-    const snapshot = await this.readJson<CollectedTrendSnapshot>("data/latest.json");
+  /** Return ready image ids without loading the complete draft package. */
+  async getDraftImageAssetIds(runId: string): Promise<string[]> {
+    if (!/^\d+$/.test(runId)) return [];
+    const tree = await this.tree();
+    const statusPath = tree.map((item) => item.path).find((file) => file.endsWith(`/run-${runId}/status.json`));
+    if (!statusPath) return [];
+    const basePath = statusPath.slice(0, -"/status.json".length);
+    const manifest = await this.readOptionalJson<GeneratedImageManifest>(`${basePath}/images/manifest.json`);
+    if (manifest?.status !== "ready") return [];
+    return (manifest.assets ?? [])
+      .map((asset) => asset.id)
+      .filter((assetId) => /^[a-z0-9-]+$/.test(assetId));
+  }
+
+  async getTrends(force = false) {
+    if (force) this.trendSnapshotCache = null;
+    if (this.trendSnapshotCache && this.trendSnapshotCache.expiresAt > Date.now()) {
+      return this.mapTrendSnapshot(this.trendSnapshotCache.value);
+    }
+    if (this.trendSnapshotRequest) {
+      const snapshot = await this.trendSnapshotRequest;
+      return this.mapTrendSnapshot(snapshot);
+    }
+    this.trendSnapshotRequest = this.readJson<CollectedTrendSnapshot>("data/latest.json")
+      .then((snapshot) => {
+        this.trendSnapshotCache = { value: snapshot, expiresAt: Date.now() + this.trendSnapshotCacheTtlMs };
+        return snapshot;
+      })
+      .finally(() => {
+        this.trendSnapshotRequest = null;
+      });
+    return this.mapTrendSnapshot(await this.trendSnapshotRequest);
+  }
+
+  private mapTrendSnapshot(snapshot: CollectedTrendSnapshot) {
     const items = (snapshot.items ?? []).map((item) => ({
       title: item.title ?? "제목 없음",
       link: item.link ?? "#",
@@ -1106,12 +1184,32 @@ export class GitHubAutomationService {
     return defaultState(runId, new Date(0).toISOString());
   }
 
+  private invalidateRepositoryCaches(): void {
+    this.repositoryTreeCache = null;
+    this.automationHistoryCache = null;
+    this.workflowRunsCache = null;
+    this.trendSnapshotCache = null;
+  }
+
   private async tree(): Promise<GitHubTreeItem[]> {
+    if (this.repositoryTreeCache && this.repositoryTreeCache.expiresAt > Date.now()) {
+      return this.repositoryTreeCache.value;
+    }
+    if (this.repositoryTreeRequest) return this.repositoryTreeRequest;
+    this.repositoryTreeRequest = this.loadRepositoryTree().finally(() => {
+      this.repositoryTreeRequest = null;
+    });
+    return this.repositoryTreeRequest;
+  }
+
+  private async loadRepositoryTree(): Promise<GitHubTreeItem[]> {
     const payload = await this.github<{ tree: GitHubTreeItem[]; truncated: boolean }>(
       `/git/trees/${encodeURIComponent(this.config.branch)}?recursive=1`,
     );
     if (payload.truncated) throw new Error("비공개 레포 파일 목록이 너무 커서 원고 목록을 완전히 읽지 못했습니다.");
-    return payload.tree.filter((item) => item.type === "blob");
+    const value = payload.tree.filter((item) => item.type === "blob");
+    this.repositoryTreeCache = { value, expiresAt: Date.now() + this.repositoryTreeCacheTtlMs };
+    return value;
   }
 
   private async readOptionalText(path: string): Promise<string | null> {
@@ -1218,6 +1316,7 @@ export class GitHubAutomationService {
     });
     if (response.status === 409 || response.status === 422) throw this.stateConflict();
     if (!response.ok) throw await this.githubError(response);
+    this.invalidateRepositoryCaches();
   }
 
   private async failedStep(runId: number): Promise<string | null> {
@@ -1254,6 +1353,7 @@ export class GitHubAutomationService {
       method: "PATCH",
       body: JSON.stringify({ sha: commit.sha, force: false }),
     });
+    this.invalidateRepositoryCaches();
   }
 
   private async raw(path: string, init: RequestInit = {}): Promise<Response> {

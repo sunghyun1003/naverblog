@@ -18,7 +18,7 @@ import {
   UserRound,
   Copy,
 } from "lucide-react";
-import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useState, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { contentImageUrl, generateContentImages, getContentCopyAssets } from "../../api/client";
 import type { ApiContent, ApiContentVersion, ApiGeneratedImagePackage } from "../../api/types";
@@ -133,13 +133,12 @@ const pipelineStageLabel: Record<string, string> = {
 export function ReviewPage() {
   const navigate = useNavigate();
   const { contentId } = useParams();
-  const { detail, connectionStatus, loadError, reload, refresh, approve: approveApi, reject: rejectApi, resumeTone: resumeToneApi, edit: editApi, remove: removeApi } = useContentDetail(contentId);
+  const { detail, connectionStatus, loadError, reload, refresh, reject: rejectApi, resumeTone: resumeToneApi, edit: editApi, remove: removeApi } = useContentDetail(contentId);
   const [tab, setTab] = useState<ReviewTab>("draft");
   const [activeOutline, setActiveOutline] = useState("summary");
   const [expandedQuality, setExpandedQuality] = useState("");
-  const [checks, setChecks] = useState({ sources: false, ads: false });
   const [rejectOpen, setRejectOpen] = useState(false);
-  const [decisionBusy, setDecisionBusy] = useState<"approve" | "reject" | null>(null);
+  const [decisionBusy, setDecisionBusy] = useState<"reject" | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [editBusy, setEditBusy] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
@@ -150,9 +149,6 @@ export function ReviewPage() {
   const [imageRequestStartedAt, setImageRequestStartedAt] = useState<number | null>(null);
   const [copyBusy, setCopyBusy] = useState(false);
   const [toast, setToast] = useState("");
-  const finalChecksRef = useRef<HTMLElement>(null);
-  const firstFinalCheckRef = useRef<HTMLInputElement>(null);
-
   useEffect(() => {
     if (detail?.content.rewriteStatus === "queued") setRewritePending(true);
   }, [detail?.content.id, detail?.content.rewriteStatus]);
@@ -309,7 +305,6 @@ export function ReviewPage() {
             : apiState === "drafting"
               ? "drafting"
               : "planning";
-  const finalChecksComplete = checks.sources && checks.ads;
   const staleDetail = detail.freshness?.stale === true;
   const latestJob = detail.jobs[0] ?? null;
   const autoReady = detail.automation?.autoApproved === true && detail.automation.reviewStatus === "approved";
@@ -322,12 +317,6 @@ export function ReviewPage() {
     && !staleDetail
     && !pipelineBusy
     && decisionBusy === null;
-  // Keep approval visible for a generated draft. The handler explains which
-  // quality gate is blocking approval and focuses that section for the user.
-  const canRequestApproval = (status === "review" || status === "drafting")
-    && connectionStatus === "connected"
-    && !staleDetail
-    && decisionBusy === null;
   const currentSources = detail.sources.map((source) => ({
     organization: source.organization,
     date: source.collectedAt.slice(0, 10),
@@ -339,6 +328,7 @@ export function ReviewPage() {
   const renderableImagePackage = isReadyImagePackage(imagePackage) ? imagePackage : null;
   const imageGenerationFailed = imagePackage?.status === "failed" || detail.content.imageGenerationStatus === "failed";
   const imageGenerationReady = isReadyImagePackage(imagePackage);
+  const imageGenerationQueued = imagePackage?.status === "queued";
   const evidenceReview = evidenceReviewFrom(latestVersion);
   const effectiveQualityItems = detail.qualityResults.map((result) => {
         const definition = {
@@ -401,55 +391,6 @@ export function ReviewPage() {
   const jumpTo = (id: string) => {
     setActiveOutline(id);
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
-  };
-
-  const approve = async () => {
-    if (!canRequestApproval) return;
-    if (!finalChecksComplete) {
-      finalChecksRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-      window.setTimeout(() => firstFinalCheckRef.current?.focus(), 350);
-      setToast("최종 확인 두 항목을 체크해야 승인할 수 있습니다.");
-      window.setTimeout(() => setToast(""), 3200);
-      return;
-    }
-    if (status !== "review") {
-      const firstFailure = failedQualityItems[0];
-      if (firstFailure) {
-        setExpandedQuality(firstFailure.id);
-        document.getElementById(`quality-${firstFailure.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
-        setToast("아직 검토 대기 상태가 아닙니다. 실패한 품질 점검을 먼저 보완해 주세요.");
-      } else {
-        setToast("자동화 단계가 끝난 뒤 승인할 수 있습니다. 잠시 후 새로고침해 주세요.");
-      }
-      window.setTimeout(() => setToast(""), 4200);
-      return;
-    }
-    if (failedQualityItems.length > 0) {
-      const firstFailure = failedQualityItems[0];
-      setExpandedQuality(firstFailure.id);
-      document.getElementById(`quality-${firstFailure.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
-      setToast(`자동 검수 실패 ${failedQualityItems.length}건을 먼저 보완해야 승인할 수 있습니다.`);
-      window.setTimeout(() => setToast(""), 4200);
-      return;
-    }
-    setDecisionBusy("approve");
-    try {
-      const updated = await approveApi({ sources: checks.sources, advertising: checks.ads });
-      if (updated?.imagesQueued === true) {
-        setImageRequestStartedAt(Date.now());
-        setImagePending(true);
-      }
-      setToast(updated?.imagesQueued === false
-        ? "원고는 승인됐지만 이미지 생성 요청에 실패했습니다. 이미지 탭에서 다시 요청해주세요."
-        : updated?.mirrorSynced === false
-        ? "승인은 저장됐지만 운영 DB 동기화가 지연되고 있습니다. 잠시 후 다시 열어 확인해주세요."
-        : "원고를 승인하고 이미지 생성을 시작했어요. 완료되면 이미지 탭으로 이동합니다.");
-    } catch (error) {
-      setToast(error instanceof Error ? error.message : "승인 처리에 실패했습니다.");
-    } finally {
-      setDecisionBusy(null);
-    }
-    window.setTimeout(() => setToast(""), 3200);
   };
 
   const generateImages = async (assetId?: string, feedback?: string) => {
@@ -515,7 +456,6 @@ export function ReviewPage() {
       await editApi(input);
       await refresh();
       setEditOpen(false);
-      setChecks({ sources: false, ads: false });
       setToast("수정본을 새 버전으로 저장했어요. 검토 대기 상태로 전환했습니다.");
     } catch (error) {
       setToast(error instanceof Error ? error.message : "원고 수정에 실패했습니다.");
@@ -540,7 +480,6 @@ export function ReviewPage() {
     }
   };
 
-  void approve;
   return (
     <div className="review-page">
       <header className="review-header">
@@ -614,34 +553,15 @@ export function ReviewPage() {
             <span />
             {staleDetail ? "최신 원고 조회 지연 · 저장된 내용 표시 중" : "최신 원고와 자동 실행 기록 확인 완료"}
           </div>
-          <section className="inspector-section final-checks final-checks--priority" ref={finalChecksRef}>
-            {imageGenerationFailed ? (
-              <>
-                <h3>자동 완성 상태</h3>
-                <p>원고와 품질 검수는 완료됐지만 이미지 생성 품질 검수에 통과하지 못했습니다. 이미지 탭에서 실패 사유를 확인한 뒤 다시 생성해 주세요.</p>
-              </>
-            ) : imageGenerationReady ? (
-              <>
-                <h3>자동 완성 상태</h3>
-                <p>원고·사람 말투 보정·품질 검수·이미지 생성까지 완료됐습니다. 아래의 수정 요청은 필요할 때만 사용하세요.</p>
-              </>
-            ) : (
-              <>
-                <h3>최종 승인 확인</h3>
-                <label>
-                  <input ref={firstFinalCheckRef} type="checkbox" checked={checks.sources} onChange={(event) => setChecks((current) => ({ ...current, sources: event.target.checked }))} />
-                  <span>수치와 출처를 확인했어요</span>
-                </label>
-                <label>
-                  <input type="checkbox" checked={checks.ads} onChange={(event) => setChecks((current) => ({ ...current, ads: event.target.checked }))} />
-                  <span>광고성 표현을 확인했어요</span>
-                </label>
-                {!finalChecksComplete && status === "review" ? <p>실제 승인 처리는 두 항목을 모두 확인한 뒤 가능합니다.</p> : null}
-                {failedQualityItems.length > 0 && status === "review" ? (
-                  <p role="alert">자동 검수 실패 {failedQualityItems.length}건을 보완한 뒤 승인할 수 있습니다.</p>
-                ) : null}
-              </>
-            )}
+          <section className="inspector-section auto-completion-state" aria-live="polite">
+            <h3>{imageGenerationFailed ? "이미지 보완 필요" : imageGenerationReady ? "자동 완성 완료" : imageGenerationQueued ? "이미지 생성 중" : "자동 완성 상태"}</h3>
+            <p>{imageGenerationFailed
+              ? "원고는 저장되어 있습니다. 이미지 탭에서 실패한 이미지별로 재생성하거나 수정 의견을 남길 수 있습니다."
+              : imageGenerationReady
+                ? "원고와 이미지가 모두 저장되었습니다. 필요할 때만 수정 요청을 사용하세요."
+                : imageGenerationQueued
+                  ? "원고는 저장되어 있으며 이미지 생성 결과를 기다리고 있습니다."
+                  : "원고는 자동으로 저장됩니다. 별도의 최종 확인 체크 없이 바로 확인하고 수정할 수 있습니다."}</p>
           </section>
           {latestJob ? (
             <section className="pipeline-progress" aria-label="자동화 단계">
@@ -786,10 +706,13 @@ function ImageAssetsView({
   const canGenerate = contentStatus !== "deleted";
   const readyPackage = isReadyImagePackage(packageState) ? packageState : null;
   const ready = readyPackage !== null;
-  // Failed manifests retain metadata for diagnosis, but their files are
-  // removed by the workflow. Never render those paths as broken <img> tags.
-  const assets = readyPackage?.assets ?? [];
-  const displayable = ready;
+  // Failed packages now retain their generated candidates. Show them in the
+  // image tab for diagnosis and targeted repair, but never use them for copy
+  // or publication (those paths remain ready-only below).
+  const inspectablePackage = packageState && (packageState.assets?.length ?? 0) > 0 ? packageState : null;
+  const assets = inspectablePackage?.assets ?? [];
+  const previewOnly = inspectablePackage?.status === "failed";
+  const displayable = assets.length > 0;
   const packageGeneratedAt = packageState?.generatedAt;
   const visualQuality = packageState?.visualQuality;
   const visualQualityByAsset = new Map((visualQuality?.assets ?? []).map((item) => [item.id, item]));
@@ -812,10 +735,15 @@ function ImageAssetsView({
         <div className="image-assets__state"><PageLoadingState label="고품질 대표 이미지와 본문 이미지를 생성하는 중입니다." /></div>
       ) : displayable ? (
         <>
+          {previewOnly ? (
+            <div className="image-assets__preview-warning" role="status">
+              품질 검수 전 미리보기입니다. 현재 이미지는 진단·수정용이며 게시용 복사에는 포함되지 않습니다.
+            </div>
+          ) : null}
           <div className="image-assets__grid">
             {assets.map((asset) => (
               <figure className={asset.role === "hero" ? "image-asset image-asset--hero" : "image-asset"} key={asset.id}>
-                <img src={contentImageUrl(contentId, asset.id, packageGeneratedAt)} alt={asset.altText} loading="lazy" />
+                <img src={contentImageUrl(contentId, asset.id, packageGeneratedAt, previewOnly)} alt={asset.altText} loading="lazy" />
                 <figcaption>
                   {(() => {
                     const quality = visualQualityByAsset.get(asset.id);

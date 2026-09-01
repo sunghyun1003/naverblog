@@ -5,23 +5,28 @@ import type { ApiContent, ApiFreshness } from "../../api/types";
 import { Button } from "../../components/Button";
 import { StatusBadge } from "../../components/StatusBadge";
 import { mapContent } from "../../api/mapping";
+import { readRuntimeCache, writeRuntimeCache } from "../../api/runtimeCache";
 
 export function SchedulePage() {
-  const [contents, setContents] = useState<ApiContent[]>([]);
+  const cached = readRuntimeCache<{ items: ApiContent[]; freshness?: ApiFreshness }>("schedule:contents");
+  const [contents, setContents] = useState<ApiContent[]>(cached?.items ?? []);
   const [dates, setDates] = useState<Record<string, string>>({});
   const [urls, setUrls] = useState<Record<string, string>>({});
   const [message, setMessage] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [freshness, setFreshness] = useState<ApiFreshness | null>(null);
+  const [loading, setLoading] = useState(!cached);
+  const [freshness, setFreshness] = useState<ApiFreshness | null>(cached?.freshness ?? null);
   const [actionBusy, setActionBusy] = useState<{ contentId: string; action: "schedule" | "publish" } | null>(null);
   const actionLockRef = useRef(false);
 
   const refresh = async (signal?: AbortSignal, force = false) => {
-    setLoading(true);
+    setLoading(contents.length === 0);
     try {
       const response = await listContents(signal, force);
-      setContents(response.items.filter((content) => ["approved", "scheduled", "published"].includes(content.state)));
-      setFreshness(response.freshness ?? null);
+      const nextItems = response.items.filter((content) => ["approved", "scheduled", "published"].includes(content.state));
+      const nextFreshness = response.freshness ?? null;
+      setContents(nextItems);
+      setFreshness(nextFreshness);
+      writeRuntimeCache("schedule:contents", { items: nextItems, freshness: nextFreshness ?? undefined });
     } finally {
       setLoading(false);
     }

@@ -1,15 +1,15 @@
 import { Navigate, Route, Routes, useParams } from "react-router-dom";
 import { AppShell } from "./components/AppShell";
-import { DashboardPage } from "./features/dashboard/DashboardPage";
-import { ReviewPage } from "./features/review/ReviewPage";
 import { useAuth } from "./features/auth/AuthProvider";
 import { LoginPage } from "./features/auth/LoginPage";
+import { BrandMark } from "./components/BrandMark";
+import { DashboardPage } from "./features/dashboard/DashboardPage";
+import { ReviewPage } from "./features/review/ReviewPage";
 import { HomePage } from "./features/operations/HomePage";
 import { TrendsPage } from "./features/operations/TrendsPage";
 import { SchedulePage } from "./features/operations/SchedulePage";
 import { SettingsPage } from "./features/operations/SettingsPage";
 import { AutomationHistoryPage } from "./features/operations/AutomationHistoryPage";
-import { BrandMark } from "./components/BrandMark";
 
 function KeyedReviewPage() {
   const { contentId } = useParams();
@@ -32,25 +32,13 @@ export default function App() {
     <Routes>
       <Route element={<AppShell />}>
         <Route index element={<HomePage />} />
-        <Route
-          path="home"
-          element={<HomePage />}
-        />
+        <Route path="home" element={<HomePage />} />
         <Route path="contents" element={<DashboardPage />} />
         <Route path="contents/:contentId" element={<KeyedReviewPage />} />
-        <Route
-          path="trends"
-          element={<TrendsPage />}
-        />
-        <Route
-          path="schedule"
-          element={<SchedulePage />}
-        />
+        <Route path="trends" element={<TrendsPage />} />
+        <Route path="schedule" element={<SchedulePage />} />
         <Route path="history" element={<AutomationHistoryPage />} />
-        <Route
-          path="settings"
-          element={<SettingsPage />}
-        />
+        <Route path="settings" element={<SettingsPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/home" replace />} />
     </Routes>

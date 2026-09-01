@@ -101,6 +101,33 @@ test("1MB를 넘는 트렌드 스냅샷은 Git Blob API로 읽는다", async () 
   assert.equal(trends.items[0]?.title, "자동차보험");
 });
 
+test("트렌드 조회는 짧게 캐시하고 명시적 새로고침만 원격 파일을 다시 읽는다", async () => {
+  let latestReads = 0;
+  const latest = {
+    collectionDate: "2026-09-02",
+    collectedAt: "2026-09-02T00:00:00Z",
+    queryCount: 1,
+    itemCount: 1,
+    items: [{ title: "자동차보험", link: "https://example.com", description: "후보", bloggerName: "블로그", postDate: "2026-09-02" }],
+  };
+  const mockFetch = (async (input: string | URL | Request) => {
+    const url = String(input);
+    if (url.includes("/contents/data/latest.json")) {
+      latestReads += 1;
+      return file(latest);
+    }
+    return json({ message: "Unexpected request" }, 500);
+  }) as typeof fetch;
+  const service = new GitHubAutomationService({ owner: "owner", repository: "repo", branch: "main", token: "token" }, mockFetch);
+
+  await Promise.all([service.getTrends(), service.getTrends(), service.getTrends()]);
+  assert.equal(latestReads, 1);
+  await service.getTrends();
+  assert.equal(latestReads, 1);
+  await service.getTrends(true);
+  assert.equal(latestReads, 2);
+});
+
 test("1MB를 넘는 파일이 encoding none으로 반환돼도 Git Blob API로 읽는다", async () => {
   const latest = {
     collectionDate: "2026-09-01",
@@ -152,12 +179,9 @@ test("대시보드 일정 설정을 워크플로우와 설정 파일에 한 커�
   await service.updateAutomationSettings(settings);
   assert.equal(writtenBlobs.length, 3);
   assert.ok(writtenBlobs.some((value) => value.includes('"frequency": "weekdays"')));
-  assert.ok(writtenBlobs.some((value) => value.includes('cron: "10 7 * * *"')
-    && value.includes('cron: "20 7 * * *"')
-    && value.includes('cron: "57 7 * * *"')
-    && value.includes('cron: "7 8 * * *"')
-    && value.includes('cron: "57 8 * * *"')
-    && value.includes('cron: "7 9 * * *"')));
+  const generateWorkflow = writtenBlobs.find((value) => value.includes("dashboard-schedule:start") && value.includes('cron: "10 7 * * *"')) ?? "";
+  assert.match(generateWorkflow, /cron: "10 7 \* \* \*"/);
+  assert.equal((generateWorkflow.match(/cron:/g) ?? []).length, 1);
 });
 
 test("실패 단계와 Codex 사용량을 실행 이력으로 합친다", async () => {
@@ -405,4 +429,26 @@ test("원고 영구 삭제는 GitHub 파일과 결정 파일을 한 커밋으로
     "output/drafts/2026-08-29/run-123/status.json",
   ]);
   assert.ok(treeBody.tree.every((entry) => entry.sha === null));
+});
+
+test("failed image candidates are available only through explicit preview", async () => {
+  const imageBytes = Buffer.from("failed-candidate-image");
+  const mockFetch = (async (input: string | URL | Request) => {
+    const url = String(input);
+    if (url.includes("/git/trees/main")) return json({ truncated: false, tree: [
+      { path: "output/drafts/2026-09-02/run-777/status.json", type: "blob" },
+      { path: "output/drafts/2026-09-02/run-777/images/manifest.json", type: "blob" },
+      { path: "output/drafts/2026-09-02/run-777/images/hero.jpg", type: "blob" },
+    ] });
+    if (url.includes("images%2Fmanifest.json") || url.includes("images/manifest.json")) return file({
+      status: "failed",
+      assets: [{ id: "hero", path: "hero.jpg" }],
+    });
+    if (url.includes("hero.jpg")) return json({ content: imageBytes.toString("base64"), encoding: "base64", sha: "failed-image-sha" });
+    return json({ message: "Not Found" }, 404);
+  }) as typeof fetch;
+  const service = new GitHubAutomationService({ owner: "owner", repository: "repo", branch: "main", token: "token" }, mockFetch);
+  await assert.rejects(() => service.getDraftImage("777", "hero"), (error: unknown) => (error as { code?: string }).code === "IMAGE_NOT_FOUND");
+  const preview = await service.getDraftImage("777", "hero", { allowFailed: true });
+  assert.deepEqual(preview.body, imageBytes);
 });

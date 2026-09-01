@@ -583,7 +583,7 @@ test("GitHub 최근 원고 동기화 후 Neon의 전체 원고 목록을 보존�
   assert.equal(response.statusCode, 200);
   const body = response.json<{ items: Array<{ id: string }>; freshness: { source: string; stale: boolean } }>();
   assert.deepEqual(body.items.map((item) => item.id).sort(), ["901", "902"]);
-  assert.equal(synchronizedKnownIds?.has("901"), true);
+  assert.equal(synchronizedKnownIds?.has("901"), false);
   assert.equal(body.freshness.source, "postgres-cache");
   assert.equal(body.freshness.stale, false);
 });

@@ -66,24 +66,29 @@ export function HomePage() {
     ? cachedContentValue
     : null;
   const cachedTrendValue = readRuntimeCache<ApiTrendSnapshot>("trends");
+  const cachedRuns = readRuntimeCache<{ items: ApiWorkflowRun[] }>("home:runs");
   const cachedTrends = cachedTrendValue && isCurrentSeoulDate(cachedTrendValue.collectionDate)
     ? cachedTrendValue
     : null;
   const initialContents = cachedContents && "items" in cachedContents ? cachedContents.items : cachedContents?.contents ?? [];
   const [contents, setContents] = useState<ApiContent[]>(initialContents);
-  const [runs, setRuns] = useState<ApiWorkflowRun[]>([]);
+  const [runs, setRuns] = useState<ApiWorkflowRun[]>(cachedRuns?.items ?? []);
   const [freshness, setFreshness] = useState<ApiFreshness | null>(cachedContents?.freshness ?? null);
   const [trends, setTrends] = useState<ApiTrendSnapshot | null>(cachedTrends);
   const [loading, setLoading] = useState(!cachedContents && !cachedTrends);
   const [error, setError] = useState("");
 
-  const refresh = async (signal?: AbortSignal) => {
-    setLoading(true);
+  const refresh = async (signal?: AbortSignal, force = false) => {
+    // Keep the current dashboard visible while refreshing. Setting the page
+    // to a full loading state on every tab revisit caused the brief blank
+    // screen users saw between routes.
+    const hasVisibleData = contents.length > 0 || runs.length > 0 || trends !== null;
+    setLoading(!hasVisibleData);
     setError("");
     const results = await Promise.allSettled([
-      listContents(signal),
+      listContents(signal, force),
       listWorkflowRuns(signal),
-      getTrends(signal),
+      getTrends(signal, force),
     ]);
     if (signal?.aborted) return;
 
@@ -93,7 +98,10 @@ export function HomePage() {
       setFreshness(contentResult.value.freshness ?? null);
       writeRuntimeCache("home:contents", contentResult.value);
     }
-    if (runResult.status === "fulfilled") setRuns(runResult.value.items);
+    if (runResult.status === "fulfilled") {
+      setRuns(runResult.value.items);
+      writeRuntimeCache("home:runs", runResult.value);
+    }
     if (trendResult.status === "fulfilled") {
       const nextTrends = trendResult.value;
       // Do not discard a valid but delayed collection. The trend card can
@@ -111,7 +119,7 @@ export function HomePage() {
 
   useEffect(() => {
     const controller = new AbortController();
-    void refresh(controller.signal);
+    void refresh(controller.signal, true);
     return () => controller.abort();
   }, []);
 
@@ -177,7 +185,7 @@ export function HomePage() {
     <div className="operations-page home-page" aria-busy={loading}>
       <header className="operations-heading home-heading">
         <div className="operations-actions">
-          <Button icon={<RefreshCw size={17} />} onClick={() => void refresh()} disabled={loading}>{loading ? "확인 중..." : "새로고침"}</Button>
+          <Button icon={<RefreshCw size={17} />} onClick={() => void refresh(undefined, true)} disabled={loading}>{loading ? "확인 중..." : "새로고침"}</Button>
           <Button variant="brand" onClick={() => navigate("/contents")}>콘텐츠 관리</Button>
         </div>
       </header>

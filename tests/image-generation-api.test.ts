@@ -10,8 +10,13 @@ test("image generation can be requested before editorial approval", async (conte
     state: { deletedAt: null, rewriteStatus: null },
   } as unknown as AutomationDraftDetail;
   const dispatches: Array<{ workflow: string; inputs: Record<string, string> }> = [];
+  let updatedState = { ...draft.state };
   const githubAutomation = {
     getDraft: async () => draft,
+    updateState: async (_runId: string, changes: Record<string, unknown>) => {
+      updatedState = { ...updatedState, ...changes };
+      return updatedState;
+    },
     dispatch: async (workflow: string, inputs: Record<string, string>) => {
       dispatches.push({ workflow, inputs });
     },
@@ -26,6 +31,7 @@ test("image generation can be requested before editorial approval", async (conte
   });
 
   assert.equal(response.statusCode, 202);
+  assert.equal(updatedState.imageGenerationStatus, "queued");
   assert.deepEqual(dispatches, [{
     workflow: "images",
     inputs: {

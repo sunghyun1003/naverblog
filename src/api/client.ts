@@ -366,9 +366,13 @@ export function generateContentImages(contentId: string, input?: { assetId?: str
   });
 }
 
-export function contentImageUrl(contentId: string, assetId: string, version?: string): string {
+export function contentImageUrl(contentId: string, assetId: string, version?: string, preview = false): string {
   const base = `${apiBaseUrl}/api/contents/${encodeURIComponent(contentId)}/images/${encodeURIComponent(assetId)}`;
-  return version ? `${base}?v=${encodeURIComponent(version)}` : base;
+  const params = new URLSearchParams();
+  if (version) params.set("v", version);
+  if (preview) params.set("preview", "true");
+  const query = params.toString();
+  return query ? `${base}?${query}` : base;
 }
 
 export function getContentCopyAssets(contentId: string): Promise<{ expiresAt: string; items: Array<{ assetId: string; url: string }> }> {

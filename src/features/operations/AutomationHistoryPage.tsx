@@ -60,6 +60,7 @@ export function AutomationHistoryPage() {
   const cached = readRuntimeCache<{ items: ApiAutomationHistoryItem[] }>("automation:history");
   const [items, setItems] = useState(cached?.items ?? []);
   const [loading, setLoading] = useState(!cached);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [workflow, setWorkflow] = useState<"all" | ApiAutomationHistoryItem["workflow"]>("all");
   const requestedStatus = searchParams.get("status");
@@ -69,7 +70,8 @@ export function AutomationHistoryPage() {
   const [page, setPage] = useState(1);
 
   const refresh = async (signal?: AbortSignal) => {
-    setLoading(true);
+    setLoading(items.length === 0);
+    setRefreshing(true);
     setError("");
     try {
       const response = await listAutomationHistory(signal);
@@ -78,7 +80,10 @@ export function AutomationHistoryPage() {
     } catch (reason) {
       if (!signal?.aborted) setError(reason instanceof Error ? reason.message : "실행 이력을 불러오지 못했습니다.");
     } finally {
-      if (!signal?.aborted) setLoading(false);
+      if (!signal?.aborted) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   };
 
@@ -105,7 +110,7 @@ export function AutomationHistoryPage() {
   return (
     <div className="operations-page history-page">
       <header className="operations-heading">
-        <Button icon={<RefreshCw size={17} />} onClick={() => void refresh()} disabled={loading}>{loading ? "확인 중..." : "새로고침"}</Button>
+        <Button icon={<RefreshCw size={17} />} onClick={() => void refresh()} disabled={loading || refreshing}>{refreshing ? "확인 중..." : "새로고침"}</Button>
       </header>
       <section className="operations-section history-section">
         <div className="history-toolbar">

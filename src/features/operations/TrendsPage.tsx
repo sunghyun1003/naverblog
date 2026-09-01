@@ -44,12 +44,12 @@ export function TrendsPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [message, setMessage] = useState("");
 
-  const refresh = async (signal?: AbortSignal, initial = false) => {
+  const refresh = async (signal?: AbortSignal, initial = false, force = false) => {
     if (initial) setLoading(true);
     else setRefreshing(true);
     setMessage("");
     try {
-      const next = await getTrends(signal, !usableCachedSnapshot || !initial);
+      const next = await getTrends(signal, force);
       writeRuntimeCache("trends", next);
       // A collection can be delayed (for example, when the scheduled
       // workflow is still queued). Keep the newest snapshot returned by the
@@ -70,7 +70,7 @@ export function TrendsPage() {
   };
   useEffect(() => {
     const controller = new AbortController();
-    void refresh(controller.signal, !usableCachedSnapshot);
+    void refresh(controller.signal, !usableCachedSnapshot, false);
     return () => controller.abort();
   }, []);
   const items = useMemo(() => {
@@ -93,7 +93,7 @@ export function TrendsPage() {
   return (
     <div className="operations-page" aria-busy={loading || refreshing}>
       <header className="operations-heading">
-        <div className="operations-actions"><Button onClick={() => void refresh()} icon={<RefreshCw size={17} />} disabled={loading || refreshing}>{refreshing ? "최신화 중..." : "새로고침"}</Button><Button variant="brand" onClick={() => void collect()} disabled={busy || loading || refreshing}>{busy ? "요청 중..." : "지금 수집"}</Button></div>
+        <div className="operations-actions"><Button onClick={() => void refresh(undefined, false, true)} icon={<RefreshCw size={17} />} disabled={loading || refreshing}>{refreshing ? "최신화 중..." : "새로고침"}</Button><Button variant="brand" onClick={() => void collect()} disabled={busy || loading || refreshing}>{busy ? "요청 중..." : "지금 수집"}</Button></div>
       </header>
       {message ? <div className="operations-notice" role="status">{message}</div> : null}
       {!snapshot ? (

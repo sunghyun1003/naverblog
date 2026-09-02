@@ -14,4 +14,12 @@ test("운영 화면은 공통 중앙 캔버스와 좌우 여백을 사용한다"
 test("설정 화면도 다른 운영 화면과 같은 상단 리듬을 갖는다", async () => {
   const source = await readFile(new URL("../src/features/operations/SettingsPage.tsx", import.meta.url), "utf8");
   assert.match(source, /className="operations-heading settings-heading"/);
+  assert.doesNotMatch(source, /automation-diagnostics|getAutomationDiagnostics|자동화 연결 상태/);
+});
+
+test("탭 재진입은 캐시를 먼저 사용하고 강제 원격 동기화는 명시적 새로고침에만 사용한다", async () => {
+  const dashboardHook = await readFile(new URL("../src/features/dashboard/useContents.ts", import.meta.url), "utf8");
+  const homePage = await readFile(new URL("../src/features/operations/HomePage.tsx", import.meta.url), "utf8");
+  assert.match(dashboardHook, /void refresh\(controller\.signal, !cached\)/);
+  assert.match(homePage, /void refresh\(controller\.signal, !cachedContents && !cachedRuns && !cachedTrends\)/);
 });

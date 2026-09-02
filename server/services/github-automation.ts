@@ -7,6 +7,18 @@ export interface GitHubAutomationConfig {
   token: string;
 }
 
+export interface AutomationConnectionDiagnostics {
+  status: "ok" | "attention";
+  repository: string;
+  branch: string;
+  repositoryReadable: boolean;
+  branchReadable: boolean;
+  workflowsReadable: boolean;
+  canWrite: boolean | null;
+  checkedAt: string;
+  message: string;
+}
+
 /**
  * Error returned by the GitHub API while reading or writing automation files.
  * Keeping the HTTP status lets the API layer give the operator an actionable
@@ -722,6 +734,91 @@ export class GitHubAutomationService {
     const value = await this.readOptionalJson<AutomationSettings>("config/automation-settings.json") ?? defaultAutomationSettings;
     this.automationSettingsCache = { value, expiresAt: Date.now() + 60_000 };
     return value;
+  }
+
+  /**
+   * Read-only preflight for the settings screen. This deliberately performs
+   * no commit and no workflow dispatch, so an invalid PAT can be diagnosed
+   * without changing the automation repository or spending AI tokens.
+   */
+  async diagnoseAutomationConnection(): Promise<AutomationConnectionDiagnostics> {
+    const checkedAt = new Date().toISOString();
+    const repository = `${this.config.owner}/${this.config.repository}`;
+    let repositoryReadable = false;
+    let canWrite: boolean | null = null;
+
+    try {
+      const metadata = await this.github<{
+        permissions?: { push?: boolean };
+      }>("");
+      repositoryReadable = true;
+      canWrite = typeof metadata.permissions?.push === "boolean" ? metadata.permissions.push : null;
+    } catch (error) {
+      const status = error instanceof GitHubAutomationError ? error.status : null;
+      const message = status === 401 || status === 403
+        ? "자동화 저장소를 읽을 권한이 없습니다. Fine-grained 토큰의 대상 저장소를 확인해 주세요."
+        : status === 404
+          ? "자동화 저장소를 찾을 수 없습니다. 저장소 소유자와 이름을 확인해 주세요."
+          : "자동화 저장소 연결을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.";
+      return {
+        status: "attention",
+        repository,
+        branch: this.config.branch,
+        repositoryReadable: false,
+        branchReadable: false,
+        workflowsReadable: false,
+        canWrite: null,
+        checkedAt,
+        message,
+      };
+    }
+
+    let branchReadable = false;
+    try {
+      await this.github(`/git/ref/heads/${encodeURIComponent(this.config.branch)}`);
+      branchReadable = true;
+    } catch {
+      // Keep the diagnostic response actionable instead of surfacing a 500.
+    }
+
+    const workflowReadable = await Promise.all(["collect", "generate"].map(async (workflow) => {
+      try {
+        await this.readText(`.github/workflows/${workflow}.yml`);
+        return true;
+      } catch {
+        return false;
+      }
+    }));
+    const workflowsReadable = workflowReadable.every(Boolean);
+    const status: AutomationConnectionDiagnostics["status"] = repositoryReadable
+      && branchReadable
+      && workflowsReadable
+      && canWrite !== false
+      ? "ok"
+      : "attention";
+    const message = status === "ok"
+      ? canWrite === true
+        ? "저장소·브랜치·워크플로를 읽을 수 있고 설정 저장 권한도 확인했습니다."
+        : "저장소·브랜치·워크플로를 읽을 수 있습니다. 저장 권한은 실제 저장 전에 확인됩니다."
+      : canWrite === false
+        ? "저장소는 읽을 수 있지만 쓰기 권한이 없습니다. 토큰에 Contents 쓰기 권한을 추가해 주세요."
+        : !branchReadable
+          ? `브랜치 '${this.config.branch}'를 찾을 수 없습니다.`
+          : !workflowsReadable
+            ? "collect.yml 또는 generate.yml 워크플로를 읽을 수 없습니다."
+            : "자동화 저장소 연결을 확인하지 못했습니다.";
+
+    return {
+      status,
+      repository,
+      branch: this.config.branch,
+      repositoryReadable,
+      branchReadable,
+      workflowsReadable,
+      canWrite,
+      checkedAt,
+      message,
+    };
   }
 
   async updateAutomationSettings(settings: AutomationSettings): Promise<AutomationSettings> {

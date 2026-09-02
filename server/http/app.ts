@@ -380,6 +380,21 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   app.get("/api/automation/settings", async () => ({
     settings: githubAutomation ? await githubAutomation.getAutomationSettings() : null,
   }));
+  app.get("/api/automation/diagnostics", async () => ({
+    diagnostics: githubAutomation
+      ? await githubAutomation.diagnoseAutomationConnection()
+      : {
+          status: "attention",
+          repository: "",
+          branch: "",
+          repositoryReadable: false,
+          branchReadable: false,
+          workflowsReadable: false,
+          canWrite: null,
+          checkedAt: new Date().toISOString(),
+          message: "GitHub 자동화가 연결되지 않았습니다.",
+        },
+  }));
   app.put("/api/automation/settings", async (request, reply) => {
     if (!githubAutomation) return reply.status(503).send({ error: { code: "AUTOMATION_NOT_CONFIGURED", message: "GitHub 자동화가 연결되지 않았습니다.", details: null } });
     const settings = automationSettingsSchema.parse(request.body) as AutomationSettings;

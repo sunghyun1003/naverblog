@@ -184,6 +184,42 @@ test("대시보드 일정 설정을 워크플로우와 설정 파일에 한 커�
   assert.equal((generateWorkflow.match(/cron:/g) ?? []).length, 1);
 });
 
+test("자동화 연결 진단은 저장소를 변경하지 않고 권한을 확인한다", async () => {
+  const requests: string[] = [];
+  const mockFetch = (async (input: string | URL | Request) => {
+    const url = String(input);
+    requests.push(url);
+    if (url.endsWith("/repos/owner/repo")) return json({ permissions: { push: true } });
+    if (url.endsWith("/git/ref/heads/main")) return json({ object: { sha: "head" } });
+    if (url.includes(".github/workflows/collect.yml") || url.includes(".github/workflows/generate.yml")) return file("name: test\n");
+    return json({ message: "Unexpected request" }, 500);
+  }) as typeof fetch;
+  const service = new GitHubAutomationService({ owner: "owner", repository: "repo", branch: "main", token: "token" }, mockFetch);
+  const result = await service.diagnoseAutomationConnection();
+  assert.equal(result.status, "ok");
+  assert.equal(result.repositoryReadable, true);
+  assert.equal(result.branchReadable, true);
+  assert.equal(result.workflowsReadable, true);
+  assert.equal(result.canWrite, true);
+  assert.match(result.message, /저장 권한/);
+  assert.ok(requests.some((url) => url.endsWith("/repos/owner/repo")));
+});
+
+test("자동화 연결 진단은 쓰기 권한 부족을 설정 화면에 알린다", async () => {
+  const mockFetch = (async (input: string | URL | Request) => {
+    const url = String(input);
+    if (url.endsWith("/repos/owner/repo")) return json({ permissions: { push: false } });
+    if (url.endsWith("/git/ref/heads/main")) return json({ object: { sha: "head" } });
+    if (url.includes(".github/workflows/collect.yml") || url.includes(".github/workflows/generate.yml")) return file("name: test\n");
+    return json({ message: "Unexpected request" }, 500);
+  }) as typeof fetch;
+  const service = new GitHubAutomationService({ owner: "owner", repository: "repo", branch: "main", token: "read-only" }, mockFetch);
+  const result = await service.diagnoseAutomationConnection();
+  assert.equal(result.status, "attention");
+  assert.equal(result.canWrite, false);
+  assert.match(result.message, /쓰기 권한/);
+});
+
 test("실패 단계와 Codex 사용량을 실행 이력으로 합친다", async () => {
   const mockFetch = (async (input: string | URL | Request) => {
     const url = String(input);

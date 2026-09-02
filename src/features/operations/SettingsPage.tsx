@@ -1,7 +1,7 @@
-import { Save } from "lucide-react";
+import { RefreshCw, Save } from "lucide-react";
 import { useEffect, useState } from "react";
-import { getAutomationSettings, updateAutomationSettings } from "../../api/client";
-import type { ApiAutomationFrequency, ApiAutomationSchedule, ApiAutomationSettings } from "../../api/types";
+import { getAutomationDiagnostics, getAutomationSettings, updateAutomationSettings } from "../../api/client";
+import type { ApiAutomationDiagnostics, ApiAutomationFrequency, ApiAutomationSchedule, ApiAutomationSettings } from "../../api/types";
 import { readRuntimeCache, writeRuntimeCache } from "../../api/runtimeCache";
 import { Button } from "../../components/Button";
 import { PageLoadingState } from "../../components/PageLoadingState";
@@ -37,6 +37,8 @@ export function SettingsPage() {
   const [loading, setLoading] = useState(!cachedSettings);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [diagnostics, setDiagnostics] = useState<ApiAutomationDiagnostics | null>(null);
+  const [diagnosticsLoading, setDiagnosticsLoading] = useState(true);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -49,6 +51,36 @@ export function SettingsPage() {
     }).finally(() => {
       if (!controller.signal.aborted) setLoading(false);
     });
+    return () => controller.abort();
+  }, []);
+
+  const checkConnection = async (signal?: AbortSignal) => {
+    setDiagnosticsLoading(true);
+    try {
+      const response = await getAutomationDiagnostics(signal);
+      if (!signal?.aborted) setDiagnostics(response.diagnostics);
+    } catch {
+      if (!signal?.aborted) {
+        setDiagnostics({
+          status: "attention",
+          repository: "",
+          branch: "",
+          repositoryReadable: false,
+          branchReadable: false,
+          workflowsReadable: false,
+          canWrite: null,
+          checkedAt: new Date().toISOString(),
+          message: "자동화 저장소 연결을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.",
+        });
+      }
+    } finally {
+      if (!signal?.aborted) setDiagnosticsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void checkConnection(controller.signal);
     return () => controller.abort();
   }, []);
 
@@ -72,10 +104,20 @@ export function SettingsPage() {
       <header className="operations-heading settings-heading" aria-hidden="true" />
       <section className="operations-section automation-settings-section">
         <header className="settings-section-heading"><div><h2>자동 실행</h2><p>수집과 원고 생성을 한 화면에서 관리합니다.</p></div><span className="settings-timezone">한국 시간 기준</span></header>
+        <div className={`automation-diagnostics ${diagnostics?.status === "ok" ? "automation-diagnostics--ok" : "automation-diagnostics--attention"}`} role="status">
+          <div>
+            <strong>자동화 연결 상태</strong>
+            <p>{diagnosticsLoading ? "연동 상태를 확인하고 있습니다." : diagnostics?.message ?? "연동 상태를 확인해 주세요."}</p>
+            {!diagnosticsLoading && diagnostics?.repository ? <small>{diagnostics.repository} · {diagnostics.branch}</small> : null}
+          </div>
+          <Button variant="outline" size="small" icon={<RefreshCw size={15} />} disabled={diagnosticsLoading} onClick={() => void checkConnection()}>
+            {diagnosticsLoading ? "확인 중" : "다시 확인"}
+          </Button>
+        </div>
         {loading ? <PageLoadingState label="설정을 불러오는 중입니다." compact /> : null}
         {!loading ? <><div className="automation-setting-card"><div><strong>콘텐츠 수집</strong><small>네이버 블로그 후보를 모읍니다.</small></div><ScheduleFields value={settings.collection} onChange={(collection) => setSettings((current) => ({ ...current, collection }))} /></div>
         <div className="automation-setting-card"><div><strong>원고 생성</strong><small>수집된 후보를 바탕으로 원고를 만듭니다.</small></div><ScheduleFields value={settings.generation} count={settings.generation.count} onCountChange={(count) => setSettings((current) => ({ ...current, generation: { ...current.generation, count } }))} onChange={(generation) => setSettings((current) => ({ ...current, generation: { ...current.generation, ...generation } }))} /></div></> : null}
-        <div className="automation-setting-actions"><span className={message.includes("실패") || message.includes("못했습니다") || message.includes("오류") ? "settings-message settings-message--error" : "settings-message"} role="status">{message}</span><Button variant="brand" icon={<Save size={17} />} disabled={loading || saving} onClick={() => void save()}>{saving ? "저장 중..." : "설정 저장"}</Button></div>
+        <div className="automation-setting-actions"><span className={message.includes("실패") || message.includes("못했습니다") || message.includes("오류") || message.includes("권한") ? "settings-message settings-message--error" : "settings-message"} role="status">{message}</span><Button variant="brand" icon={<Save size={17} />} disabled={loading || saving} onClick={() => void save()}>{saving ? "저장 중..." : "설정 저장"}</Button></div>
       </section>
     </div>
   );

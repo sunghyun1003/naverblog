@@ -20,17 +20,32 @@ export function useContents() {
   const refresh = useCallback(async (signal?: AbortSignal, force = false) => {
     setRefreshing(true);
     try {
-      const [contentResponse, capabilityResponse] = await Promise.all([
+      // The content list is the primary surface. A transient capabilities
+      // failure must not hide an otherwise healthy list or lock the page into
+      // an offline state; reconcile each response independently.
+      const results = await Promise.allSettled([
         listContents(signal, force),
         getCapabilities(signal),
       ]);
-      const nextContents = contentResponse.items.map(mapContent);
-      const nextFreshness = contentResponse.freshness ?? null;
-      setContents(nextContents);
-      setFreshness(nextFreshness);
-      setCapabilities(capabilityResponse);
-      writeRuntimeCache("contents", { contents: nextContents, capabilities: capabilityResponse, freshness: nextFreshness });
-      setConnectionStatus("connected");
+      if (signal?.aborted) return;
+
+      const [contentResult, capabilityResult] = results;
+      if (contentResult.status === "fulfilled") {
+        const nextContents = contentResult.value.items.map(mapContent);
+        const nextFreshness = contentResult.value.freshness ?? null;
+        setContents(nextContents);
+        setFreshness(nextFreshness);
+        const cachedState = readRuntimeCache<{ capabilities: ApiCapabilities | null }>("contents");
+        const nextCapabilities = capabilityResult.status === "fulfilled" ? capabilityResult.value : cachedState?.capabilities ?? null;
+        if (capabilityResult.status === "fulfilled") setCapabilities(capabilityResult.value);
+        writeRuntimeCache("contents", { contents: nextContents, capabilities: nextCapabilities, freshness: nextFreshness });
+        setConnectionStatus("connected");
+      } else if (capabilityResult.status === "fulfilled") {
+        setCapabilities(capabilityResult.value);
+        setConnectionStatus("offline");
+      } else {
+        throw contentResult.reason;
+      }
     } finally {
       setRefreshing(false);
     }

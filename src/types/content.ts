@@ -1,9 +1,6 @@
 export type ContentStatus =
-  | "planning"
   | "drafting"
-  | "tone"
-  | "review"
-  | "approved"
+  | "ready"
   | "scheduled"
   | "published"
   | "deleted";

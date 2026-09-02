@@ -132,27 +132,12 @@
   white-space: nowrap;
 }
 
-.status--planning {
-  background: var(--color-bg-fill);
-  color: var(--color-text-secondary);
-}
-
 .status--drafting {
   background: #f5f3fe;
   color: #6d50cb;
 }
 
-.status--tone {
-  background: var(--color-warning-weak);
-  color: var(--color-warning);
-}
-
-.status--review {
-  background: var(--color-brand-weak);
-  color: #b93901;
-}
-
-.status--approved {
+.status--ready {
   background: var(--color-positive-weak);
   color: var(--color-positive);
 }

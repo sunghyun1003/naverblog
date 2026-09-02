@@ -2,12 +2,12 @@ import type { ApiContent, ApiContentState } from "./types";
 import type { ContentItem, ContentStatus } from "../types/content";
 
 const statusMap: Record<ApiContentState, ContentStatus> = {
-  idea: "planning",
-  researching: "planning",
-  brief_ready: "planning",
+  idea: "drafting",
+  researching: "drafting",
+  brief_ready: "drafting",
   drafting: "drafting",
-  review_ready: "review",
-  approved: "approved",
+  review_ready: "ready",
+  approved: "ready",
   scheduled: "scheduled",
   published: "published",
   measured: "published",

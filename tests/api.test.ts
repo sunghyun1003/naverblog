@@ -653,6 +653,55 @@ test("이미 발행된 GitHub 원고는 다시 예약 상태로 되돌리지 않
   assert.equal(updates, 0);
 });
 
+test("완성된 GitHub 원고는 별도 승인 없이 예약 알림을 저장한다", async (context) => {
+  const draft = reviewDraft("506", "완성 원고 예약 알림");
+  let updatedState = draft.state;
+  const githubAutomation = {
+    getDraft: async () => draft,
+    updateState: async (_runId: string, changes: Partial<DashboardDraftState>, actor: string) => {
+      updatedState = changedState(draft, changes, actor);
+      return updatedState;
+    },
+  } as unknown as GitHubAutomationService;
+  const app = buildApp({ githubAutomation, databaseProvider: "memory" });
+  context.after(() => app.close());
+
+  const response = await app.inject({
+    method: "POST",
+    url: "/api/contents/506/schedule",
+    payload: { scheduledAt: "2026-08-25T07:00:00+09:00" },
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.json<{ content: { state: string } }>().content.state, "scheduled");
+  assert.equal(updatedState.publicationStatus, "scheduled");
+});
+
+test("수동 발행 완료는 네이버 URL 없이도 기록할 수 있다", async (context) => {
+  const draft = reviewDraft("507", "URL 없는 수동 발행", {
+    ...reviewDraft("507").state,
+    reviewStatus: "pending",
+    publicationStatus: "scheduled",
+    scheduledAt: "2026-08-25T07:00:00.000Z",
+  });
+  let updatedState = draft.state;
+  const githubAutomation = {
+    getDraft: async () => draft,
+    updateState: async (_runId: string, changes: Partial<DashboardDraftState>, actor: string) => {
+      updatedState = changedState(draft, changes, actor);
+      return updatedState;
+    },
+  } as unknown as GitHubAutomationService;
+  const app = buildApp({ githubAutomation, databaseProvider: "memory" });
+  context.after(() => app.close());
+
+  const response = await app.inject({ method: "POST", url: "/api/contents/507/publish", payload: {} });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.json<{ content: { state: string }; publication: { externalUrl: string | null } }>().content.state, "published");
+  assert.equal(updatedState.externalUrl, null);
+});
+
 test("동일 GitHub 원고의 승인·반려 경합은 한 요청만 성공한다", async (context) => {
   const draft = reviewDraft("606", "동시 검수 원고");
   let claimed = false;

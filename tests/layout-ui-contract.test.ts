@@ -23,3 +23,11 @@ test("탭 재진입은 캐시를 먼저 사용하고 강제 원격 동기화는 
   assert.match(dashboardHook, /void refresh\(controller\.signal, !cached\)/);
   assert.match(homePage, /void refresh\(controller\.signal, !cachedContents && !cachedRuns && !cachedTrends\)/);
 });
+
+test("콘텐츠 목록은 내부 처리 단계를 운영자 상태로 노출하지 않는다", async () => {
+  const dashboard = await readFile(new URL("../src/features/dashboard/DashboardPage.tsx", import.meta.url), "utf8");
+  assert.match(dashboard, /\{ key: "drafting", label: "작성 중" \}/);
+  assert.match(dashboard, /\{ key: "ready", label: "완성" \}/);
+  assert.match(dashboard, /\{ key: "scheduled", label: "예약 알림" \}/);
+  assert.doesNotMatch(dashboard, /\{ key: "(?:planning|review|approved|tone)"/);
+});

@@ -437,7 +437,7 @@ export function scheduleContent(contentId: string, scheduledAt: string): Promise
   });
 }
 
-export function markContentPublished(contentId: string, externalUrl: string): Promise<{ mirrorSynced?: boolean }> {
+export function markContentPublished(contentId: string, externalUrl = ""): Promise<{ mirrorSynced?: boolean }> {
   return request(`/api/contents/${encodeURIComponent(contentId)}/publish`, {
     method: "POST",
     body: JSON.stringify({ externalUrl }),

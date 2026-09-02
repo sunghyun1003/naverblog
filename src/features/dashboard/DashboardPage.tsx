@@ -20,23 +20,35 @@ import type { ContentStatus } from "../../types/content";
 import { CreateContentDialog } from "./CreateContentDialog";
 import { useContents } from "./useContents";
 
-const filters: Array<{ key: "all" | ContentStatus; label: string }> = [
+type DashboardFilter = "all" | ContentStatus;
+
+const filters: Array<{ key: DashboardFilter; label: string }> = [
   { key: "all", label: "전체" },
-  { key: "planning", label: "기획" },
   { key: "drafting", label: "작성 중" },
-  { key: "review", label: "검토 필요" },
-  { key: "approved", label: "승인 완료" },
-  { key: "scheduled", label: "예약" },
+  { key: "ready", label: "완성" },
+  { key: "scheduled", label: "예약 알림" },
   { key: "published", label: "발행 완료" },
 ];
+
+// Older links and cached notifications may still contain the former workflow
+// labels. Keep those URLs working while showing only the simplified operator
+// states in the dashboard.
+const legacyFilterMap: Record<string, DashboardFilter> = {
+  planning: "drafting",
+  tone: "drafting",
+  review: "ready",
+  approved: "ready",
+};
 
 export function DashboardPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { contents, connectionStatus, creating, refreshing, createAndRun, refreshNow, removeMany } = useContents();
   const requestedFilter = searchParams.get("filter");
-  const activeFilter: "all" | ContentStatus = requestedFilter && filters.some((filter) => filter.key === requestedFilter)
-    ? requestedFilter as ContentStatus
+  const activeFilter: DashboardFilter = requestedFilter
+    ? (filters.some((filter) => filter.key === requestedFilter)
+      ? requestedFilter as ContentStatus
+      : legacyFilterMap[requestedFilter] ?? "all")
     : "all";
   const [query, setQuery] = useState("");
   const [mineOnly, setMineOnly] = useState(false);
@@ -49,7 +61,7 @@ export function DashboardPage() {
   const deletable = (content: { status: ContentStatus }) =>
     !["scheduled", "published", "deleted"].includes(content.status);
 
-  const setActiveFilter = (filter: "all" | ContentStatus) => {
+  const setActiveFilter = (filter: DashboardFilter) => {
     const next = new URLSearchParams(searchParams);
     if (filter === "all") next.delete("filter");
     else next.set("filter", filter);
@@ -86,14 +98,14 @@ export function DashboardPage() {
     setSelectedIds((current) => new Set([...current].filter((id) => contents.some((content) => content.id === id))));
   }, [contents]);
 
-  const reviewCount = contents.filter((content) => content.status === "review").length;
+  const readyCount = contents.filter((content) => content.status === "ready").length;
   const scheduledCount = contents.filter((content) => content.status === "scheduled").length;
   const recentActivities = contents.slice(0, 4).map((content) => ({
     id: content.id,
     title: content.title,
     message: `현재 상태: ${contentStatusLabel[content.status]}`,
     time: content.updatedAt,
-    tone: content.status === "review" ? "brand" : content.status === "scheduled" ? "info" : "neutral",
+    tone: content.status === "ready" ? "brand" : content.status === "scheduled" ? "info" : "neutral",
   }));
 
   const handleCreate = async (title: string, strategy: "trend" | "original") => {
@@ -170,15 +182,15 @@ export function DashboardPage() {
         {connectionStatus === "offline" ? <div className="operations-notice" role="alert">콘텐츠를 불러오지 못했습니다. 잠시 후 새로고침해주세요.</div> : null}
 
         <section className="status-strip" aria-label="오늘의 콘텐츠 상태">
-          <button type="button" onClick={() => setActiveFilter("review")}>
+          <button type="button" onClick={() => setActiveFilter("ready")}>
             <span className="status-strip__icon status-strip__icon--brand"><Clock3 size={21} /></span>
-            <span><small>검토 대기</small><strong>{connectionStatus === "connecting" ? "-" : reviewCount}</strong></span>
+            <span><small>완성 원고</small><strong>{connectionStatus === "connecting" ? "-" : readyCount}</strong></span>
           </button>
           <button type="button" onClick={() => setActiveFilter("scheduled")}>
             <span className="status-strip__icon status-strip__icon--info"><CalendarCheck2 size={21} /></span>
             <span><small>오늘 예약</small><strong>{connectionStatus === "connecting" ? "-" : scheduledCount}</strong></span>
           </button>
-          <button type="button" onClick={() => navigate("/trends")}>
+          <button type="button" onClick={() => setActiveFilter("all")}>
             <span className="status-strip__icon status-strip__icon--positive"><FileCheck2 size={21} /></span>
             <span><small>전체 콘텐츠</small><strong>{connectionStatus === "connecting" ? "-" : contents.length}</strong></span>
           </button>
@@ -306,9 +318,9 @@ export function DashboardPage() {
       <aside className="task-rail">
         <section>
           <h2>오늘 할 일</h2>
-          <button type="button" className="task-item" onClick={() => setActiveFilter("review")}>
+          <button type="button" className="task-item" onClick={() => setActiveFilter("ready")}>
             <span className="task-item__icon task-item__icon--brand"><FileCheck2 size={20} /></span>
-            <span><strong>원고 검토</strong><small>{connectionStatus === "connecting" ? "-" : `${reviewCount}건`}</small></span>
+            <span><strong>완성 원고 확인</strong><small>{connectionStatus === "connecting" ? "-" : `${readyCount}건`}</small></span>
             <ChevronRight size={18} />
           </button>
           <button type="button" className="task-item" onClick={() => setActiveFilter("scheduled")}>
@@ -317,11 +329,11 @@ export function DashboardPage() {
             <ChevronRight size={18} />
           </button>
           <button type="button" className="task-item" onClick={() => {
-            const reviewItem = contents.find((content) => content.status === "review");
-            if (reviewItem) navigate(`/contents/${reviewItem.id}`);
+            const readyItem = contents.find((content) => content.status === "ready");
+            if (readyItem) navigate(`/contents/${readyItem.id}`);
           }}>
             <span className="task-item__icon task-item__icon--positive"><FileCheck2 size={20} /></span>
-            <span><strong>자료 출처 확인</strong><small>{connectionStatus === "connecting" ? "-" : `${reviewCount}건`}</small></span>
+            <span><strong>자료 출처 확인</strong><small>{connectionStatus === "connecting" ? "-" : `${readyCount}건`}</small></span>
             <ChevronRight size={18} />
           </button>
         </section>

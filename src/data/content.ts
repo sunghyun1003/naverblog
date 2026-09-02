@@ -1,12 +1,9 @@
 import type { ActivityItem, ContentItem, ContentStatus } from "../types/content";
 
 export const contentStatusLabel: Record<ContentStatus, string> = {
-  planning: "기획",
   drafting: "작성 중",
-  tone: "말투 보정",
-  review: "검토 필요",
-  approved: "승인 완료",
-  scheduled: "예약",
+  ready: "완성",
+  scheduled: "예약 알림",
   published: "발행 완료",
   deleted: "삭제됨",
 };
@@ -15,7 +12,7 @@ export const initialContents: ContentItem[] = [
   {
     id: "silson-generations",
     title: "실손보험 세대별 차이, 무엇이 달라졌을까?",
-    status: "review",
+    status: "ready",
     assignee: "김서연",
     initials: "김",
     updatedAt: "10분 전",
@@ -24,7 +21,7 @@ export const initialContents: ContentItem[] = [
   {
     id: "car-renewal-checklist",
     title: "자동차보험 갱신 전 확인할 5가지",
-    status: "tone",
+    status: "drafting",
     assignee: "이민준",
     initials: "이",
     updatedAt: "25분 전",
@@ -42,7 +39,7 @@ export const initialContents: ContentItem[] = [
   {
     id: "dental-waiting-period",
     title: "치아보험 가입 전 확인할 면책기간",
-    status: "planning",
+    status: "drafting",
     assignee: "최유진",
     initials: "최",
     updatedAt: "2시간 전",
@@ -72,7 +69,7 @@ export const recentActivities: ActivityItem[] = [
   {
     id: "activity-1",
     title: "실손보험 세대별 차이",
-    message: "상태가 ‘검토 필요’로 변경됨",
+    message: "원고가 완성되어 확인할 수 있음",
     time: "10분 전",
     tone: "brand",
   },
@@ -86,7 +83,7 @@ export const recentActivities: ActivityItem[] = [
   {
     id: "activity-3",
     title: "보험금 청구 시 놓치기 쉬운 서류",
-    message: "8월 18일 발행 예약",
+    message: "8월 18일 예약 알림",
     time: "1시간 전",
     tone: "info",
   },

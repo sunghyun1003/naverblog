@@ -82,9 +82,9 @@ export function AppShell() {
             {notificationsOpen ? (
               <div className="notification-popover" id="notification-popover" role="dialog" aria-label="확인할 내용">
                 <header><strong>확인할 내용</strong><span>운영 상태를 빠르게 확인하세요.</span></header>
-                <Link to="/contents?filter=review" onClick={() => setNotificationsOpen(false)}>
+                <Link to="/contents?filter=ready" onClick={() => setNotificationsOpen(false)}>
                   <span className="notification-popover__dot notification-popover__dot--brand" />
-                  <span><strong>검토할 원고</strong><small>근거와 표현을 확인할 콘텐츠</small></span>
+                  <span><strong>완성 원고</strong><small>원고와 근거를 확인할 콘텐츠</small></span>
                 </Link>
                 <Link to="/history?status=failure" onClick={() => setNotificationsOpen(false)}>
                   <span className="notification-popover__dot notification-popover__dot--critical" />

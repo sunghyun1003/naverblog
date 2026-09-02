@@ -22,7 +22,7 @@ export function SchedulePage() {
     setLoading(contents.length === 0);
     try {
       const response = await listContents(signal, force);
-      const nextItems = response.items.filter((content) => ["approved", "scheduled", "published"].includes(content.state));
+      const nextItems = response.items.filter((content) => ["review_ready", "approved", "scheduled", "published", "measured"].includes(content.state));
       const nextFreshness = response.freshness ?? null;
       setContents(nextItems);
       setFreshness(nextFreshness);
@@ -42,7 +42,7 @@ export function SchedulePage() {
 
   const schedule = async (content: ApiContent) => {
     const value = dates[content.id];
-    if (!value || loading || actionLockRef.current) return;
+    if (loading || actionLockRef.current) return;
     actionLockRef.current = true;
     setActionBusy({ contentId: content.id, action: "schedule" });
     try {
@@ -67,11 +67,11 @@ export function SchedulePage() {
     try {
       const result = await markContentPublished(content.id, value);
       setMessage(result.mirrorSynced === false
-        ? "발행 기록은 저장됐지만 운영 DB 동기화가 지연되고 있습니다. 잠시 후 새로고침해주세요."
-        : "네이버 발행 URL을 저장했습니다.");
+        ? "발행 완료 기록은 저장됐지만 운영 DB 동기화가 지연되고 있습니다. 잠시 후 새로고침해주세요."
+        : "수동 발행 완료를 기록했습니다.");
       await refresh();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "발행 URL 저장에 실패했습니다.");
+      setMessage(error instanceof Error ? error.message : "발행 완료 기록 저장에 실패했습니다.");
     } finally {
       actionLockRef.current = false;
       setActionBusy(null);
@@ -81,6 +81,7 @@ export function SchedulePage() {
   return (
     <div className="operations-page" aria-busy={loading || actionBusy !== null}>
       <header className="operations-heading"><Button icon={<RefreshCw size={17} />} onClick={() => void refresh(undefined, true).catch((error: unknown) => setMessage(error instanceof Error ? error.message : "발행 일정을 불러오지 못했습니다."))} disabled={loading || actionBusy !== null}>새로고침</Button></header>
+      <div className="operations-notice" role="note">네이버 블로그에는 원고를 직접 붙여넣어 게시합니다. 게시 후 URL을 입력하고 <strong>수동 발행 완료</strong>를 눌러 기록을 남기세요. URL은 나중에 입력해도 됩니다.</div>
       {message ? <div className="operations-notice" role="status">{message}</div> : null}
       {freshness?.stale ? (
         <div className="operations-notice" role="alert">최신 조회가 지연되어 마지막 저장 내용을 표시합니다. 예약·발행 전에 새로고침해주세요.</div>
@@ -93,13 +94,13 @@ export function SchedulePage() {
           return (
             <article key={content.id}>
               <header><h2>{content.title}</h2><StatusBadge status={mapped.status} /></header>
-              {content.state === "approved" ? <div className="schedule-control"><label><span>발행 예정</span><input type="datetime-local" value={dates[content.id] ?? ""} disabled={loading || actionBusy !== null} onChange={(event) => setDates((current) => ({ ...current, [content.id]: event.target.value }))} /></label><Button variant="brand" onClick={() => void schedule(content)} disabled={loading || actionBusy !== null || !dates[content.id]}>{actionBusy?.contentId === content.id && actionBusy.action === "schedule" ? "저장 중..." : "예약 저장"}</Button></div> : null}
-              {content.state === "scheduled" ? <div className="schedule-control"><label><span>네이버 게시 URL</span><input type="url" placeholder="https://blog.naver.com/..." value={urls[content.id] ?? ""} disabled={loading || actionBusy !== null} onChange={(event) => setUrls((current) => ({ ...current, [content.id]: event.target.value }))} /></label><Button variant="brand" icon={<CheckCircle2 size={17} />} onClick={() => void published(content)} disabled={loading || actionBusy !== null || !urls[content.id]?.trim()}>{actionBusy?.contentId === content.id && actionBusy.action === "publish" ? "처리 중..." : "발행 완료"}</Button></div> : null}
-              {content.state === "published" && content.publishedAt ? <p className="published-link">발행 기록 {new Date(content.publishedAt).toLocaleString("ko-KR")}</p> : null}
+              {content.state === "review_ready" || content.state === "approved" ? <div className="schedule-control"><label><span>발행 예정</span><input type="datetime-local" value={dates[content.id] ?? ""} disabled={loading || actionBusy !== null} onChange={(event) => setDates((current) => ({ ...current, [content.id]: event.target.value }))} /></label><Button variant="brand" onClick={() => void schedule(content)} disabled={loading || actionBusy !== null || !dates[content.id]}>{actionBusy?.contentId === content.id && actionBusy.action === "schedule" ? "저장 중..." : "예약 알림 저장"}</Button></div> : null}
+              {content.state === "scheduled" ? <div className="schedule-control"><label><span>네이버 게시 URL (선택)</span><input type="url" placeholder="https://blog.naver.com/..." value={urls[content.id] ?? ""} disabled={loading || actionBusy !== null} onChange={(event) => setUrls((current) => ({ ...current, [content.id]: event.target.value }))} /></label><Button variant="brand" icon={<CheckCircle2 size={17} />} onClick={() => void published(content)} disabled={loading || actionBusy !== null}>{actionBusy?.contentId === content.id && actionBusy.action === "publish" ? "처리 중..." : "수동 발행 완료"}</Button></div> : null}
+              {(content.state === "published" || content.state === "measured") && content.publishedAt ? <p className="published-link">발행 기록 {new Date(content.publishedAt).toLocaleString("ko-KR")}</p> : null}
             </article>
           );
         })}
-        {!loading && !contents.length ? <div className="operations-empty">승인되거나 예약된 원고가 없습니다.</div> : null}
+        {!loading && !contents.length ? <div className="operations-empty">완성되거나 예약된 원고가 없습니다.</div> : null}
       </section>
     </div>
   );

@@ -36,7 +36,11 @@ const bulkDeleteSchema = z.object({
   ids: z.array(z.string().trim().min(1)).min(1).max(50),
 });
 const scheduleSchema = z.object({ scheduledAt: z.iso.datetime({ offset: true }) });
-const publicationSchema = z.object({ externalUrl: z.url().refine((value) => value.startsWith("https://blog.naver.com/"), "네이버 블로그 URL을 입력하세요.") });
+const naverBlogUrlSchema = z.url().refine((value) => value.startsWith("https://blog.naver.com/"), "네이버 블로그 URL을 입력하세요.");
+// Publishing is performed manually in Naver. The URL is useful for traceability
+// but optional so an operator can mark a post complete immediately after
+// pasting it, even before copying the final Naver URL.
+const publicationSchema = z.object({ externalUrl: z.union([naverBlogUrlSchema, z.literal("")]).optional().default("") });
 const loginSchema = z.object({ username: z.string().min(1).max(100), password: z.string().min(1).max(200) });
 const generationSchema = z.object({
   topic: z.string().trim().max(120).default(""),
@@ -723,8 +727,8 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     const actor = actorFrom(request, auth?.verifyCookie(request.headers.cookie)?.username);
     if (githubAutomation) {
       const draft = await githubAutomation.getDraft(id);
-      if (draft.reviewStatus !== "approved" || draft.publicationStatus !== "none") {
-        return reply.status(409).send({ error: { code: "CONTENT_NOT_SCHEDULABLE", message: "승인 후 아직 예약·발행되지 않은 원고만 예약할 수 있습니다.", details: null } });
+      if (!(draftToContent(draft).state === "review_ready" || draftToContent(draft).state === "approved") || draft.publicationStatus !== "none") {
+        return reply.status(409).send({ error: { code: "CONTENT_NOT_SCHEDULABLE", message: "완성된 원고만 예약 알림을 설정할 수 있습니다.", details: null } });
       }
       const state = await githubAutomation.updateState(id, { publicationStatus: "scheduled", scheduledAt: body.scheduledAt }, actor.id, draft.state);
       const updatedDraft = draftWithState(draft, state);
@@ -739,11 +743,11 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     if (githubAutomation) {
       const body = publicationSchema.parse(request.body);
       const draft = await githubAutomation.getDraft(id);
-      if (draft.reviewStatus !== "approved" || draft.publicationStatus !== "scheduled") {
-        return reply.status(409).send({ error: { code: "CONTENT_NOT_SCHEDULED", message: "승인 후 예약한 원고만 발행 완료로 처리할 수 있습니다.", details: null } });
+      if (draft.publicationStatus !== "scheduled") {
+        return reply.status(409).send({ error: { code: "CONTENT_NOT_SCHEDULED", message: "예약 알림을 설정한 원고만 발행 완료로 처리할 수 있습니다.", details: null } });
       }
       const now = new Date().toISOString();
-      const state = await githubAutomation.updateState(id, { publicationStatus: "published", publishedAt: now, externalUrl: body.externalUrl }, actor.id, draft.state);
+      const state = await githubAutomation.updateState(id, { publicationStatus: "published", publishedAt: now, externalUrl: body.externalUrl || null }, actor.id, draft.state);
       const updatedDraft = draftWithState(draft, state);
       const mirrorSynced = await persistGitHubDetailSafely(updatedDraft, "publish");
       return { content: draftToContent(updatedDraft), publication: state, mirrorSynced };

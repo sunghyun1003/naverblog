@@ -6,6 +6,7 @@ import { assertTransition, canTransition, listAllowedTransitions } from "../serv
 test("정상 상태 전이를 허용한다", () => {
   assert.equal(canTransition("idea", "researching"), true);
   assert.equal(canTransition("review_ready", "approved"), true);
+  assert.equal(canTransition("review_ready", "scheduled"), true);
   assert.deepEqual(listAllowedTransitions("published"), ["measured"]);
 });
 

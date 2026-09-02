@@ -162,9 +162,9 @@ export function ReviewPage() {
       try {
         const next = await refresh();
         if (stopped) return;
-        if (next.content.state === "review_ready") {
+        if (next.content.state === "review_ready" || next.content.state === "approved") {
           setRewritePending(false);
-          setToast("반려 의견을 반영한 새 버전이 완성됐어요. 다시 검토해주세요.");
+          setToast("수정 의견을 반영한 새 버전이 완성됐어요.");
           window.setTimeout(() => setToast(""), 5000);
         } else if (attempts >= 40) {
           setRewritePending(false);
@@ -292,19 +292,17 @@ export function ReviewPage() {
   }
 
   const apiState = detail.content.state;
-  const status: ContentStatus = apiState === "review_ready"
-      ? "review"
+  const status: ContentStatus = apiState === "review_ready" || apiState === "approved"
+      ? "ready"
       : apiState === "deleted"
         ? "deleted"
-      : apiState === "approved"
-        ? "approved"
         : apiState === "scheduled"
           ? "scheduled"
           : apiState === "published" || apiState === "measured"
             ? "published"
             : apiState === "drafting"
               ? "drafting"
-              : "planning";
+              : "drafting";
   const staleDetail = detail.freshness?.stale === true;
   const latestJob = detail.jobs[0] ?? null;
   const autoReady = detail.automation?.autoApproved === true && detail.automation.reviewStatus === "approved";
@@ -312,7 +310,7 @@ export function ReviewPage() {
     || detail.content.rewriteStatus === "queued";
   // A failed quality run is still actionable: the reviewer should be able to
   // reject it and trigger a rewrite instead of being trapped on this page.
-  const canReject = (autoReady || status === "review" || status === "drafting")
+  const canReject = (autoReady || status === "ready" || status === "drafting")
     && connectionStatus === "connected"
     && !staleDetail
     && !pipelineBusy
@@ -422,7 +420,7 @@ export function ReviewPage() {
       } else if (updated?.mirrorSynced === false) {
         setToast("반려 의견을 저장하고 자동 재작성을 시작했어요. 운영 DB는 다음 조회에서 다시 동기화합니다.");
       } else if (updated?.rewriteQueued === true) {
-        setToast("반려 의견을 저장하고 자동 재작성을 시작했어요. 완료되면 다시 검토 필요 상태로 돌아옵니다.");
+        setToast("수정 의견을 저장하고 자동 재작성을 시작했어요. 완료되면 다시 완성 상태로 돌아옵니다.");
       } else {
         setToast("반려 의견을 저장했어요.");
       }
@@ -456,7 +454,7 @@ export function ReviewPage() {
       await editApi(input);
       await refresh();
       setEditOpen(false);
-      setToast("수정본을 새 버전으로 저장했어요. 검토 대기 상태로 전환했습니다.");
+      setToast("수정본을 새 버전으로 저장했어요. 다시 작성 중 상태에서 처리합니다.");
     } catch (error) {
       setToast(error instanceof Error ? error.message : "원고 수정에 실패했습니다.");
       throw error;

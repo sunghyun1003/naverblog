@@ -6,7 +6,7 @@ const allowedTransitions: Record<ContentState, readonly ContentState[]> = {
   researching: ["brief_ready", "idea"],
   brief_ready: ["drafting", "researching"],
   drafting: ["review_ready", "brief_ready"],
-  review_ready: ["approved", "drafting"],
+  review_ready: ["approved", "drafting", "scheduled"],
   approved: ["scheduled", "review_ready"],
   scheduled: ["published", "approved"],
   published: ["measured"],

@@ -1,7 +1,6 @@
 import {
   ArrowRight,
   Bot,
-  CalendarCheck2,
   CheckCircle2,
   Clock3,
   Database,
@@ -130,9 +129,8 @@ export function HomePage() {
   const generateRun = runs.find((run) => run.workflow === "generate");
   const activeRun = [collectRun, generateRun].find((run) => run && run.status !== "completed");
   const failedRun = [collectRun, generateRun].find((run) => run?.status === "completed" && run.conclusion !== "success");
-  const reviewCount = contents.filter((content) => content.state === "review_ready").length;
+  const readyCount = contents.filter((content) => ["review_ready", "approved"].includes(content.state)).length;
   const workingCount = contents.filter((content) => ["idea", "researching", "brief_ready", "drafting"].includes(content.state)).length;
-  const approvedCount = contents.filter((content) => content.state === "approved").length;
   const scheduledCount = contents.filter((content) => content.state === "scheduled").length;
   const publishedCount = contents.filter((content) => ["published", "measured"].includes(content.state)).length;
   const recentContents = useMemo(
@@ -157,24 +155,15 @@ export function HomePage() {
         label: "실패 기록 보기",
         action: () => window.open(failedRun.url, "_blank", "noopener,noreferrer"),
       }
-      : reviewCount > 0
+      : readyCount > 0
         ? {
           tone: "brand",
           icon: <FileCheck2 size={22} />,
-          title: `검토할 원고가 ${reviewCount}건 있습니다`,
-          description: "공식 근거와 광고 위험 문구를 확인한 뒤 승인 또는 반려해주세요.",
-          label: "검토 시작",
-          action: () => navigate("/contents?filter=review"),
+          title: `완성된 원고가 ${readyCount}건 있습니다`,
+          description: "원고와 근거를 확인한 뒤 네이버 블로그에 직접 게시할 수 있습니다.",
+          label: "완성 원고 보기",
+          action: () => navigate("/contents?filter=ready"),
         }
-        : approvedCount > 0
-          ? {
-            tone: "positive",
-            icon: <CalendarCheck2 size={22} />,
-            title: `승인 완료 원고가 ${approvedCount}건 있습니다`,
-            description: "발행 단계는 마지막에 진행합니다. 필요할 때 발행 일정에서 확인할 수 있습니다.",
-            label: "승인 원고 보기",
-            action: () => navigate("/contents?filter=approved"),
-          }
           : {
             tone: "positive",
             icon: <CheckCircle2 size={22} />,
@@ -206,10 +195,9 @@ export function HomePage() {
           </section>
 
           <section className="home-status-grid" aria-label="콘텐츠 운영 요약">
-            <Link to="/contents"><small>기획·작성 중</small><strong>{workingCount}</strong><span>건</span></Link>
-            <Link to="/contents?filter=review"><small>검토 필요</small><strong>{reviewCount}</strong><span>건</span></Link>
-            <Link to="/contents?filter=approved"><small>승인 완료</small><strong>{approvedCount}</strong><span>건</span></Link>
-            <Link to="/contents?filter=scheduled"><small>발행 예약</small><strong>{scheduledCount}</strong><span>건</span></Link>
+            <Link to="/contents?filter=drafting"><small>작성 중</small><strong>{workingCount}</strong><span>건</span></Link>
+            <Link to="/contents?filter=ready"><small>완성</small><strong>{readyCount}</strong><span>건</span></Link>
+            <Link to="/contents?filter=scheduled"><small>예약 알림</small><strong>{scheduledCount}</strong><span>건</span></Link>
             <Link to="/contents?filter=published"><small>발행 완료</small><strong>{publishedCount}</strong><span>건</span></Link>
           </section>
 
@@ -243,8 +231,8 @@ export function HomePage() {
             <section className="operations-section home-card">
               <header><h2>발행 준비</h2><Link className="home-text-link" to="/schedule">일정 보기 <ArrowRight size={15} /></Link></header>
               <div className="home-trend-summary home-publishing-summary">
-                <div><small>승인 완료</small><strong>{approvedCount}건</strong></div>
-                <div><small>발행 예약</small><strong>{scheduledCount}건</strong></div>
+                <div><small>완성</small><strong>{readyCount}건</strong></div>
+                <div><small>예약 알림</small><strong>{scheduledCount}건</strong></div>
                 <div><small>발행 완료</small><strong>{publishedCount}건</strong></div>
               </div>
             </section>

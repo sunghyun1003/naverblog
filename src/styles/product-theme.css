@@ -1305,18 +1305,21 @@ select:focus-visible,
 /*
  * Shared page frame
  *
- * Every first-level workspace route must use the same centered canvas.  The
+ * Every first-level workspace route must use the same left-anchored canvas.  The
  * page-specific max-width declarations above were allowing the home/content
  * view to grow wider than trends, history and settings, which moved their
- * left edge and made the desktop UI feel inconsistent.  Keep this rule last
- * so a later page modifier cannot silently undo the shared frame.
+ * left edge and made the desktop UI feel inconsistent. Keep this rule last so
+ * a later page modifier cannot silently undo the shared frame. The canvas is
+ * intentionally anchored to the application content edge (not centered):
+ * wide monitors retain a comfortable right-side breathing room while every
+ * tab begins on the same left grid line.
  */
 .operations-page,
 .dashboard-page {
   width: min(100%, 1360px);
   max-width: 1360px;
   margin-right: auto;
-  margin-left: auto;
+  margin-left: 0;
 }
 
 .dashboard-page {

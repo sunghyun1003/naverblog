@@ -7,7 +7,7 @@ test("운영 화면은 공통 중앙 캔버스와 좌우 여백을 사용한다"
   const sharedFrame = source.slice(source.lastIndexOf("/*\n * Shared page frame"));
 
   assert.match(sharedFrame, /\.operations-page,\s*\.dashboard-page\s*\{[\s\S]*?width:\s*min\(100%,\s*1360px\)/);
-  assert.match(sharedFrame, /\.operations-page,\s*\.dashboard-page\s*\{[\s\S]*?margin-right:\s*auto;[\s\S]*?margin-left:\s*auto/);
+  assert.match(sharedFrame, /\.operations-page,\s*\.dashboard-page\s*\{[\s\S]*?margin-right:\s*auto;[\s\S]*?margin-left:\s*0/);
   assert.match(sharedFrame, /\.dashboard-page\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)\s+300px/);
 });
 

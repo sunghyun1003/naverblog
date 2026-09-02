@@ -92,6 +92,42 @@ test("GitHub 운영 모드에서는 저장소 콘텐츠를 운영 데이터 저�
   assert.equal("slack" in capabilities.integrations, false);
 });
 
+test("자동 실행 설정 저장 시 GitHub 연결 권한 실패를 구체적 메시지로 반환한다", async (context) => {
+  const workflowSource = `name: test\n\non:\n  # dashboard-schedule:start\n  schedule:\n    - cron: \"0 7 * * *\"\n      timezone: \"Asia/Seoul\"\n  # dashboard-schedule:end\n  workflow_dispatch:\n`;
+  const encodedWorkflow = Buffer.from(workflowSource, "utf8").toString("base64");
+  const request = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = String(input);
+    const method = init?.method ?? "GET";
+    if (url.includes(".github/workflows/collect.yml") || url.includes(".github/workflows/generate.yml")) {
+      return new Response(JSON.stringify({ content: encodedWorkflow, encoding: "base64", sha: "workflow-sha" }), { status: 200 });
+    }
+    if (url.endsWith("/git/ref/heads/main") && method === "GET") {
+      return new Response(JSON.stringify({ message: "Resource not accessible by personal access token" }), { status: 403 });
+    }
+    return new Response(JSON.stringify({ message: "Unexpected request" }), { status: 500 });
+  }) as typeof fetch;
+  const githubAutomation = new GitHubAutomationService({ owner: "owner", repository: "automation", branch: "main", token: "read-only-token" }, request);
+  const app = buildApp({ githubAutomation, databaseProvider: "memory" });
+  context.after(() => app.close());
+
+  const response = await app.inject({
+    method: "PUT",
+    url: "/api/automation/settings",
+    payload: {
+      schemaVersion: 1,
+      timezone: "Asia/Seoul",
+      collection: { enabled: true, frequency: "daily", time: "06:30", weekday: 1 },
+      generation: { enabled: true, frequency: "daily", time: "07:00", weekday: 1, count: 1 },
+    },
+  });
+
+  assert.equal(response.statusCode, 502);
+  const body = response.json<{ error: { code: string; message: string; details: { githubStatus: number } } }>();
+  assert.equal(body.error.code, "GITHUB_AUTOMATION_WRITE_FAILED");
+  assert.equal(body.error.details.githubStatus, 403);
+  assert.match(body.error.message, /쓰기 권한/);
+});
+
 test("Neon 동기화가 실패해도 GitHub 트렌드는 화면에 반환한다", async (context) => {
   class FailingTrendRepository extends InMemoryAutomationRepository {
     override async saveTrendSignals(_signals: TrendSignal[]): Promise<TrendSignal[]> {

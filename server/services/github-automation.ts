@@ -7,6 +7,18 @@ export interface GitHubAutomationConfig {
   token: string;
 }
 
+/**
+ * Error returned by the GitHub API while reading or writing automation files.
+ * Keeping the HTTP status lets the API layer give the operator an actionable
+ * message instead of hiding every failure behind a generic 500 response.
+ */
+export class GitHubAutomationError extends Error {
+  constructor(readonly status: number, message: string) {
+    super(message);
+    this.name = "GitHubAutomationError";
+  }
+}
+
 export type DashboardReviewStatus = "pending" | "approved" | "rejected";
 export type DashboardPublicationStatus = "none" | "scheduled" | "published";
 export type DashboardRewriteStatus = "queued" | "completed" | "failed";
@@ -590,7 +602,7 @@ function scheduleCron(schedule: AutomationSchedule, minuteOffset = 0): string {
   return `${minute} ${hour} * * ${day}`;
 }
 
-function renderScheduleBlock(schedule: AutomationSchedule): string {
+function renderScheduleBlock(schedule: AutomationSchedule, preservedSuffix = ""): string {
   const lines = ["  # dashboard-schedule:start"];
   if (schedule.enabled) {
     lines.push("  schedule:");
@@ -599,6 +611,7 @@ function renderScheduleBlock(schedule: AutomationSchedule): string {
     // cron waves that can consume Codex tokens more than once.
     lines.push(`    - cron: "${scheduleCron(schedule)}"`);
     lines.push("      timezone: \"Asia/Seoul\"");
+    if (preservedSuffix.trim()) lines.push(...preservedSuffix.trimEnd().split(/\r?\n/));
   }
   lines.push("  # dashboard-schedule:end");
   return lines.join("\n");
@@ -606,8 +619,23 @@ function renderScheduleBlock(schedule: AutomationSchedule): string {
 
 function replaceScheduleBlock(source: string, schedule: AutomationSchedule): string {
   const marker = /  # dashboard-schedule:start[\s\S]*?  # dashboard-schedule:end/;
-  if (!marker.test(source)) throw new Error("워크플로우에서 대시보드 일정 영역을 찾지 못했습니다.");
-  return source.replace(marker, renderScheduleBlock(schedule));
+  const matched = source.match(marker);
+  if (!matched) throw new Error("대상 워크플로우에서 대시보드 일정 영역을 찾지 못했습니다.");
+
+  // Keep any additional, explicitly-authored cron entries (for example the
+  // post-reset recovery check) when the operator edits the primary schedule.
+  // They are removed when the schedule is disabled so disabling automation is
+  // deterministic.
+  const blockLines = matched[0].split(/\r?\n/);
+  const firstCron = blockLines.findIndex((line) => /^\s+- cron:\s*/.test(line));
+  const firstTimezone = firstCron >= 0
+    ? blockLines.findIndex((line, index) => index > firstCron && /^\s+timezone:\s*/.test(line))
+    : -1;
+  const preservedSuffix = firstTimezone >= 0
+    ? blockLines.slice(firstTimezone + 1, -1).join("\n").trimEnd()
+    : "";
+
+  return source.replace(marker, renderScheduleBlock(schedule, schedule.enabled ? preservedSuffix : ""));
 }
 
 function defaultState(runId: string, generatedAt: string): DashboardDraftState {
@@ -1332,28 +1360,46 @@ export class GitHubAutomationService {
 
   private async commitFiles(files: Record<string, string>, message: string): Promise<void> {
     const refName = encodeURIComponent(this.config.branch);
-    const ref = await this.github<{ object: { sha: string } }>(`/git/ref/heads/${refName}`);
-    const head = await this.github<{ tree: { sha: string } }>(`/git/commits/${encodeURIComponent(ref.object.sha)}`);
-    const blobs = await Promise.all(Object.entries(files).map(async ([filePath, content]) => {
-      const blob = await this.github<{ sha: string }>("/git/blobs", {
-        method: "POST",
-        body: JSON.stringify({ content, encoding: "utf-8" }),
-      });
-      return { path: filePath, mode: "100644", type: "blob", sha: blob.sha };
-    }));
-    const nextTree = await this.github<{ sha: string }>("/git/trees", {
-      method: "POST",
-      body: JSON.stringify({ base_tree: head.tree.sha, tree: blobs }),
-    });
-    const commit = await this.github<{ sha: string }>("/git/commits", {
-      method: "POST",
-      body: JSON.stringify({ message, tree: nextTree.sha, parents: [ref.object.sha] }),
-    });
-    await this.github(`/git/refs/heads/${refName}`, {
-      method: "PATCH",
-      body: JSON.stringify({ sha: commit.sha, force: false }),
-    });
-    this.invalidateRepositoryCaches();
+    let lastError: unknown;
+
+    // Workflows commit generated output to the same branch. If that commit
+    // lands while this update is being prepared, retry from the new head.
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        const ref = await this.github<{ object: { sha: string } }>(`/git/ref/heads/${refName}`);
+        const head = await this.github<{ tree: { sha: string } }>(`/git/commits/${encodeURIComponent(ref.object.sha)}`);
+        const blobs = await Promise.all(Object.entries(files).map(async ([filePath, content]) => {
+          const blob = await this.github<{ sha: string }>("/git/blobs", {
+            method: "POST",
+            body: JSON.stringify({ content, encoding: "utf-8" }),
+          });
+          return { path: filePath, mode: "100644", type: "blob", sha: blob.sha };
+        }));
+        const nextTree = await this.github<{ sha: string }>("/git/trees", {
+          method: "POST",
+          body: JSON.stringify({ base_tree: head.tree.sha, tree: blobs }),
+        });
+        const commit = await this.github<{ sha: string }>("/git/commits", {
+          method: "POST",
+          body: JSON.stringify({ message, tree: nextTree.sha, parents: [ref.object.sha] }),
+        });
+        await this.github(`/git/refs/heads/${refName}`, {
+          method: "PATCH",
+          body: JSON.stringify({ sha: commit.sha, force: false }),
+        });
+        this.invalidateRepositoryCaches();
+        return;
+      } catch (error) {
+        lastError = error;
+        const retryable = error instanceof GitHubAutomationError
+          && (error.status === 409 || (error.status === 422 && /fast.?forward|reference|update/i.test(error.message)));
+        if (!retryable || attempt === 2) throw error;
+        this.invalidateRepositoryCaches();
+        await new Promise((resolve) => setTimeout(resolve, 150 * (attempt + 1)));
+      }
+    }
+
+    throw lastError instanceof Error ? lastError : new Error("GitHub automation commit failed");
   }
 
   private async raw(path: string, init: RequestInit = {}): Promise<Response> {
@@ -1377,8 +1423,11 @@ export class GitHubAutomationService {
     return response.json() as Promise<T>;
   }
 
-  private async githubError(response: Response): Promise<Error> {
+  private async githubError(response: Response): Promise<GitHubAutomationError> {
     const payload = await response.json().catch(() => null) as { message?: string } | null;
-    return new Error(`GitHub 자동화 요청 실패 (${response.status}): ${payload?.message ?? response.statusText}`);
+    return new GitHubAutomationError(
+      response.status,
+      `GitHub 자동화 요청 실패 (${response.status}): ${payload?.message ?? response.statusText}`,
+    );
   }
 }

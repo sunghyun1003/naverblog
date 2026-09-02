@@ -6,7 +6,7 @@ import { isDomainError } from "../domain/errors.js";
 import { userRoles, type Actor, type UserRole } from "../domain/types.js";
 import { randomId } from "../domain/utils.js";
 import { draftToContent, draftToDetail } from "../services/github-content-mapper.js";
-import type { AutomationDraftDetail, AutomationSettings, DashboardDraftState, GitHubAutomationService } from "../services/github-automation.js";
+import { GitHubAutomationError, type AutomationDraftDetail, type AutomationSettings, type DashboardDraftState, type GitHubAutomationService } from "../services/github-automation.js";
 import { persistGitHubDraftDetail, persistGitHubDraftSummaries, persistGitHubTrends } from "../services/github-persistence.js";
 import type { SessionAuthService } from "../services/session-auth.js";
 import { createAutomationSystem, type AutomationSystem } from "../system.js";
@@ -299,6 +299,20 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   app.setErrorHandler((error, _request, reply) => {
     if (isDomainError(error)) {
       return reply.status(error.statusCode).send({ error: { code: error.code, message: error.message, details: error.details ?? null } });
+    }
+    if (error instanceof GitHubAutomationError) {
+      const message = error.status === 401 || error.status === 403
+        ? "GitHub 자동화 저장소 접근 권한 또는 쓰기 권한이 없습니다. Fine-grained 토큰의 대상 저장소와 Contents → Read and write 권한을 확인해 주세요."
+        : error.status === 409 || error.status === 422
+          ? "자동화 저장소가 동시에 변경되었습니다. 잠시 후 다시 저장해 주세요."
+          : "GitHub 자동화 저장소 업데이트에 실패했습니다. 잠시 후 다시 시도해 주세요.";
+      return reply.status(502).send({
+        error: {
+          code: "GITHUB_AUTOMATION_WRITE_FAILED",
+          message,
+          details: { githubStatus: error.status },
+        },
+      });
     }
     if (error instanceof z.ZodError) {
       const reasonIssue = error.issues.find((issue) => issue.path[0] === "reason");

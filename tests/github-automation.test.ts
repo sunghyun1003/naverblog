@@ -452,3 +452,38 @@ test("failed image candidates are available only through explicit preview", asyn
   const preview = await service.getDraftImage("777", "hero", { allowFailed: true });
   assert.deepEqual(preview.body, imageBytes);
 });
+
+test("기본 일정 저장 시 추가 복구 일정은 유지하고 자동 실행을 끄면 함께 제거한다", async () => {
+  const workflowSource = `name: test\n\non:\n  # dashboard-schedule:start\n  schedule:\n    - cron: "0 7 * * *"\n      timezone: "Asia/Seoul"\n    # post-reset recovery\n    - cron: "15 9 * * *"\n      timezone: "Asia/Seoul"\n  # dashboard-schedule:end\n  workflow_dispatch:\n`;
+  const written: string[] = [];
+  const mockFetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = String(input);
+    const method = init?.method ?? "GET";
+    if (url.includes(".github/workflows/collect.yml") || url.includes(".github/workflows/generate.yml")) return file(workflowSource);
+    if (url.endsWith("/git/ref/heads/main") && method === "GET") return json({ object: { sha: "head-sha" } });
+    if (url.endsWith("/git/commits/head-sha")) return json({ tree: { sha: "base-tree" } });
+    if (url.endsWith("/git/blobs") && method === "POST") {
+      written.push((JSON.parse(String(init?.body)) as { content: string }).content);
+      return json({ sha: `blob-${written.length}` });
+    }
+    if (url.endsWith("/git/trees") && method === "POST") return json({ sha: "next-tree" });
+    if (url.endsWith("/git/commits") && method === "POST") return json({ sha: "next-commit" });
+    if (url.endsWith("/git/refs/heads/main") && method === "PATCH") return json({ ref: "refs/heads/main" });
+    return json({ message: "Unexpected request" }, 500);
+  }) as typeof fetch;
+  const service = new GitHubAutomationService({ owner: "owner", repository: "repo", branch: "main", token: "token" }, mockFetch);
+  const enabled = {
+    schemaVersion: 1 as const,
+    timezone: "Asia/Seoul" as const,
+    collection: { enabled: true, frequency: "daily" as const, time: "06:30", weekday: 1 },
+    generation: { enabled: true, frequency: "daily" as const, time: "07:00", weekday: 1, count: 1 },
+  };
+  await service.updateAutomationSettings(enabled);
+  const generation = written.find((value) => value.includes("post-reset recovery")) ?? "";
+  assert.match(generation, /cron: "15 9 \* \* \*"/);
+
+  written.length = 0;
+  await service.updateAutomationSettings({ ...enabled, generation: { ...enabled.generation, enabled: false } });
+  const disabledGeneration = written[2] ?? "";
+  assert.doesNotMatch(disabledGeneration, /cron:/);
+});

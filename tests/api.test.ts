@@ -128,29 +128,6 @@ test("자동 실행 설정 저장 시 GitHub 연결 권한 실패를 구체적 �
   assert.match(body.error.message, /쓰기 권한/);
 });
 
-test("자동화 연결 진단 API는 저장소를 변경하지 않고 상태를 반환한다", async (context) => {
-  const workflow = Buffer.from("name: test\n", "utf8").toString("base64");
-  const request = (async (input: string | URL | Request) => {
-    const url = String(input);
-    if (url.endsWith("/repos/owner/automation")) return new Response(JSON.stringify({ permissions: { push: true } }), { status: 200 });
-    if (url.endsWith("/git/ref/heads/main")) return new Response(JSON.stringify({ object: { sha: "head" } }), { status: 200 });
-    if (url.includes(".github/workflows/collect.yml") || url.includes(".github/workflows/generate.yml")) {
-      return new Response(JSON.stringify({ content: workflow, encoding: "base64", sha: "workflow-sha" }), { status: 200 });
-    }
-    return new Response(JSON.stringify({ message: "Unexpected request" }), { status: 500 });
-  }) as typeof fetch;
-  const githubAutomation = new GitHubAutomationService({ owner: "owner", repository: "automation", branch: "main", token: "test-token" }, request);
-  const app = buildApp({ githubAutomation, databaseProvider: "memory" });
-  context.after(() => app.close());
-
-  const response = await app.inject({ method: "GET", url: "/api/automation/diagnostics" });
-  assert.equal(response.statusCode, 200);
-  const diagnostics = response.json<{ diagnostics: { status: string; canWrite: boolean; workflowsReadable: boolean } }>().diagnostics;
-  assert.equal(diagnostics.status, "ok");
-  assert.equal(diagnostics.canWrite, true);
-  assert.equal(diagnostics.workflowsReadable, true);
-});
-
 test("Neon 동기화가 실패해도 GitHub 트렌드는 화면에 반환한다", async (context) => {
   class FailingTrendRepository extends InMemoryAutomationRepository {
     override async saveTrendSignals(_signals: TrendSignal[]): Promise<TrendSignal[]> {

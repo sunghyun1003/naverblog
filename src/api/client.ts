@@ -1,4 +1,4 @@
-import type { ApiAutomationDiagnostics, ApiAutomationHistoryItem, ApiAutomationSettings, ApiCapabilities, ApiContent, ApiContentDetail, ApiContentList, ApiJob, ApiTrendItem, ApiTrendSnapshot, ApiUser, ApiWorkflowRun } from "./types";
+import type { ApiAutomationHistoryItem, ApiAutomationSettings, ApiCapabilities, ApiContent, ApiContentDetail, ApiContentList, ApiJob, ApiTrendItem, ApiTrendSnapshot, ApiUser, ApiWorkflowRun } from "./types";
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "";
 
@@ -403,24 +403,6 @@ export async function listAutomationHistory(signal?: AbortSignal): Promise<{ ite
 export async function getAutomationSettings(signal?: AbortSignal): Promise<{ settings: ApiAutomationSettings | null }> {
   const payload = await request<unknown>("/api/automation/settings", { signal });
   return { settings: isRecord(payload) ? normalizeAutomationSettings(payload.settings) : null };
-}
-
-export async function getAutomationDiagnostics(signal?: AbortSignal): Promise<{ diagnostics: ApiAutomationDiagnostics }> {
-  const payload = await request<unknown>("/api/automation/diagnostics", { signal });
-  const value = isRecord(payload) && isRecord(payload.diagnostics) ? payload.diagnostics : {};
-  return {
-    diagnostics: {
-      status: value.status === "ok" ? "ok" : "attention",
-      repository: asString(value.repository),
-      branch: asString(value.branch),
-      repositoryReadable: value.repositoryReadable === true,
-      branchReadable: value.branchReadable === true,
-      workflowsReadable: value.workflowsReadable === true,
-      canWrite: typeof value.canWrite === "boolean" ? value.canWrite : null,
-      checkedAt: asDateString(value.checkedAt),
-      message: asString(value.message, "자동화 저장소 연결을 확인하지 못했습니다."),
-    },
-  };
 }
 
 export async function updateAutomationSettings(settings: ApiAutomationSettings): Promise<{ settings: ApiAutomationSettings }> {

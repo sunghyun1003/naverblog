@@ -40,8 +40,10 @@ export function useContents() {
     const controller = new AbortController();
     // Render cached/mirrored data immediately, then reconcile GitHub in the
     // background. `refresh` never hides the current list, so this can safely
-    // use the authoritative pass without recreating the route flash.
-    void refresh(controller.signal, true).catch((error: unknown) => {
+    // use the fast mirror path on route entry. A forced GitHub reconciliation
+    // is reserved for the explicit refresh button and the periodic poll; doing
+    // it on every tab visit made the dashboard wait on GitHub unnecessarily.
+    void refresh(controller.signal, !cached).catch((error: unknown) => {
       if (error instanceof DOMException && error.name === "AbortError") return;
       setConnectionStatus("offline");
     });

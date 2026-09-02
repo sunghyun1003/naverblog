@@ -119,7 +119,10 @@ export function HomePage() {
 
   useEffect(() => {
     const controller = new AbortController();
-    void refresh(controller.signal, true);
+    // Use the mirrored/cache path when the home view already has data. The
+    // explicit refresh button remains the authoritative GitHub reconciliation
+    // path, while route entry should stay instantaneous.
+    void refresh(controller.signal, !cachedContents && !cachedRuns && !cachedTrends);
     return () => controller.abort();
   }, []);
 

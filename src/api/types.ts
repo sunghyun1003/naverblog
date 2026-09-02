@@ -233,18 +233,6 @@ export interface ApiAutomationSettings {
   generation: ApiAutomationSchedule & { count: number };
 }
 
-export interface ApiAutomationDiagnostics {
-  status: "ok" | "attention";
-  repository: string;
-  branch: string;
-  repositoryReadable: boolean;
-  branchReadable: boolean;
-  workflowsReadable: boolean;
-  canWrite: boolean | null;
-  checkedAt: string;
-  message: string;
-}
-
 export interface ApiAutomationHistoryItem {
   id: string;
   workflowRunId: number;

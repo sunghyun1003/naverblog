@@ -1,6 +1,10 @@
 name: deploy-operational-dashboard
 
 on:
+  # main에 검증된 변경사항이 올라오면 운영 대시보드도 자동으로 배포합니다.
+  # workflow_dispatch는 필요할 때 수동 재배포하거나 롤포워드할 때 유지합니다.
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:

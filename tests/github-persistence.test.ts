@@ -139,6 +139,33 @@ test("GitHub 원고를 영속 저장소에 중복 없이 동기화한다", async
 test("자동 완성 원고를 직접 수정하면 다시 검토 대기 상태가 된다", () => {
   const input = draft();
   input.pipelineStatus = "CONTENT_READY";
+  input.imageGenerationStatus = "ready";
+  input.imageManifest = {
+    schemaVersion: 1,
+    status: "ready",
+    generatedAt,
+    runId: input.runId,
+    sourceRevision: 1,
+    styleProfileId: "insurance-editorial-v1",
+    technicalQualityPassed: true,
+    visualQualityPassed: true,
+    humanReviewRequired: true,
+    visualQuality: { overallPassed: true, summary: "통과", assets: [] },
+    checks: [],
+    assets: [{
+      id: "hero",
+      role: "hero",
+      kind: "ai_generated",
+      path: "hero.jpg",
+      afterSection: 0,
+      purpose: "concept",
+      altText: "대표 이미지",
+      width: 1200,
+      height: 800,
+      bytes: 1000,
+      sha256: "abc",
+    }],
+  };
   input.reviewStatus = "pending";
   input.publicationStatus = "none";
   input.scheduledAt = null;
@@ -160,6 +187,107 @@ test("자동 완성 원고를 직접 수정하면 다시 검토 대기 상태가
   assert.equal(detail.content.state, "review_ready");
   assert.equal(detail.automation?.autoApproved, false);
   assert.equal(detail.automation?.manualEdit, true);
+});
+
+test("승인 기록이 있어도 이미지 패키지가 실패한 원고는 완성으로 표시하지 않는다", () => {
+  const input = draft();
+  input.publicationStatus = "none";
+  input.scheduledAt = null;
+  input.state.publicationStatus = "none";
+  input.state.scheduledAt = null;
+  input.pipelineStatus = "TONE_REVIEW_COMPLETE";
+  input.imageGenerationStatus = "failed";
+  input.imageStatus = {
+    schemaVersion: 1,
+    status: "failed",
+    updatedAt: generatedAt,
+    runId: input.runId,
+    message: "이미지 품질 검사 실패",
+  };
+
+  const detail = draftToDetail(input);
+  assert.equal(detail.content.state, "drafting");
+  assert.equal((detail.versions.at(-1)?.metadata.imagePackage as { status?: string } | null)?.status, "failed");
+});
+
+test("이미지 생성 대기 상태를 버전 메타데이터에 보존한다", () => {
+  const input = draft();
+  input.publicationStatus = "none";
+  input.scheduledAt = null;
+  input.state.publicationStatus = "none";
+  input.state.scheduledAt = null;
+  input.reviewStatus = "approved";
+  input.state.reviewStatus = "approved";
+  input.pipelineStatus = "TONE_REVIEW_COMPLETE";
+  input.imageGenerationStatus = "queued";
+  input.state.imageGenerationStatus = "queued";
+
+  const detail = draftToDetail(input);
+  const packageState = detail.versions.at(-1)?.metadata.imagePackage as { status?: string; runId?: string } | null;
+  assert.equal(detail.content.state, "drafting");
+  assert.equal(packageState?.status, "queued");
+  assert.equal(packageState?.runId, input.runId);
+});
+
+test("이미지 재생성 중에는 이전 실패 결과보다 새 대기 상태를 우선한다", () => {
+  const input = draft();
+  input.publicationStatus = "none";
+  input.scheduledAt = null;
+  input.state.publicationStatus = "none";
+  input.state.scheduledAt = null;
+  input.imageGenerationStatus = "queued";
+  input.imageStatus = {
+    schemaVersion: 1,
+    status: "failed",
+    updatedAt: generatedAt,
+    runId: input.runId,
+    message: "이전 실행 실패",
+  };
+
+  const detail = draftToDetail(input);
+  const packageState = detail.versions.at(-1)?.metadata.imagePackage as { status?: string } | null;
+  assert.equal(packageState?.status, "queued");
+  assert.equal(detail.content.state, "drafting");
+});
+
+test("품질 검사를 통과한 이미지가 실제로 있는 패키지만 완성으로 표시한다", () => {
+  const input = draft();
+  input.publicationStatus = "none";
+  input.scheduledAt = null;
+  input.state.publicationStatus = "none";
+  input.state.scheduledAt = null;
+  input.pipelineStatus = "CONTENT_READY";
+  input.imageGenerationStatus = "ready";
+  input.imageManifest = {
+    schemaVersion: 1,
+    status: "ready",
+    generatedAt,
+    runId: input.runId,
+    sourceRevision: 1,
+    styleProfileId: "insurance-editorial-v1",
+    technicalQualityPassed: true,
+    visualQualityPassed: true,
+    humanReviewRequired: true,
+    visualQuality: { overallPassed: true, summary: "통과", assets: [] },
+    checks: [],
+    assets: [{
+      id: "hero",
+      role: "hero",
+      kind: "ai_generated",
+      path: "hero.jpg",
+      afterSection: 0,
+      purpose: "concept",
+      altText: "대표 이미지",
+      width: 1200,
+      height: 800,
+      bytes: 1000,
+      sha256: "abc",
+    }],
+  };
+
+  const detail = draftToDetail(input);
+  assert.equal(detail.content.state, "approved");
+  assert.equal((detail.versions.at(-1)?.metadata.imagePackage as { status?: string } | null)?.status, "ready");
 });
 
 test("반려 재작성 전후 버전과 반려 이력을 함께 보존한다", () => {

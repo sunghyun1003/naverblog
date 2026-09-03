@@ -1,5 +1,11 @@
 import { pipelineStages, type ContentDetail, type ContentRecord, type ContentState } from "../domain/types.js";
-import type { AutomationDraftDetail, AutomationDraftSummary, GeneratedDiscoveryQualitySection } from "./github-automation.js";
+import type {
+  AutomationDraftDetail,
+  AutomationDraftSummary,
+  GeneratedDiscoveryQualitySection,
+  GeneratedImageManifest,
+  GeneratedImageStatus,
+} from "./github-automation.js";
 
 function discoveryQualitySummary(label: string, result: GeneratedDiscoveryQualitySection | null | undefined): string {
   if (!result) return `${label} 상세 검사가 도입되기 전에 생성된 원고입니다. 다음 재작성 또는 신규 생성부터 실제 점수가 표시됩니다.`;
@@ -13,20 +19,53 @@ function sourceKey(url: string): string {
   return url.toLowerCase().replace(/\/+$/, "");
 }
 
+function hasCompleteImagePackage(draft: AutomationDraftSummary): boolean {
+  if (draft.pipelineStatus !== "CONTENT_READY" || draft.imageGenerationStatus !== "ready") return false;
+  if (!("imageManifest" in draft)) return true;
+  const manifest = (draft as AutomationDraftDetail).imageManifest;
+  return manifest?.status === "ready"
+    && manifest.technicalQualityPassed === true
+    && manifest.visualQualityPassed === true
+    && manifest.assets.length > 0;
+}
+
 function contentState(draft: AutomationDraftSummary): ContentState {
   if (draft.deleted) return "deleted";
   if (draft.publicationStatus === "published") return "published";
   if (draft.publicationStatus === "scheduled") return "scheduled";
-  if (draft.reviewStatus === "approved") return "approved";
   if (draft.reviewStatus === "rejected") return "drafting";
-  if (draft.pipelineStatus === "TONE_REVIEW_COMPLETE") return "review_ready";
-  // CONTENT_READY is automatically complete only for untouched generated
-  // drafts. A direct edit clears autoApproved and returns the item to the
-  // review queue even though the original package status remains ready.
-  if (draft.pipelineStatus === "CONTENT_READY") {
+  // A draft is operationally complete only after the image job has promoted
+  // the whole package to CONTENT_READY. Review flags belong to the old manual
+  // approval flow and must never make a text-only or failed-image draft look
+  // complete in the dashboard.
+  if (hasCompleteImagePackage(draft)) {
     return draft.reviewStatus === "pending" && draft.autoApproved !== true ? "review_ready" : "approved";
   }
   return "drafting";
+}
+
+function imagePackage(draft: AutomationDraftDetail): GeneratedImageManifest | GeneratedImageStatus | {
+  schemaVersion: 1;
+  status: "queued";
+  runId: string;
+  updatedAt: string;
+  assets: [];
+} | null {
+  // A manual rerun can be queued while the previous ready/failed manifest is
+  // still present in GitHub. The new queue state must win so the dashboard
+  // does not keep rendering stale images as the current package.
+  if (draft.imageGenerationStatus === "queued") {
+    return {
+      schemaVersion: 1,
+      status: "queued",
+      runId: draft.runId,
+      updatedAt: draft.updatedAt,
+      assets: [],
+    };
+  }
+  if (draft.imageManifest) return draft.imageManifest;
+  if (draft.imageStatus) return draft.imageStatus;
+  return null;
 }
 
 export function draftToContent(draft: AutomationDraftSummary): ContentRecord {
@@ -301,7 +340,7 @@ export function draftToDetail(draft: AutomationDraftDetail): ContentDetail {
         toneReview: draft.toneReview ?? null,
         toneAttempts: draft.toneAttempts ?? null,
         visualPlan: draft.article.article?.visualPlan ?? [],
-        imagePackage: draft.imageManifest ?? draft.imageStatus ?? null,
+        imagePackage: imagePackage(draft),
         editorialQuality: draft.editorialQuality ?? null,
         nativeKoreanQuality: nativeKoreanQuality ?? null,
         evidenceReview: draft.evidencePackage ?? null,

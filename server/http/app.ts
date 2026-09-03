@@ -125,6 +125,8 @@ function draftWithState(draft: AutomationDraftDetail, state: DashboardDraftState
     publishedAt: state.publishedAt,
     revision: state.revision ?? draft.revision ?? 1,
     rewriteStatus: state.rewriteStatus ?? draft.rewriteStatus ?? null,
+    imageGenerationStatus: state.imageGenerationStatus ?? draft.imageGenerationStatus ?? null,
+    imageGenerationWarning: state.imageGenerationWarning ?? draft.imageGenerationWarning ?? null,
     deleted: Boolean(state.deletedAt),
     updatedAt: state.updatedAt,
   };
@@ -254,12 +256,24 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   async function getGitHubDetail(id: string, forceRefresh = false) {
     if (persistGitHubData && !forceRefresh) {
       const cached = await system.repository.getContentDetail(id);
-      // Image generation runs in a separate GitHub job. While the mirror says
-      // queued, reading it as authoritative would hide the ready/failed
-      // manifest forever. Probe GitHub until the asynchronous job settles,
-      // then the normal Neon fast path resumes.
-      const imageStillPending = cached?.content.imageGenerationStatus === "queued";
-      if (cached?.versions.length && !imageStillPending) {
+      const cachedPackage = cached?.versions.at(-1)?.metadata.imagePackage;
+      const packageStatus = cachedPackage && typeof cachedPackage === "object" && "status" in cachedPackage
+        ? (cachedPackage as { status?: unknown }).status
+        : null;
+      const packageAssets = cachedPackage && typeof cachedPackage === "object" && "assets" in cachedPackage
+        ? (cachedPackage as { assets?: unknown }).assets
+        : null;
+      const hasReadyImages = packageStatus === "ready" && Array.isArray(packageAssets) && packageAssets.length > 0;
+      const isGitHubDraft = cached?.content.creationKey.startsWith("github-run:") === true;
+      const isUnpublishedDraft = cached ? !["scheduled", "published", "measured", "deleted"].includes(cached.content.state) : false;
+      // Image generation runs in a separate job. PostgreSQL stores the image
+      // package in version metadata, while the lightweight content row may not
+      // retain its transient status. Treat a missing/queued package as
+      // unsettled and reconcile it with GitHub before returning the detail.
+      const imagePackageUnsettled = isGitHubDraft
+        && isUnpublishedDraft
+        && (packageStatus === "queued" || packageStatus == null || (["review_ready", "approved"].includes(cached!.content.state) && !hasReadyImages));
+      if (cached?.versions.length && !imagePackageUnsettled) {
         return { ...cached, freshness: freshness("postgres-cache", false, cached.content.updatedAt) };
       }
     }
@@ -551,7 +565,12 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
         return reply.status(409).send({ error: { code: "FINAL_CHECKS_REQUIRED", message: "수치·출처와 광고성 표현을 모두 확인해야 승인할 수 있습니다.", details: null } });
       }
       const draft = await githubAutomation.getDraft(id);
-      if (draftToContent(draft).state !== "review_ready") {
+      const pipelineStatus = (draft.pipelineStatus ?? "UNKNOWN").toUpperCase();
+      const textReadyForLegacyApproval = !draft.deleted
+        && draft.reviewStatus === "pending"
+        && draft.publicationStatus === "none"
+        && !activePipelineMarkers.some((marker) => pipelineStatus.includes(marker));
+      if (!textReadyForLegacyApproval) {
         return reply.status(409).send({ error: { code: "CONTENT_NOT_REVIEW_READY", message: "검토 대기 상태의 원고만 승인할 수 있습니다.", details: null } });
       }
       const failedQualityCategories = draftToDetail(draft).qualityResults

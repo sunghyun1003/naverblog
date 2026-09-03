@@ -18,3 +18,11 @@ test("모바일 원고 상세 헤더는 버튼을 가로 스크롤로 숨기지 
   assert.match(mobileBlock, /\.review-header__actions[\s\S]*overflow: visible/);
   assert.doesNotMatch(mobileBlock, /\.review-header__actions \{ max-width: 52vw; overflow-x: auto; \}/);
 });
+
+test("완성 원고 본문은 원고별 이미지 패키지를 직접 전달해 렌더링한다", async () => {
+  const source = await readFile(new URL("../src/features/review/ReviewPage.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /generatedImageContext/);
+  assert.match(source, /renderGeneratedBlocksWithImages\(body, contentId, imagePackage\)/);
+  assert.match(source, /<img src=\{contentImageUrl\(contentId, hero\.id/);
+  assert.match(source, /<img src=\{contentImageUrl\(contentId, asset\.id/);
+});

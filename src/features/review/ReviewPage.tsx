@@ -813,10 +813,7 @@ function ImageAssetsView({
   );
 }
 
-let generatedImageContext: { contentId: string; imagePackage: ApiGeneratedImagePackage | null } | null = null;
-
 function renderGeneratedBlocks(body: string): ReactNode[] {
-  if (generatedImageContext) return renderGeneratedBlocksWithImages(body, generatedImageContext.contentId, generatedImageContext.imagePackage);
   let sectionIndex = 0;
   const sectionIds = ["summary", "differences", "before-switch", "faq"];
   return body.split("\n\n").flatMap((block, index) => {
@@ -1036,9 +1033,14 @@ async function copyRichContent(html: string, plainText: string, setToast: (messa
 }
 
 function ArticleDraft({ title, body, contentId, imagePackage }: { title?: string; body?: string; contentId: string; imagePackage: ApiGeneratedImagePackage | null }) {
-  generatedImageContext = { contentId, imagePackage };
   if (!body?.trim()) return <div className="review-content-empty">저장된 원고 본문이 없습니다.</div>;
-  return <article className="article-draft article-draft--generated" aria-label={`${title ?? "생성된 원고"} 본문`}>{renderGeneratedBlocks(body)}</article>;
+  return (
+    <article className="article-draft article-draft--generated" aria-label={`${title ?? "생성된 원고"} 본문`}>
+      {imagePackage
+        ? renderGeneratedBlocksWithImages(body, contentId, imagePackage)
+        : renderGeneratedBlocks(body)}
+    </article>
+  );
 }
 
 function HistoryView({ versions }: { versions: ApiContentVersion[] }) {

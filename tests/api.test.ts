@@ -59,6 +59,43 @@ function reviewDraft(runId: string, title = `검토 원고 ${runId}`, state?: Da
   };
 }
 
+function completedDraft(runId: string, title = `완성 원고 ${runId}`): AutomationDraftDetail {
+  const result = reviewDraft(runId, title);
+  result.pipelineStatus = "CONTENT_READY";
+  result.imageGenerationStatus = "ready";
+  result.reviewStatus = "approved";
+  result.autoApproved = true;
+  result.state.reviewStatus = "approved";
+  result.state.autoApproved = true;
+  result.imageManifest = {
+    schemaVersion: 1,
+    status: "ready",
+    generatedAt: result.generatedAt,
+    runId: result.runId,
+    sourceRevision: 1,
+    styleProfileId: "insurance-editorial-v1",
+    technicalQualityPassed: true,
+    visualQualityPassed: true,
+    humanReviewRequired: true,
+    visualQuality: { overallPassed: true, summary: "통과", assets: [] },
+    checks: [],
+    assets: [{
+      id: "hero",
+      role: "hero",
+      kind: "ai_generated",
+      path: "hero.jpg",
+      afterSection: 0,
+      purpose: "concept",
+      altText: "대표 이미지",
+      width: 1200,
+      height: 800,
+      bytes: 1000,
+      sha256: "abc",
+    }],
+  };
+  return result;
+}
+
 function changedState(
   draft: AutomationDraftDetail,
   changes: Partial<DashboardDraftState>,
@@ -571,7 +608,16 @@ test("반려 재작성 실행 요청이 실패하면 원고에 실패 상태를 
 
 test("원고 상세 refresh는 캐시 대신 최신 GitHub 원고를 우선한다", async (context) => {
   const repository = new InMemoryAutomationRepository();
-  await persistGitHubDraftDetail(repository, reviewDraft("404", "캐시 원고"));
+  const cachedDraft = reviewDraft("404", "캐시 원고");
+  cachedDraft.imageGenerationStatus = "failed";
+  cachedDraft.imageStatus = {
+    schemaVersion: 1,
+    status: "failed",
+    updatedAt: cachedDraft.updatedAt,
+    runId: cachedDraft.runId,
+    message: "이전 이미지 생성 실패",
+  };
+  await persistGitHubDraftDetail(repository, cachedDraft);
   let githubRequests = 0;
   const githubAutomation = {
     getDraft: async () => {
@@ -594,6 +640,71 @@ test("원고 상세 refresh는 캐시 대신 최신 GitHub 원고를 우선한�
   assert.equal(cached.json<{ freshness: { stale: boolean } }>().freshness.stale, false);
   assert.deepEqual(refreshed.json<{ freshness: { source: string; stale: boolean } }>().freshness.source, "github");
   assert.equal(refreshed.json<{ freshness: { source: string; stale: boolean } }>().freshness.stale, false);
+  assert.equal(githubRequests, 1);
+});
+
+test("텍스트만 저장된 GitHub 캐시는 이미지 작업이 끝날 때까지 최신 원고를 다시 확인한다", async (context) => {
+  const repository = new InMemoryAutomationRepository();
+  await persistGitHubDraftDetail(repository, reviewDraft("405", "텍스트만 저장된 원고"));
+  const latest = reviewDraft("405", "이미지까지 완성된 원고");
+  latest.pipelineStatus = "CONTENT_READY";
+  latest.imageGenerationStatus = "ready";
+  latest.reviewStatus = "approved";
+  latest.autoApproved = true;
+  latest.state.reviewStatus = "approved";
+  latest.state.autoApproved = true;
+  latest.imageManifest = {
+    schemaVersion: 1,
+    status: "ready",
+    generatedAt: latest.generatedAt,
+    runId: latest.runId,
+    sourceRevision: 1,
+    styleProfileId: "insurance-editorial-v1",
+    technicalQualityPassed: true,
+    visualQualityPassed: true,
+    humanReviewRequired: true,
+    visualQuality: { overallPassed: true, summary: "통과", assets: [] },
+    checks: [],
+    assets: [{
+      id: "hero",
+      role: "hero",
+      kind: "ai_generated",
+      path: "hero.jpg",
+      afterSection: 0,
+      purpose: "concept",
+      altText: "대표 이미지",
+      width: 1200,
+      height: 800,
+      bytes: 1000,
+      sha256: "abc",
+    }],
+  };
+  let githubRequests = 0;
+  const githubAutomation = {
+    getDraft: async () => {
+      githubRequests += 1;
+      return latest;
+    },
+  } as unknown as GitHubAutomationService;
+  const app = buildApp({
+    system: createAutomationSystem({ repository }),
+    githubAutomation,
+    databaseProvider: "postgres",
+  });
+  context.after(() => app.close());
+
+  const response = await app.inject({ method: "GET", url: "/api/contents/405" });
+  const body = response.json<{
+    content: { state: string };
+    versions: Array<{ metadata: { imagePackage?: { status?: string; assets?: unknown[] } } }>;
+    freshness: { source: string };
+  }>();
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(body.content.state, "approved");
+  assert.equal(body.versions.at(-1)?.metadata.imagePackage?.status, "ready");
+  assert.equal(body.versions.at(-1)?.metadata.imagePackage?.assets?.length, 1);
+  assert.equal(body.freshness.source, "github");
   assert.equal(githubRequests, 1);
 });
 
@@ -654,7 +765,7 @@ test("이미 발행된 GitHub 원고는 다시 예약 상태로 되돌리지 않
 });
 
 test("완성된 GitHub 원고는 별도 승인 없이 예약 알림을 저장한다", async (context) => {
-  const draft = reviewDraft("506", "완성 원고 예약 알림");
+  const draft = completedDraft("506", "완성 원고 예약 알림");
   let updatedState = draft.state;
   const githubAutomation = {
     getDraft: async () => draft,

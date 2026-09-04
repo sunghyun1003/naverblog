@@ -89,6 +89,7 @@ export interface AutomationDraftSummary {
   imageGenerationStatus?: "queued" | "ready" | "failed" | null;
   imageGenerationWarning?: string | null;
   deleted?: boolean;
+  recovery?: GeneratedRecoveryCheckpoint | null;
 }
 
 export interface AutomationDraftRevision {
@@ -116,6 +117,27 @@ export interface AutomationDraftDetail extends AutomationDraftSummary {
   imageStatus?: GeneratedImageStatus | null;
   state: DashboardDraftState;
   revisions?: AutomationDraftRevision[];
+}
+
+export interface GeneratedRecoveryArtifact {
+  id: string;
+  label: string;
+  path: string;
+}
+
+export interface GeneratedRecoveryCheckpoint {
+  schemaVersion: number;
+  runId: string;
+  status: "failed";
+  failedStage: string;
+  lastCompletedStage: string | null;
+  resumeFrom: "evidence" | "article" | "tone" | "images";
+  recoverable: boolean;
+  title: string;
+  topic: string;
+  message: string;
+  artifacts: GeneratedRecoveryArtifact[];
+  updatedAt: string;
 }
 
 export interface GeneratedImageAsset {
@@ -332,7 +354,7 @@ export interface AutomationHistoryItem {
   failureCode: string | null;
   error: string | null;
   draftSaved?: boolean;
-  recoveryAction?: "tone_resume" | "image_retry" | null;
+  recoveryAction?: "tone_resume" | "image_retry" | "resume_failed_stage" | null;
   url: string;
 }
 
@@ -431,6 +453,12 @@ interface GeneratedStatus {
   imageGenerationWarning?: string | null;
   codexCalls?: number;
   codexUsage?: AutomationTokenUsage;
+  title?: string;
+  topic?: string;
+  failedStage?: string | null;
+  lastCompletedStage?: string | null;
+  resumeFrom?: "evidence" | "article" | "tone" | "images" | null;
+  failureMessage?: string | null;
 }
 
 interface WorkflowRunsResponse {
@@ -473,7 +501,7 @@ interface StoredAutomationHistory {
   failureCode?: string | null;
   error?: string | null;
   draftSaved?: boolean;
-  recoveryAction?: "tone_resume" | "image_retry" | null;
+  recoveryAction?: "tone_resume" | "image_retry" | "resume_failed_stage" | null;
   url?: string | null;
 }
 
@@ -658,6 +686,20 @@ function defaultState(runId: string, generatedAt: string): DashboardDraftState {
   };
 }
 
+function generationStageName(value: string): string {
+  return ({
+    preflight: "사전 점검",
+    evidence_research: "공식 근거 수집",
+    evidence_validation: "공식 근거 검증",
+    article_generation: "원고 작성",
+    content_quality: "원고 품질 검사",
+    tone_review: "사람 말투 보정",
+    package_render: "원고 패키지 저장",
+    completion: "완성 상태 확인",
+    completed: "원고 생성 완료",
+  } as Record<string, string>)[value] ?? "자동 생성";
+}
+
 export class GitHubAutomationService {
   private automationSettingsCache: { value: AutomationSettings; expiresAt: number } | null = null;
   private automationHistoryCache: { value: AutomationHistoryItem[]; expiresAt: number } | null = null;
@@ -791,7 +833,8 @@ export class GitHubAutomationService {
         startedAt: record.startedAt || run?.created_at || new Date(0).toISOString(),
         finishedAt: record.finishedAt || run?.updated_at || null,
         durationSeconds: Number.isFinite(record.durationSeconds) ? record.durationSeconds : null,
-        contentRunId: record.contentRunId ?? null,
+        contentRunId: record.contentRunId
+          ?? (record.workflow === "generate" && savedDraftRunIds.has(String(workflowRunId)) ? String(workflowRunId) : null),
         contentTitle: record.contentTitle ?? null,
         codex: zeroTokenUsage(record.codex),
         failedStage,
@@ -800,7 +843,7 @@ export class GitHubAutomationService {
         draftSaved: record.draftSaved === true || savedDraftRunIds.has(String(workflowRunId)),
         recoveryAction: record.recoveryAction
           ?? (record.status === "failure" && savedDraftRunIds.has(String(workflowRunId))
-            ? (record.job === "images" ? "image_retry" : "tone_resume")
+            ? (record.job === "images" ? "image_retry" : "resume_failed_stage")
             : null),
         url: record.url ?? run?.html_url ?? "",
       };
@@ -827,7 +870,7 @@ export class GitHubAutomationService {
         error: null,
         draftSaved: savedDraftRunIds.has(String(run.id)),
          recoveryAction: savedDraftRunIds.has(String(run.id)) && status === "failure"
-           ? (run.workflow === "images" ? "image_retry" : "tone_resume")
+           ? (run.workflow === "images" ? "image_retry" : "resume_failed_stage")
            : null,
         url: run.html_url,
       };
@@ -865,12 +908,13 @@ export class GitHubAutomationService {
       const basePath = statusPath.slice(0, -"/status.json".length);
       const runId = basePath.match(/run-(\d+)$/)?.[1];
       if (!runId) throw new Error(`원고 실행 ID를 확인할 수 없습니다: ${statusPath}`);
-      const [status, article, state] = await Promise.all([
+      const [status, article, state, recovery] = await Promise.all([
         this.readJson<GeneratedStatus>(statusPath),
-        this.readJson<GeneratedArticle>(`${basePath}/article.json`),
+        this.readOptionalJson<GeneratedArticle>(`${basePath}/article.json`),
         this.readState(runId),
+        this.readOptionalJson<GeneratedRecoveryCheckpoint>(`${basePath}/recovery.json`),
       ]);
-      return this.summary(runId, status, article, state);
+      return this.summary(runId, status, article ?? {}, state, recovery);
     }));
   }
 
@@ -883,13 +927,13 @@ export class GitHubAutomationService {
     const revisionStatusPaths = paths
       .filter((file) => file.startsWith(`${basePath}/revisions/v`) && file.endsWith("/status.json"))
       .sort((left, right) => left.localeCompare(right, undefined, { numeric: true }));
-    const [status, article, articleMarkdown, copyPackage, copyPackageHtml, sourcesMarkdown, evidencePackage, discoveryQuality, advertisingQuality, editorialQuality, nativeKoreanQuality, toneReview, toneAttempts, imageManifest, imageStatus, state] = await Promise.all([
+    const [status, storedArticle, storedArticleMarkdown, storedCopyPackage, copyPackageHtml, storedSourcesMarkdown, evidencePackage, discoveryQuality, advertisingQuality, editorialQuality, nativeKoreanQuality, toneReview, toneAttempts, imageManifest, imageStatus, state, recovery] = await Promise.all([
       this.readJson<GeneratedStatus>(statusPath),
-      this.readJson<GeneratedArticle>(`${basePath}/article.json`),
-      this.readText(`${basePath}/article.md`),
-      this.readText(`${basePath}/copy-package.txt`),
+      this.readOptionalJson<GeneratedArticle>(`${basePath}/article.json`),
+      this.readOptionalText(`${basePath}/article.md`),
+      this.readOptionalText(`${basePath}/copy-package.txt`),
       this.readOptionalText(`${basePath}/copy-package.html`),
-      this.readText(`${basePath}/sources.md`),
+      this.readOptionalText(`${basePath}/sources.md`),
       this.readOptionalJson<GeneratedEvidencePackage>(`${basePath}/evidence-package.json`),
       this.readOptionalJson<GeneratedDiscoveryQuality>(`${basePath}/discovery-quality.json`),
       this.readOptionalJson<GeneratedAdvertisingQuality>(`${basePath}/advertising-quality.json`),
@@ -904,7 +948,19 @@ export class GitHubAutomationService {
         ? this.readOptionalJson<GeneratedImageStatus>(`${basePath}/images/status.json`)
         : Promise.resolve(null),
       this.readState(runId),
+      this.readOptionalJson<GeneratedRecoveryCheckpoint>(`${basePath}/recovery.json`),
     ]);
+    const article: GeneratedArticle = storedArticle ?? {
+      planning: { topic: recovery?.topic ?? status.topic ?? "보험" },
+      seo: { primaryKeyword: recovery?.topic ?? status.topic ?? "보험" },
+      article: { title: recovery?.title ?? status.title ?? `중단된 원고 ${runId}`, visualPlan: [] },
+      factChecks: [],
+      sources: [],
+    };
+    const articleMarkdown = storedArticleMarkdown
+      ?? `# ${recovery?.title ?? status.title ?? `중단된 원고 ${runId}`}\n\n${recovery ? `${generationStageName(recovery.failedStage)} 단계에서 작업이 중단됐습니다. 재작업 버튼을 누르면 이 단계부터 다시 시작합니다.` : "저장된 원고 본문이 없습니다."}\n`;
+    const copyPackage = storedCopyPackage ?? "";
+    const sourcesMarkdown = storedSourcesMarkdown ?? "";
     const revisions = await Promise.all(revisionStatusPaths.map(async (revisionStatusPath) => {
       const revisionBasePath = revisionStatusPath.slice(0, -"/status.json".length);
       const revision = Number(revisionBasePath.match(/\/revisions\/v(\d+)$/)?.[1] ?? 0);
@@ -928,7 +984,7 @@ export class GitHubAutomationService {
     const effectiveMarkdown = state.manualEdit?.body ?? articleMarkdown;
     const effectiveCopyPackage = state.manualEdit?.body ?? copyPackage;
     return {
-      ...this.summary(runId, status, effectiveArticle, state),
+      ...this.summary(runId, status, effectiveArticle, state, recovery),
       articleMarkdown: effectiveMarkdown,
       copyPackage: effectiveCopyPackage,
       copyPackageHtml,
@@ -943,6 +999,7 @@ export class GitHubAutomationService {
       toneAttempts,
       imageManifest,
       imageStatus,
+      recovery,
       state,
       revisions,
     };
@@ -1178,15 +1235,21 @@ export class GitHubAutomationService {
     return state;
   }
 
-  private summary(runId: string, status: GeneratedStatus, article: GeneratedArticle, state: DashboardDraftState): AutomationDraftSummary {
+  private summary(
+    runId: string,
+    status: GeneratedStatus,
+    article: GeneratedArticle,
+    state: DashboardDraftState,
+    recovery: GeneratedRecoveryCheckpoint | null = null,
+  ): AutomationDraftSummary {
     const generatedAt = status.generatedAt ?? new Date(0).toISOString();
     const packageUpdatedAt = status.updatedAt ?? generatedAt;
     const updatedAt = Date.parse(state.updatedAt) > Date.parse(packageUpdatedAt) ? state.updatedAt : packageUpdatedAt;
     return {
       runId,
-      title: article.article?.title ?? `원고 ${runId}`,
-      topic: article.planning?.topic ?? "보험",
-      primaryKeyword: article.seo?.primaryKeyword ?? "보험",
+      title: article.article?.title ?? recovery?.title ?? status.title ?? `중단된 원고 ${runId}`,
+      topic: article.planning?.topic ?? recovery?.topic ?? status.topic ?? "보험",
+      primaryKeyword: article.seo?.primaryKeyword ?? recovery?.topic ?? status.topic ?? "보험",
       generatedAt,
       pipelineStatus: status.status ?? "UNKNOWN",
       toneSkillApplied: status.toneSkillApplied === true,
@@ -1202,6 +1265,7 @@ export class GitHubAutomationService {
       imageGenerationStatus: status.imageGenerationStatus ?? state.imageGenerationStatus ?? null,
       imageGenerationWarning: status.imageGenerationWarning ?? state.imageGenerationWarning ?? null,
       deleted: Boolean(state.deletedAt),
+      recovery,
     };
   }
 

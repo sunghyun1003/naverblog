@@ -130,10 +130,29 @@ const pipelineStageLabel: Record<string, string> = {
   notify_review: "검토 요청",
 };
 
+const recoveryStageLabel = {
+  evidence: "공식 근거 수집",
+  article: "원고 작성",
+  tone: "사람 말투 보정",
+  images: "이미지 생성",
+} as const;
+
+const generationStageLabel: Record<string, string> = {
+  preflight: "사전 점검",
+  evidence_research: "공식 근거 수집",
+  evidence_validation: "공식 근거 검증",
+  article_generation: "원고 작성",
+  content_quality: "원고 품질 검사",
+  tone_review: "사람 말투 보정",
+  package_render: "원고 패키지 저장",
+  completion: "완성 상태 확인",
+  completed: "원고 생성 완료",
+};
+
 export function ReviewPage() {
   const navigate = useNavigate();
   const { contentId } = useParams();
-  const { detail, connectionStatus, loadError, reload, refresh, reject: rejectApi, resumeTone: resumeToneApi, edit: editApi, remove: removeApi } = useContentDetail(contentId);
+  const { detail, connectionStatus, loadError, reload, refresh, reject: rejectApi, resumeTone: resumeToneApi, retryFailed: retryFailedApi, edit: editApi, remove: removeApi } = useContentDetail(contentId);
   const [tab, setTab] = useState<ReviewTab>("draft");
   const [activeOutline, setActiveOutline] = useState("summary");
   const [expandedQuality, setExpandedQuality] = useState("");
@@ -144,6 +163,7 @@ export function ReviewPage() {
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [rewritePending, setRewritePending] = useState(false);
   const [toneResumeBusy, setToneResumeBusy] = useState(false);
+  const [recoveryBusy, setRecoveryBusy] = useState(false);
   const [imagePending, setImagePending] = useState(false);
   const [imageBusy, setImageBusy] = useState(false);
   const [imageRequestStartedAt, setImageRequestStartedAt] = useState<number | null>(null);
@@ -162,7 +182,7 @@ export function ReviewPage() {
       try {
         const next = await refresh();
         if (stopped) return;
-        if (next.content.state === "review_ready" || next.content.state === "approved") {
+        if (!next.recovery || next.content.state === "review_ready" || next.content.state === "approved") {
           setRewritePending(false);
           setToast("수정 의견을 반영한 새 버전이 완성됐어요.");
           window.setTimeout(() => setToast(""), 5000);
@@ -304,6 +324,7 @@ export function ReviewPage() {
               ? "drafting"
               : "drafting";
   const staleDetail = detail.freshness?.stale === true;
+  const generationRecovery = detail.recovery?.recoverable ? detail.recovery : null;
   const latestJob = detail.jobs[0] ?? null;
   const autoReady = detail.automation?.autoApproved === true && detail.automation.reviewStatus === "approved";
   const pipelineBusy = ["queued", "running"].includes(latestJob?.status ?? "")
@@ -448,6 +469,22 @@ export function ReviewPage() {
     }
   };
 
+  const retryFailedStage = async () => {
+    if (!generationRecovery || recoveryBusy) return;
+    setRecoveryBusy(true);
+    try {
+      const updated = await retryFailedApi();
+      setRewritePending(updated?.rewriteQueued === true);
+      setImagePending(updated?.imagesQueued === true);
+      setToast("저장된 산출물은 유지하고 실패한 단계부터 다시 시작했어요.");
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "실패 단계 재작업을 시작하지 못했습니다.");
+    } finally {
+      setRecoveryBusy(false);
+      window.setTimeout(() => setToast(""), 5200);
+    }
+  };
+
   const saveEdit = async (input: { title: string; body: string; reason: string | null }) => {
     setEditBusy(true);
     try {
@@ -491,6 +528,11 @@ export function ReviewPage() {
           </div>
         </div>
         <div className="review-header__actions">
+          {generationRecovery ? (
+            <Button variant="brand" icon={<RefreshCw size={17} />} disabled={recoveryBusy || pipelineBusy} onClick={() => void retryFailedStage()}>
+              {recoveryBusy ? "재작업 요청 중..." : `${recoveryStageLabel[generationRecovery.resumeFrom]}부터 재작업`}
+            </Button>
+          ) : null}
           <Button icon={<Pencil size={17} />} disabled={status === "deleted" || connectionStatus !== "connected" || staleDetail || editBusy || deleteBusy} onClick={() => setEditOpen(true)}>직접 수정</Button>
           <Button variant="danger" icon={<Trash2 size={17} />} disabled={status === "deleted" || connectionStatus !== "connected" || staleDetail || editBusy || deleteBusy} onClick={() => void remove()}>삭제</Button>
           <Button icon={<Code2 size={17} />} disabled={!hasCopyContent || copyBusy} onClick={() => void copySource()}>
@@ -561,6 +603,26 @@ export function ReviewPage() {
                   ? "원고는 저장되어 있으며 이미지 생성 결과를 기다리고 있습니다."
                   : "원고는 자동으로 저장됩니다. 별도의 최종 확인 체크 없이 바로 확인하고 수정할 수 있습니다."}</p>
           </section>
+          {generationRecovery ? (
+            <section className="inspector-section review-recovery review-recovery--checkpoint" role="alert">
+              <h3>{recoveryStageLabel[generationRecovery.resumeFrom]}부터 재작업</h3>
+              <p>{generationRecovery.message}</p>
+              <small>
+                마지막 완료 단계: {generationRecovery.lastCompletedStage
+                  ? generationStageLabel[generationRecovery.lastCompletedStage] ?? "저장된 단계"
+                  : "시작 전"}
+                {generationRecovery.artifacts.length ? ` · 보존 산출물 ${generationRecovery.artifacts.length}개` : ""}
+              </small>
+              {generationRecovery.artifacts.length ? (
+                <ul className="review-recovery__artifacts">
+                  {generationRecovery.artifacts.map((artifact) => <li key={artifact.id}>{artifact.label}</li>)}
+                </ul>
+              ) : null}
+              <Button variant="brand" icon={<RefreshCw size={16} />} disabled={recoveryBusy || pipelineBusy} onClick={() => void retryFailedStage()}>
+                {recoveryBusy ? "재작업 요청 중..." : "실패 단계부터 다시 실행"}
+              </Button>
+            </section>
+          ) : null}
           {latestJob ? (
             <section className="pipeline-progress" aria-label="자동화 단계">
               <header><strong>자동화 단계</strong><small>{latestJob.steps.filter((step) => step.status === "succeeded").length}/{latestJob.steps.length}</small></header>

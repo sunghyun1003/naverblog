@@ -609,6 +609,69 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     }
     return system.contentService.approve(id, body.checks, actor);
   });
+  app.post("/api/contents/:id/retry", async (request, reply) => {
+    const { id } = idParamsSchema.parse(request.params);
+    if (!githubAutomation) {
+      return reply.status(409).send({ error: { code: "AUTOMATION_UNAVAILABLE", message: "자동화 연결이 설정되지 않았습니다.", details: null } });
+    }
+    const actor = actorFrom(request, auth?.verifyCookie(request.headers.cookie)?.username);
+    const draft = await githubAutomation.getDraft(id);
+    const recovery = draft.recovery;
+    if (!recovery?.recoverable) {
+      return reply.status(409).send({ error: { code: "GENERATION_RECOVERY_NOT_AVAILABLE", message: "다시 시작할 수 있는 실패 체크포인트가 없습니다.", details: null } });
+    }
+    if (draft.deleted || draft.publicationStatus !== "none") {
+      return reply.status(409).send({ error: { code: "CONTENT_NOT_RESUMABLE", message: "삭제·예약·발행된 원고는 자동 생성을 다시 실행할 수 없습니다.", details: null } });
+    }
+    if (draft.state.rewriteStatus === "queued" || draft.state.imageGenerationStatus === "queued") {
+      return reply.status(409).send({ error: { code: "CONTENT_REWRITE_IN_PROGRESS", message: "이미 재작업을 실행하고 있습니다.", details: null } });
+    }
+
+    const requestedAt = new Date().toISOString();
+    const imageRecovery = recovery.resumeFrom === "images";
+    let state = await githubAutomation.updateState(id, imageRecovery ? {
+      imageGenerationStatus: "queued",
+      imageGenerationWarning: null,
+      rewriteRequestedAt: requestedAt,
+    } : {
+      reviewStatus: "pending",
+      rewriteStatus: "queued",
+      rewriteRequestedAt: requestedAt,
+      reason: null,
+    }, actor.id, draft.state);
+    let updatedDraft = draftWithState(draft, state);
+    let mirrorSynced = await persistGitHubDetailSafely(updatedDraft, "generation-recovery-queue");
+    try {
+      if (imageRecovery) {
+        await githubAutomation.dispatch("images", { run_id: id, force: "true" });
+      } else if (recovery.resumeFrom === "tone") {
+        await githubAutomation.dispatch("rewrite", { run_id: id, mode: "tone_resume" });
+      } else {
+        await githubAutomation.dispatch("rewrite", { run_id: id, mode: "retry_failed" });
+      }
+      return reply.status(202).send({
+        ...draftToContent(updatedDraft),
+        mirrorSynced,
+        rewriteQueued: !imageRecovery,
+        imagesQueued: imageRecovery,
+        recoveryMode: recovery.resumeFrom,
+      });
+    } catch (error) {
+      app.log.warn({ err: error, contentId: id, recoveryMode: recovery.resumeFrom }, "실패 단계 재작업 요청을 시작하지 못했습니다.");
+      try {
+        state = await githubAutomation.updateState(id, imageRecovery ? {
+          imageGenerationStatus: "failed",
+          imageGenerationWarning: error instanceof Error ? error.message : "이미지 재작업을 시작하지 못했습니다.",
+        } : { rewriteStatus: "failed" }, actor.id, state);
+        updatedDraft = draftWithState(updatedDraft, state);
+        mirrorSynced = (await persistGitHubDetailSafely(updatedDraft, "generation-recovery-dispatch-failed")) && mirrorSynced;
+      } catch (stateError) {
+        app.log.warn({ err: stateError, contentId: id }, "재작업 실패 상태를 저장하지 못했습니다.");
+      }
+      return reply.status(502).send({ error: { code: "GENERATION_RECOVERY_DISPATCH_FAILED", message: "재작업을 시작하지 못했습니다. 저장된 산출물은 그대로 보존되어 있습니다.", details: null } });
+    }
+  });
+
   app.post("/api/contents/:id/images/generate", async (request, reply) => {
     const { id } = idParamsSchema.parse(request.params);
     if (!githubAutomation) return reply.status(409).send({ error: { code: "AUTOMATION_UNAVAILABLE", message: "이미지 자동화가 연결되지 않았습니다.", details: null } });

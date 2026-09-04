@@ -68,6 +68,15 @@ function imagePackage(draft: AutomationDraftDetail): GeneratedImageManifest | Ge
   return null;
 }
 
+function failedPipelineStage(draft: AutomationDraftDetail): (typeof pipelineStages)[number] | null {
+  const recovery = draft.recovery;
+  if (!recovery) return null;
+  if (recovery.resumeFrom === "evidence") return "verify_sources";
+  if (recovery.resumeFrom === "article") return "write_draft";
+  if (recovery.resumeFrom === "tone") return "humanize_tone";
+  return "quality_assurance";
+}
+
 export function draftToContent(draft: AutomationDraftSummary): ContentRecord {
   return {
     id: draft.runId,
@@ -297,6 +306,9 @@ export function draftToDetail(draft: AutomationDraftDetail): ContentDetail {
     createdAt: draft.state.approvedAt ?? draft.generatedAt,
     updatedAt: draft.state.updatedAt,
   }];
+  const recoveryFailedStage = failedPipelineStage(draft);
+  const recoveryFailedIndex = recoveryFailedStage ? pipelineStages.indexOf(recoveryFailedStage) : -1;
+  const jobFailed = Boolean(draft.recovery) || !tonePassed;
 
   return {
     content,
@@ -305,6 +317,15 @@ export function draftToDetail(draft: AutomationDraftDetail): ContentDetail {
       reviewStatus: draft.state.reviewStatus,
       manualEdit: Boolean(draft.state.manualEdit),
     },
+    recovery: draft.recovery ? {
+      failedStage: draft.recovery.failedStage,
+      lastCompletedStage: draft.recovery.lastCompletedStage,
+      resumeFrom: draft.recovery.resumeFrom,
+      recoverable: draft.recovery.recoverable,
+      message: draft.recovery.message,
+      artifacts: draft.recovery.artifacts,
+      updatedAt: draft.recovery.updatedAt,
+    } : null,
     versions: [...(draft.revisions ?? []).map((revision) => ({
       id: versionIdForRevision(revision.revision),
       contentId: draft.runId,
@@ -369,18 +390,25 @@ export function draftToDetail(draft: AutomationDraftDetail): ContentDetail {
       id: draft.runId,
       contentId: draft.runId,
       idempotencyKey: `github-run:${draft.runId}`,
-      status: tonePassed ? "succeeded" : "failed",
-      steps: pipelineStages.map((stage) => ({
-        stage,
-        status: stage === "humanize_tone" && !tonePassed ? "failed" : "succeeded",
-        startedAt: draft.generatedAt,
-        completedAt: draft.generatedAt,
-        outputVersionId: stage === "humanize_tone" ? versionId : null,
-        error: stage === "humanize_tone" && !tonePassed ? "자동 재작성 후에도 말투 이슈가 남았습니다." : null,
-      })),
+      status: jobFailed ? "failed" : "succeeded",
+      steps: pipelineStages.map((stage, index) => {
+        const isRecoveryFailure = recoveryFailedStage === stage;
+        const isPendingAfterRecovery = recoveryFailedIndex >= 0 && index > recoveryFailedIndex;
+        const isToneFailure = !draft.recovery && stage === "humanize_tone" && !tonePassed;
+        return {
+          stage,
+          status: isRecoveryFailure || isToneFailure ? "failed" as const : isPendingAfterRecovery ? "pending" as const : "succeeded" as const,
+          startedAt: isPendingAfterRecovery ? null : draft.generatedAt,
+          completedAt: isPendingAfterRecovery ? null : draft.generatedAt,
+          outputVersionId: stage === "humanize_tone" && !isPendingAfterRecovery ? versionId : null,
+          error: isRecoveryFailure ? draft.recovery?.message ?? "자동 생성이 중단됐습니다."
+            : isToneFailure ? "자동 재작성 후에도 말투 이슈가 남았습니다."
+              : null,
+        };
+      }),
       startedAt: draft.generatedAt,
       completedAt: draft.generatedAt,
-      error: tonePassed ? null : "사람 말투 추가 검토가 필요합니다.",
+      error: draft.recovery?.message ?? (tonePassed ? null : "사람 말투 추가 검토가 필요합니다."),
       createdAt: draft.generatedAt,
     }],
     approvals,

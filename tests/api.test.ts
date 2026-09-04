@@ -479,6 +479,42 @@ test("저장된 말투 피드백만 다시 실행하는 복구 요청은 전체 
   assert.deepEqual(dispatched, { run_id: "tone-resume-1", mode: "tone_resume" });
 });
 
+test("중단된 원고는 저장된 체크포인트부터 다시 실행한다", async (context) => {
+  const draft = reviewDraft("failed-article-1");
+  draft.pipelineStatus = "GENERATION_FAILED";
+  draft.toneSkillApplied = false;
+  draft.recovery = {
+    schemaVersion: 1,
+    runId: draft.runId,
+    status: "failed",
+    failedStage: "article_generation",
+    lastCompletedStage: "evidence_validation",
+    resumeFrom: "article",
+    recoverable: true,
+    title: draft.title,
+    topic: draft.topic,
+    message: "원고 작성 단계에서 중단됐습니다.",
+    artifacts: [{ id: "evidence-package.json", label: "공식 근거 패키지", path: "evidence-package.json" }],
+    updatedAt: draft.updatedAt,
+  };
+  let dispatched: Record<string, string> | null = null;
+  const githubAutomation = {
+    getDraft: async () => draft,
+    updateState: async (_runId: string, changes: Partial<DashboardDraftState>, actor: string) => changedState(draft, changes, actor),
+    dispatch: async (workflow: string, inputs: Record<string, string>) => {
+      assert.equal(workflow, "rewrite");
+      dispatched = inputs;
+    },
+  } as unknown as GitHubAutomationService;
+  const app = buildApp({ githubAutomation, databaseProvider: "memory" });
+  context.after(() => app.close());
+
+  const response = await app.inject({ method: "POST", url: `/api/contents/${draft.runId}/retry` });
+  assert.equal(response.statusCode, 202);
+  assert.equal(response.json<{ rewriteQueued: boolean }>().rewriteQueued, true);
+  assert.deepEqual(dispatched, { run_id: draft.runId, mode: "retry_failed" });
+});
+
 test("서로 다른 GitHub 원고를 연속으로 반려한다", async (context) => {
   const drafts = new Map([
     ["101", reviewDraft("101", "첫 번째 검토 원고")],

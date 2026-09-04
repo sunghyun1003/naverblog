@@ -185,6 +185,15 @@ export interface ApiContentDetail {
     reviewStatus: "pending" | "approved" | "rejected";
     manualEdit: boolean;
   };
+  recovery?: {
+    failedStage: string;
+    lastCompletedStage: string | null;
+    resumeFrom: "evidence" | "article" | "tone" | "images";
+    recoverable: boolean;
+    message: string;
+    artifacts: Array<{ id: string; label: string; path: string }>;
+    updatedAt: string;
+  } | null;
   versions: ApiContentVersion[];
   sources: ApiSource[];
   claims: ApiClaim[];
@@ -259,7 +268,7 @@ export interface ApiAutomationHistoryItem {
   error: string | null;
   /** Whether the workflow left a usable draft package despite a failed job. */
   draftSaved?: boolean;
-  recoveryAction?: "tone_resume" | "image_retry" | null;
+  recoveryAction?: "tone_resume" | "image_retry" | "resume_failed_stage" | null;
   url: string;
 }
 

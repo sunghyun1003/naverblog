@@ -475,6 +475,30 @@
   line-height: 18px;
 }
 
+.review-recovery--checkpoint small {
+  display: block;
+  margin: 8px 0;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+}
+
+.review-recovery__artifacts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0 14px;
+  padding: 0;
+  list-style: none;
+}
+
+.review-recovery__artifacts li {
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: var(--color-surface-subtle);
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
 .diff-columns {
   display: grid;
   grid-template-columns: 1fr 18px 1fr;

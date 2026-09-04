@@ -180,6 +180,15 @@ export interface ContentDetail {
     reviewStatus: "pending" | "approved" | "rejected";
     manualEdit: boolean;
   };
+  recovery?: {
+    failedStage: string;
+    lastCompletedStage: string | null;
+    resumeFrom: "evidence" | "article" | "tone" | "images";
+    recoverable: boolean;
+    message: string;
+    artifacts: Array<{ id: string; label: string; path: string }>;
+    updatedAt: string;
+  } | null;
   versions: ContentVersion[];
   sources: SourceRecord[];
   claims: ClaimRecord[];

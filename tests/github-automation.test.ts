@@ -101,6 +101,51 @@ test("1MB를 넘는 트렌드 스냅샷은 Git Blob API로 읽는다", async () 
   assert.equal(trends.items[0]?.title, "자동차보험");
 });
 
+test("원고 본문 전에 실패한 체크포인트도 대시보드 원고로 읽는다", async () => {
+  const status = {
+    generatedAt: "2026-09-04T00:00:00Z",
+    updatedAt: "2026-09-04T00:03:00Z",
+    status: "GENERATION_FAILED",
+    failedStage: "evidence_validation",
+    title: "다이렉트자동차보험",
+    topic: "다이렉트자동차보험",
+  };
+  const recovery = {
+    schemaVersion: 1,
+    runId: "777",
+    status: "failed",
+    failedStage: "evidence_validation",
+    lastCompletedStage: "evidence_research",
+    resumeFrom: "evidence",
+    recoverable: true,
+    title: "다이렉트자동차보험",
+    topic: "다이렉트자동차보험",
+    message: "공식 근거 검증에서 중단됐습니다.",
+    artifacts: [{ id: "evidence-package.json", label: "공식 근거 패키지", path: "evidence-package.json" }],
+    updatedAt: "2026-09-04T00:03:00Z",
+  };
+  const mockFetch = (async (input: string | URL | Request) => {
+    const url = String(input);
+    if (url.includes("/git/trees/main")) return json({ truncated: false, tree: [
+      { path: "output/drafts/2026-09-04/run-777/status.json", type: "blob" },
+      { path: "output/drafts/2026-09-04/run-777/recovery.json", type: "blob" },
+      { path: "output/drafts/2026-09-04/run-777/evidence-package.json", type: "blob" },
+    ] });
+    if (url.includes("status.json")) return file(status);
+    if (url.includes("recovery.json")) return file(recovery);
+    if (url.includes("evidence-package.json")) return file({ schemaVersion: 1, topic: recovery.topic, sources: [], claims: [], gaps: [] });
+    return json({ message: "Not Found" }, 404);
+  }) as typeof fetch;
+  const service = new GitHubAutomationService({ owner: "owner", repository: "repo", branch: "main", token: "token" }, mockFetch);
+
+  const [summary] = await service.listDrafts();
+  const detail = await service.getDraft("777");
+  assert.equal(summary?.title, "다이렉트자동차보험");
+  assert.equal(summary?.recovery?.resumeFrom, "evidence");
+  assert.match(detail.articleMarkdown, /공식 근거 검증/);
+  assert.equal(detail.recovery?.artifacts[0]?.label, "공식 근거 패키지");
+});
+
 test("트렌드 조회는 짧게 캐시하고 명시적 새로고침만 원격 파일을 다시 읽는다", async () => {
   let latestReads = 0;
   const latest = {

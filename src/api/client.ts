@@ -150,7 +150,7 @@ function normalizeHistoryItem(value: unknown, index: number): ApiAutomationHisto
     failureCode: typeof value.failureCode === "string" ? value.failureCode : null,
     error: typeof value.error === "string" ? value.error : null,
     draftSaved: value.draftSaved === true,
-    recoveryAction: value.recoveryAction === "tone_resume" || value.recoveryAction === "image_retry"
+    recoveryAction: value.recoveryAction === "tone_resume" || value.recoveryAction === "image_retry" || value.recoveryAction === "resume_failed_stage"
       ? value.recoveryAction
       : null,
     url: asString(value.url),
@@ -229,9 +229,27 @@ function normalizeContentDetail(value: unknown): ApiContentDetail {
     })) : [],
     error: typeof item.error === "string" ? item.error : null,
   })) : [];
+  const recovery = isRecord(source.recovery)
+    && typeof source.recovery.failedStage === "string"
+    && ["evidence", "article", "tone", "images"].includes(asString(source.recovery.resumeFrom))
+    ? {
+        failedStage: asString(source.recovery.failedStage),
+        lastCompletedStage: typeof source.recovery.lastCompletedStage === "string" ? source.recovery.lastCompletedStage : null,
+        resumeFrom: asString(source.recovery.resumeFrom) as NonNullable<ApiContentDetail["recovery"]>["resumeFrom"],
+        recoverable: source.recovery.recoverable === true,
+        message: asString(source.recovery.message, "자동 생성이 중단됐습니다."),
+        artifacts: Array.isArray(source.recovery.artifacts) ? source.recovery.artifacts.filter(isRecord).map((artifact, index) => ({
+          id: asString(artifact.id, `artifact-${index}`),
+          label: asString(artifact.label, "저장된 산출물"),
+          path: asString(artifact.path),
+        })) : [],
+        updatedAt: asString(source.recovery.updatedAt, content.updatedAt),
+      }
+    : null;
   return {
     content,
     automation: isRecord(source.automation) ? source.automation as ApiContentDetail["automation"] : undefined,
+    recovery,
     versions,
     sources: Array.isArray(source.sources) ? source.sources.filter(isRecord) as unknown as ApiContentDetail["sources"] : [],
     claims: Array.isArray(source.claims) ? source.claims.filter(isRecord) as unknown as ApiContentDetail["claims"] : [],
@@ -333,6 +351,11 @@ export function rejectContent(contentId: string, reason: string): Promise<ApiCon
 /** Resume only the saved tone-review cycle; this does not regenerate research or the article. */
 export function resumeToneReview(contentId: string): Promise<ApiContent> {
   return request(`/api/contents/${encodeURIComponent(contentId)}/tone-resume`, { method: "POST" });
+}
+
+/** Continue a failed generation from its saved checkpoint instead of starting over. */
+export function retryFailedGeneration(contentId: string): Promise<ApiContent> {
+  return request(`/api/contents/${encodeURIComponent(contentId)}/retry`, { method: "POST" });
 }
 
 export function editContent(

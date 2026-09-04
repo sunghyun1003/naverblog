@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { deleteContent, editContent, getContentDetail, rejectContent, resumeToneReview } from "../../api/client";
+import { deleteContent, editContent, getContentDetail, rejectContent, resumeToneReview, retryFailedGeneration } from "../../api/client";
 import type { ApiContentDetail } from "../../api/types";
 import { readRuntimeCache, writeRuntimeCache } from "../../api/runtimeCache";
 
@@ -74,6 +74,18 @@ export function useContentDetail(contentId: string | undefined) {
     return content;
   };
 
+  const retryFailed = async () => {
+    if (!contentId || connectionStatus !== "connected" || !detail) throw new Error("원고 연결을 확인한 뒤 다시 시도해주세요.");
+    const content = await retryFailedGeneration(contentId);
+    setDetail((current) => {
+      if (!current) return current;
+      const next = { ...current, content };
+      writeRuntimeCache(`content:${contentId}`, next);
+      return next;
+    });
+    return content;
+  };
+
   const edit = async (input: { title: string; body: string; reason?: string | null }) => {
     if (!contentId || connectionStatus !== "connected" || !detail) throw new Error("원고 연결을 확인한 뒤 다시 시도해주세요.");
     const content = await editContent(contentId, input);
@@ -100,5 +112,5 @@ export function useContentDetail(contentId: string | undefined) {
 
   const reload = () => setRequestVersion((current) => current + 1);
 
-  return { detail, connectionStatus, loadError, reload, refresh, reject, resumeTone, edit, remove };
+  return { detail, connectionStatus, loadError, reload, refresh, reject, resumeTone, retryFailed, edit, remove };
 }

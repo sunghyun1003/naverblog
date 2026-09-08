@@ -1,4 +1,5 @@
 import { DomainError } from "../domain/errors.js";
+import { recoveryFromVersions } from "../domain/generation-recovery.js";
 import type {
   ApprovalRecord,
   AuditEvent,
@@ -97,9 +98,11 @@ export class InMemoryAutomationRepository implements AutomationRepository {
   async getContentDetail(id: string): Promise<ContentDetail | null> {
     const content = await this.getContent(id);
     if (!content) return null;
+    const versions = await this.listVersions(id);
     return {
       content,
-      versions: await this.listVersions(id),
+      versions,
+      recovery: recoveryFromVersions(versions),
       sources: await this.listSources(id),
       claims: await this.listClaims(id),
       qualityResults: await this.listQualityResults(id),

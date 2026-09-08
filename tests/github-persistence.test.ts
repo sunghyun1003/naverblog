@@ -7,6 +7,22 @@ import { persistGitHubDraftDetail, persistGitHubTrends } from "../server/service
 
 const generatedAt = "2026-08-23T22:00:00.000Z";
 
+test("failed-generation recovery survives persistence and is cleared after success", async () => {
+  const repository = new InMemoryAutomationRepository();
+  const value = draft();
+  value.recovery = {
+    schemaVersion: 1, runId: value.runId, status: "failed", title: value.title, topic: value.topic,
+    failedStage: "package_render", lastCompletedStage: "tone_review", resumeFrom: "tone", recoverable: true,
+    message: "saved draft", artifacts: [{ id: "article.json", label: "원고", path: "article.json" }], updatedAt: generatedAt,
+  };
+  const saved = await persistGitHubDraftDetail(repository, value);
+  assert.equal(saved.recovery?.resumeFrom, "tone");
+  assert.equal((await repository.getContentDetail(value.runId))?.recovery?.message, "saved draft");
+  value.recovery = null;
+  await persistGitHubDraftDetail(repository, value);
+  assert.equal((await repository.getContentDetail(value.runId))?.recovery, null);
+});
+
 function draft(): AutomationDraftDetail {
   return {
     runId: "321",

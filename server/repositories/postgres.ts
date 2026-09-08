@@ -16,6 +16,7 @@ import type {
 } from "../domain/types.js";
 import type { AutomationRepository } from "./contracts.js";
 import { securePostgresConnectionString } from "../db/connection.js";
+import { recoveryFromVersions } from "../domain/generation-recovery.js";
 
 export interface PostgresRepositoryOptions {
   connectionString: string;
@@ -172,7 +173,7 @@ export class PostgresAutomationRepository implements AutomationRepository {
       this.listVersions(id), this.listSources(id), this.listClaims(id), this.listQualityResults(id), this.listJobs(id),
       this.listApprovals(id), this.listPublications(id), this.listAuditEvents(id),
     ]);
-    return { content, versions, sources, claims, qualityResults, jobs, approvals, publications, auditEvents };
+    return { content, versions, sources, claims, qualityResults, jobs, approvals, publications, auditEvents, recovery: recoveryFromVersions(versions) };
   }
 
   async saveTrendSignals(signals: TrendSignal[]): Promise<TrendSignal[]> {

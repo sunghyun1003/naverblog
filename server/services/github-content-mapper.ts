@@ -357,6 +357,7 @@ export function draftToDetail(draft: AutomationDraftDetail): ContentDetail {
       metadata: {
         skillName: "demi",
         toneSkillApplied: draft.toneSkillApplied,
+        generationRecovery: draft.recovery ?? null,
         toneVerdict: draft.toneVerdict,
         toneReview: draft.toneReview ?? null,
         toneAttempts: draft.toneAttempts ?? null,

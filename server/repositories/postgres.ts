@@ -162,7 +162,45 @@ export class PostgresAutomationRepository implements AutomationRepository {
   }
 
   async listContents(): Promise<ContentRecord[]> {
-    const result = await this.pool.query("SELECT * FROM contents WHERE team_id=$1 ORDER BY updated_at DESC", [this.teamId]);
+    const result = await this.pool.query(`SELECT * FROM contents c WHERE team_id=$1
+      AND NOT EXISTS (SELECT 1 FROM dashboard_snapshots s WHERE s.team_id=$1 AND s.key='detail:' || c.id AND s.value='null'::jsonb)
+      ORDER BY updated_at DESC`, [this.teamId]);
+    return result.rows.map(contentFrom);
+  }
+
+  async getSnapshot<T>(key: string): Promise<{ value: T; syncedAt: string } | null> {
+    const result = await this.pool.query("SELECT value, synced_at FROM dashboard_snapshots WHERE team_id=$1 AND key=$2", [this.teamId, key]);
+    const row = result.rows[0];
+    return row ? { value: row.value as T, syncedAt: new Date(row.synced_at).toISOString() } : null;
+  }
+
+  async saveSnapshot(key: string, value: unknown): Promise<void> {
+    await this.pool.query(`INSERT INTO dashboard_snapshots (team_id,key,value) VALUES ($1,$2,$3::jsonb)
+      ON CONFLICT (team_id,key) DO UPDATE SET value=EXCLUDED.value,synced_at=now()
+      WHERE EXCLUDED.key NOT LIKE 'detail:%' OR (
+        dashboard_snapshots.value <> 'null'::jsonb AND (
+          EXCLUDED.value = 'null'::jsonb OR
+          COALESCE(dashboard_snapshots.value #>> '{content,updatedAt}', 'epoch')::timestamptz <= (EXCLUDED.value #>> '{content,updatedAt}')::timestamptz
+        )
+      )`, [this.teamId, key, JSON.stringify(value)]);
+  }
+
+  async upsertContents(contents: ContentRecord[]): Promise<ContentRecord[]> {
+    if (!contents.length) return [];
+    const users = [...new Set(contents.flatMap((content) => [content.createdBy, content.assigneeId]).filter((id): id is string => Boolean(id)))];
+    await Promise.all(users.map((id) => this.ensureUser(id)));
+    const result = await this.pool.query(`INSERT INTO contents
+      (id,team_id,creation_key,title,topic,strategy,state,assignee_id,created_by,scheduled_at,published_at,created_at,updated_at)
+      SELECT x.id,$2,x."creationKey",x.title,x.topic,x.strategy,x.state,x."assigneeId",x."createdBy",
+        x."scheduledAt"::timestamptz,x."publishedAt"::timestamptz,x."createdAt"::timestamptz,x."updatedAt"::timestamptz
+      FROM jsonb_to_recordset($1::jsonb) AS x(id text,"creationKey" text,title text,topic text,strategy text,state text,
+        "assigneeId" text,"createdBy" text,"scheduledAt" text,"publishedAt" text,"createdAt" text,"updatedAt" text)
+      WHERE NOT EXISTS (SELECT 1 FROM dashboard_snapshots s WHERE s.team_id=$2 AND s.key='detail:' || x.id AND s.value='null'::jsonb)
+      ON CONFLICT (team_id,creation_key) DO UPDATE SET title=EXCLUDED.title,topic=EXCLUDED.topic,strategy=EXCLUDED.strategy,
+        state=EXCLUDED.state,assignee_id=EXCLUDED.assignee_id,scheduled_at=EXCLUDED.scheduled_at,
+        published_at=EXCLUDED.published_at,updated_at=EXCLUDED.updated_at
+      WHERE contents.updated_at <= EXCLUDED.updated_at
+      RETURNING *`, [JSON.stringify(contents), this.teamId]);
     return result.rows.map(contentFrom);
   }
 

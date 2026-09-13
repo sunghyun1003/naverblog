@@ -3,6 +3,7 @@ import { loadConfig } from "./config.js";
 import { buildApp } from "./http/app.js";
 import { GitHubAutomationService } from "./services/github-automation.js";
 import { SessionAuthService } from "./services/session-auth.js";
+import { GitHubSyncIdentity } from "./services/github-oidc.js";
 
 const config = loadConfig();
 const runtime = await bootstrapSystem(config);
@@ -29,6 +30,7 @@ const app = buildApp({
   auth,
   serveWeb: config.SERVE_WEB,
   ...(githubAutomation ? { githubAutomation } : {}),
+  ...(githubAutomation ? { syncIdentity: new GitHubSyncIdentity(config.WEB_ORIGIN, `${config.GITHUB_AUTOMATION_OWNER}/${config.GITHUB_AUTOMATION_REPOSITORY}`) } : {}),
 });
 
 let stopping = false;

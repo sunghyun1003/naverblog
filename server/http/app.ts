@@ -2,7 +2,7 @@ import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import fastifyStatic from "@fastify/static";
 import path from "node:path";
 import { z } from "zod";
-import { isDomainError } from "../domain/errors.js";
+import { DomainError, isDomainError } from "../domain/errors.js";
 import { userRoles, type Actor, type UserRole } from "../domain/types.js";
 import { randomId } from "../domain/utils.js";
 import { draftToContent, draftToDetail } from "../services/github-content-mapper.js";
@@ -10,6 +10,9 @@ import { GitHubAutomationError, type AutomationDraftDetail, type AutomationSetti
 import { persistGitHubDraftDetail, persistGitHubDraftSummaries, persistGitHubTrends } from "../services/github-persistence.js";
 import type { SessionAuthService } from "../services/session-auth.js";
 import { createAutomationSystem, type AutomationSystem } from "../system.js";
+import { DashboardSync } from "../services/dashboard-sync.js";
+import type { GitHubSyncIdentity } from "../services/github-oidc.js";
+import type { ContentDetail } from "../domain/types.js";
 
 const createContentSchema = z.object({
   title: z.string().trim().min(5).max(120),
@@ -84,6 +87,7 @@ export interface AppOptions {
   auth?: SessionAuthService;
   githubAutomation?: GitHubAutomationService;
   serveWeb?: boolean;
+  syncIdentity?: Pick<GitHubSyncIdentity, "verifyAuthorization">;
 }
 
 function parseRoles(value: string | string[] | undefined): UserRole[] {
@@ -166,6 +170,18 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   const auth = options.auth;
   const githubAutomation = options.githubAutomation;
   const persistGitHubData = Boolean(githubAutomation) && databaseProvider === "postgres";
+  const snapshotStore = persistGitHubData && system.repository.getSnapshot && system.repository.saveSnapshot;
+  const dashboardSync = snapshotStore ? new DashboardSync(system.repository, githubAutomation!) : null;
+
+  async function snapshotOrLoad<T>(key: string, load: () => Promise<T>, force = false): Promise<T> {
+    if (snapshotStore && !force) {
+      const cached = await system.repository.getSnapshot!<T>(key);
+      if (cached?.value != null) return cached.value;
+    }
+    const value = await load();
+    if (snapshotStore) await system.repository.saveSnapshot!(key, value);
+    return value;
+  }
 
   async function persistGitHubDetailWithRetry(draft: AutomationDraftDetail): Promise<void> {
     let lastError: unknown;
@@ -182,6 +198,10 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   }
 
   async function listGitHubContents(forceRefresh = false) {
+    if (dashboardSync && forceRefresh) {
+      await dashboardSync.run();
+      forceRefresh = false;
+    }
     const cachedBeforeSync = persistGitHubData ? await system.repository.listContents() : [];
     if (cachedBeforeSync.length && !forceRefresh) {
       return {
@@ -218,6 +238,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     if (!persistGitHubData) return true;
     try {
       await persistGitHubDetailWithRetry(draft);
+      if (snapshotStore) await system.repository.saveSnapshot!(`detail:${draft.runId}`, draftToDetail(draft));
       return true;
     } catch (error) {
       app.log.warn(
@@ -232,6 +253,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     if (!persistGitHubData) return true;
     try {
       // A missing mirror is already in the desired final state.
+      if (snapshotStore) await system.repository.saveSnapshot!(`detail:${contentId}`, null);
       await system.repository.deleteContentPermanently(contentId);
       return true;
     } catch (error) {
@@ -254,6 +276,15 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   }
 
   async function getGitHubDetail(id: string, forceRefresh = false) {
+    if (snapshotStore && !forceRefresh) {
+      const cached = await system.repository.getSnapshot!<ContentDetail>(`detail:${id}`);
+      if (cached && cached.value === null) throw new DomainError("CONTENT_NOT_FOUND", "삭제된 원고입니다.", 404);
+      if (cached?.value) {
+        const checked = await system.repository.getSnapshot!("sync:metadata");
+        const asOf = checked && checked.syncedAt > cached.syncedAt ? checked.syncedAt : cached.syncedAt;
+        return { ...cached.value, freshness: freshness("postgres-cache", Date.now() - Date.parse(asOf) > 3_600_000, asOf) };
+      }
+    }
     if (persistGitHubData && !forceRefresh) {
       const cached = await system.repository.getContentDetail(id);
       const cachedPackage = cached?.versions.at(-1)?.metadata.imagePackage;
@@ -273,7 +304,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       const imagePackageUnsettled = isGitHubDraft
         && isUnpublishedDraft
         && (packageStatus === "queued" || packageStatus == null || (["review_ready", "approved"].includes(cached!.content.state) && !hasReadyImages));
-      if (cached?.versions.length && !imagePackageUnsettled) {
+      if (cached?.versions.length && (!imagePackageUnsettled || snapshotStore)) {
         return { ...cached, freshness: freshness("postgres-cache", false, cached.content.updatedAt) };
       }
     }
@@ -290,6 +321,12 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     if (!persistGitHubData) {
       return { ...draftToDetail(draft), freshness: freshness("github", false, new Date().toISOString()) };
     }
+    if (snapshotStore) {
+      const detail = draftToDetail(draft);
+      await persistGitHubDraftSummaries(system.repository, [draft]);
+      await system.repository.saveSnapshot!(`detail:${id}`, detail);
+      return { ...detail, freshness: freshness("github", false, new Date().toISOString()) };
+    }
     try {
       const detail = await persistGitHubDraftDetail(system.repository, draft);
       return { ...detail, freshness: freshness("github", false, new Date().toISOString()) };
@@ -305,6 +342,8 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     reply.header("Access-Control-Allow-Headers", "Content-Type, X-User-Id, X-User-Roles, X-Idempotency-Key, X-Requested-With");
     reply.header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
     if (request.method === "OPTIONS") return reply.status(204).send();
+    if (request.url.startsWith("/api/")) reply.header("Cache-Control", "private, no-store");
+    if (request.url === "/api/internal/sync" && request.method === "POST") return;
     if (!auth || !request.url.startsWith("/api/")) return;
     if (request.url.startsWith("/api/auth/login")) return;
     const session = auth.verifyCookie(request.headers.cookie);
@@ -312,6 +351,14 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     if (request.method !== "GET" && request.headers["x-requested-with"] !== "dashboard") {
       return reply.status(403).send({ error: { code: "INVALID_REQUEST_ORIGIN", message: "허용되지 않은 요청입니다.", details: null } });
     }
+  });
+
+  app.post("/api/internal/sync", async (request, reply) => {
+    if (!options.syncIdentity || !await options.syncIdentity.verifyAuthorization(request.headers.authorization)) {
+      return reply.status(401).send({ error: { code: "UNAUTHENTICATED", message: "GitHub 작업 인증이 필요합니다." } });
+    }
+    if (!dashboardSync) return reply.status(503).send({ error: { code: "SYNC_UNAVAILABLE" } });
+    return dashboardSync.run();
   });
 
   app.setErrorHandler((error, _request, reply) => {
@@ -393,15 +440,17 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     const runs = await githubAutomation.listWorkflowRuns();
     return { ...(await githubAutomation.capabilities(runs)), runs };
   });
-  app.get("/api/automation/runs", async () => ({ items: githubAutomation ? await githubAutomation.listWorkflowRuns() : [] }));
-  app.get("/api/automation/history", async () => ({ items: githubAutomation ? await githubAutomation.listAutomationHistory() : [] }));
+  app.get("/api/automation/runs", async (request) => ({ items: githubAutomation ? await snapshotOrLoad("automation:runs", () => githubAutomation.listWorkflowRuns(), refreshQuerySchema.parse(request.query).refresh === "true") : [] }));
+  app.get("/api/automation/history", async (request) => ({ items: githubAutomation ? await snapshotOrLoad("automation:history", () => githubAutomation.listAutomationHistory(), refreshQuerySchema.parse(request.query).refresh === "true") : [] }));
   app.get("/api/automation/settings", async () => ({
-    settings: githubAutomation ? await githubAutomation.getAutomationSettings() : null,
+    settings: githubAutomation ? await snapshotOrLoad("automation:settings", () => githubAutomation.getAutomationSettings()) : null,
   }));
   app.put("/api/automation/settings", async (request, reply) => {
     if (!githubAutomation) return reply.status(503).send({ error: { code: "AUTOMATION_NOT_CONFIGURED", message: "GitHub 자동화가 연결되지 않았습니다.", details: null } });
     const settings = automationSettingsSchema.parse(request.body) as AutomationSettings;
-    return { settings: await githubAutomation.updateAutomationSettings(settings) };
+    const saved = await githubAutomation.updateAutomationSettings(settings);
+    if (snapshotStore) await system.repository.saveSnapshot!("automation:settings", saved);
+    return { settings: saved };
   });
   app.post("/api/automation/collect", async (_request, reply) => {
     if (!githubAutomation) return reply.status(503).send({ error: { code: "AUTOMATION_NOT_CONFIGURED", message: "GitHub 자동화가 연결되지 않았습니다.", details: null } });
@@ -877,6 +926,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   app.get("/api/trends", async (request) => {
     const query = refreshQuerySchema.parse(request.query);
     if (githubAutomation) {
+      if (snapshotStore) return snapshotOrLoad("trends", () => githubAutomation.getTrends(query.refresh === "true"), query.refresh === "true");
       if (persistGitHubData && query.refresh !== "true") {
         const cached = await system.repository.listTrendSignals();
         // A cache from a previous collection day is useful as a fallback, but

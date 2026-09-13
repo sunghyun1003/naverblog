@@ -19,6 +19,9 @@ export interface AutomationRepository {
   deleteContentPermanently(id: string): Promise<boolean>;
   findContentByCreationKey(key: string): Promise<ContentRecord | null>;
   listContents(): Promise<ContentRecord[]>;
+  upsertContents?(contents: ContentRecord[]): Promise<ContentRecord[]>;
+  getSnapshot?<T>(key: string): Promise<{ value: T; syncedAt: string } | null>;
+  saveSnapshot?(key: string, value: unknown): Promise<void>;
   getContentDetail(id: string): Promise<ContentDetail | null>;
 
   saveTrendSignals(signals: TrendSignal[]): Promise<TrendSignal[]>;

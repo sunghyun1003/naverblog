@@ -25,6 +25,7 @@ export async function persistGitHubDraftSummaries(
   repository: AutomationRepository,
   drafts: AutomationDraftSummary[],
 ): Promise<ContentRecord[]> {
+  if (repository.upsertContents) return repository.upsertContents(drafts.map(draftToContent));
   const contents: ContentRecord[] = [];
   for (const draft of drafts) contents.push(await upsertContent(repository, draftToContent(draft)));
   return contents;

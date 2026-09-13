@@ -74,7 +74,7 @@ export function AutomationHistoryPage() {
     setRefreshing(true);
     setError("");
     try {
-      const response = await listAutomationHistory(signal);
+      const response = await listAutomationHistory(signal, !signal);
       setItems(response.items);
       writeRuntimeCache("automation:history", response);
     } catch (reason) {

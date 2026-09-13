@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { createContent, deleteContents, generateContent, getCapabilities, listContents, runPipeline } from "../../api/client";
+import { cachedContents, createContent, deleteContents, generateContent, getCapabilities, listContents, runPipeline } from "../../api/client";
 import { mapContent } from "../../api/mapping";
 import type { ApiCapabilities, ApiFreshness } from "../../api/types";
 import type { ContentItem } from "../../types/content";
@@ -9,7 +9,8 @@ type ConnectionStatus = "connecting" | "connected" | "offline";
 
 export function useContents() {
   const cachedValue = readRuntimeCache<{ contents: ContentItem[]; capabilities: ApiCapabilities | null; freshness: ApiFreshness | null }>("contents");
-  const cached = cachedValue && cachedValue.freshness?.stale !== true ? cachedValue : null;
+  const shared = cachedContents();
+  const cached = shared ? { contents: shared.items.map(mapContent), freshness: shared.freshness ?? null, capabilities: cachedValue?.capabilities ?? null } : cachedValue;
   const [contents, setContents] = useState<ContentItem[]>(cached?.contents ?? []);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(cached ? "connected" : "connecting");
   const [capabilities, setCapabilities] = useState<ApiCapabilities | null>(cached?.capabilities ?? null);
@@ -24,8 +25,11 @@ export function useContents() {
       // failure must not hide an otherwise healthy list or lock the page into
       // an offline state; reconcile each response independently.
       const results = await Promise.allSettled([
-        listContents(signal, force),
-        getCapabilities(signal),
+        listContents(signal, force).then((value) => {
+          if (!signal?.aborted) { setContents(value.items.map(mapContent)); setFreshness(value.freshness ?? null); setConnectionStatus("connected"); }
+          return value;
+        }),
+        getCapabilities(signal).then((value) => { if (!signal?.aborted) setCapabilities(value); return value; }),
       ]);
       if (signal?.aborted) return;
 
@@ -58,13 +62,13 @@ export function useContents() {
     // use the fast mirror path on route entry. A forced GitHub reconciliation
     // is reserved for the explicit refresh button and the periodic poll; doing
     // it on every tab visit made the dashboard wait on GitHub unnecessarily.
-    void refresh(controller.signal, !cached).catch((error: unknown) => {
+    void refresh(controller.signal, false).catch((error: unknown) => {
       if (error instanceof DOMException && error.name === "AbortError") return;
       setConnectionStatus("offline");
     });
     const interval = window.setInterval(() => {
-      void refresh(controller.signal, true).catch(() => setConnectionStatus("offline"));
-    }, 900_000);
+      if (!document.hidden) void refresh(controller.signal, false).catch(() => setConnectionStatus("offline"));
+    }, 30_000);
     return () => {
       window.clearInterval(interval);
       controller.abort();

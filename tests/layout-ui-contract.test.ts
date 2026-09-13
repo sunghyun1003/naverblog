@@ -20,8 +20,9 @@ test("설정 화면도 다른 운영 화면과 같은 상단 리듬을 갖는다
 test("탭 재진입은 캐시를 먼저 사용하고 강제 원격 동기화는 명시적 새로고침에만 사용한다", async () => {
   const dashboardHook = await readFile(new URL("../src/features/dashboard/useContents.ts", import.meta.url), "utf8");
   const homePage = await readFile(new URL("../src/features/operations/HomePage.tsx", import.meta.url), "utf8");
-  assert.match(dashboardHook, /void refresh\(controller\.signal, !cached\)/);
-  assert.match(homePage, /void refresh\(controller\.signal, !cachedContents && !cachedRuns && !cachedTrends\)/);
+  assert.match(dashboardHook, /void refresh\(controller\.signal, false\)/);
+  assert.match(homePage, /void refresh\(controller\.signal, false\)/);
+  assert.doesNotMatch(dashboardHook + homePage, /refresh\(controller\.signal, !cached/);
 });
 
 test("콘텐츠 목록은 내부 처리 단계를 운영자 상태로 노출하지 않는다", async () => {

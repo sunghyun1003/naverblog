@@ -14,6 +14,14 @@ import { useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { BrandMark } from "./BrandMark";
 import { useAuth } from "../features/auth/AuthProvider";
+import { getAutomationSettings, getTrends, listAutomationHistory, listContents } from "../api/client";
+
+function preloadPage(path: string): void {
+  const load = path === "/settings" ? getAutomationSettings
+    : path === "/history" ? listAutomationHistory
+    : path === "/trends" ? getTrends : listContents;
+  void load().catch(() => undefined);
+}
 
 const navigationGroups = [
   {
@@ -130,6 +138,8 @@ export function AppShell() {
                         `sidebar__item ${contentSelected || isActive || (path === "/home" && location.pathname === "/") ? "sidebar__item--active" : ""}`
                       }
                       onClick={() => setMobileOpen(false)}
+                      onPointerEnter={() => preloadPage(path)}
+                      onFocus={() => preloadPage(path)}
                     >
                       <Icon size={19} strokeWidth={2} aria-hidden="true" />
                       <span>{label}</span>

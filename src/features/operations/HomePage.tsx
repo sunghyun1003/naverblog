@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { getTrends, listContents, listWorkflowRuns } from "../../api/client";
+import { cachedContents as readContents, getTrends, listContents, listWorkflowRuns } from "../../api/client";
 import { mapContent } from "../../api/mapping";
 import type {
   ApiContent,
@@ -59,17 +59,13 @@ function formatCollectionDate(value: string): string {
 
 export function HomePage() {
   const navigate = useNavigate();
-  const cachedContentValue = readRuntimeCache<{ items: ApiContent[]; freshness?: ApiFreshness }>("home:contents")
-    ?? readRuntimeCache<{ contents: ApiContent[]; freshness: ApiFreshness | null }>("contents");
-  const cachedContents = cachedContentValue && (cachedContentValue.freshness?.stale !== true)
-    ? cachedContentValue
-    : null;
+  const cachedContents = readContents();
   const cachedTrendValue = readRuntimeCache<ApiTrendSnapshot>("trends");
   const cachedRuns = readRuntimeCache<{ items: ApiWorkflowRun[] }>("home:runs");
   const cachedTrends = cachedTrendValue && isCurrentSeoulDate(cachedTrendValue.collectionDate)
     ? cachedTrendValue
     : null;
-  const initialContents = cachedContents && "items" in cachedContents ? cachedContents.items : cachedContents?.contents ?? [];
+  const initialContents = cachedContents?.items ?? [];
   const [contents, setContents] = useState<ApiContent[]>(initialContents);
   const [runs, setRuns] = useState<ApiWorkflowRun[]>(cachedRuns?.items ?? []);
   const [freshness, setFreshness] = useState<ApiFreshness | null>(cachedContents?.freshness ?? null);
@@ -85,30 +81,20 @@ export function HomePage() {
     setLoading(!hasVisibleData);
     setError("");
     const results = await Promise.allSettled([
-      listContents(signal, force),
-      listWorkflowRuns(signal),
-      getTrends(signal, force),
+      listContents(signal, force).then((value) => {
+        if (!signal?.aborted) { setContents(value.items); setFreshness(value.freshness ?? null); }
+        return value;
+      }),
+      listWorkflowRuns(signal, force).then((value) => {
+        if (!signal?.aborted) { setRuns(value.items); writeRuntimeCache("home:runs", value); }
+        return value;
+      }),
+      getTrends(signal, force).then((value) => {
+        if (!signal?.aborted) { setTrends(value); writeRuntimeCache("trends", value); }
+        return value;
+      }),
     ]);
     if (signal?.aborted) return;
-
-    const [contentResult, runResult, trendResult] = results;
-    if (contentResult.status === "fulfilled") {
-      setContents(contentResult.value.items);
-      setFreshness(contentResult.value.freshness ?? null);
-      writeRuntimeCache("home:contents", contentResult.value);
-    }
-    if (runResult.status === "fulfilled") {
-      setRuns(runResult.value.items);
-      writeRuntimeCache("home:runs", runResult.value);
-    }
-    if (trendResult.status === "fulfilled") {
-      const nextTrends = trendResult.value;
-      // Do not discard a valid but delayed collection. The trend card can
-      // show the latest available date while the page communicates that it
-      // is not today's snapshot yet.
-      setTrends(nextTrends);
-      writeRuntimeCache("trends", trendResult.value);
-    }
 
     const failedCount = results.filter((result) => result.status === "rejected").length;
     if (failedCount === results.length) setError("운영 현황을 불러오지 못했습니다. 잠시 후 다시 시도해주세요.");
@@ -121,8 +107,9 @@ export function HomePage() {
     // Use the mirrored/cache path when the home view already has data. The
     // explicit refresh button remains the authoritative GitHub reconciliation
     // path, while route entry should stay instantaneous.
-    void refresh(controller.signal, !cachedContents && !cachedRuns && !cachedTrends);
-    return () => controller.abort();
+    void refresh(controller.signal, false);
+    const timer = window.setInterval(() => { if (!document.hidden) void refresh(controller.signal, false); }, 30_000);
+    return () => { window.clearInterval(timer); controller.abort(); };
   }, []);
 
   const collectRun = runs.find((run) => run.workflow === "collect");

@@ -78,3 +78,6 @@ jobs:
 
       - name: 배포 주소
         run: gcloud run services describe "$SERVICE_NAME" --region "$REGION" --format='value(status.url)'
+
+      - name: Firebase 정적 화면 배포
+        run: npx --yes firebase-tools@15 deploy --only hosting:dashboard --project "${{ vars.GCP_PROJECT_ID }}" --non-interactive

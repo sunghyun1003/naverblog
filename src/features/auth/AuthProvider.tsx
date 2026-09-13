@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { ApiError, getSession, login as loginRequest, logout as logoutRequest } from "../../api/client";
 import type { ApiUser } from "../../api/types";
+import { clearRuntimeCache, setRuntimeCacheUser } from "../../api/runtimeCache";
 
 interface AuthContextValue {
   user: ApiUser | null;
@@ -26,9 +27,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     const controller = new AbortController();
     getSession(controller.signal)
-      .then((response) => setUser(response.user))
+      .then((response) => { setRuntimeCacheUser(response.user.id); setUser(response.user); })
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === "AbortError") return;
+        clearRuntimeCache();
         if (error instanceof ApiError && error.status === 401) setUser(null);
         else setUser(null);
       })
@@ -47,11 +49,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
       const response = await loginRequest(username, password);
+      setRuntimeCacheUser(response.user.id);
       setUser(response.user);
     },
     async logout() {
       if (previewMode) sessionStorage.removeItem("carrot-preview-session");
       else await logoutRequest();
+      clearRuntimeCache();
       setUser(null);
     },
   }), [loading, user]);

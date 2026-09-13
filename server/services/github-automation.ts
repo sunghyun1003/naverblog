@@ -1,4 +1,5 @@
 import { DomainError } from "../domain/errors.js";
+import { createHash } from "node:crypto";
 
 export interface GitHubAutomationConfig {
   owner: string;
@@ -716,6 +717,24 @@ export class GitHubAutomationService {
 
   constructor(private readonly config: GitHubAutomationConfig, private readonly request: Fetcher = fetch) {}
 
+  /** File revisions, not file bodies: used by the off-screen incremental sync. */
+  async draftRevisions(): Promise<Record<string, string>> {
+    this.invalidateRepositoryCaches();
+    const tree = await this.tree();
+    const groups = new Map<string, string[]>();
+    for (const file of tree) {
+      const runId = file.path.match(/^output\/drafts\/\d{4}-\d{2}-\d{2}\/run-(\d+)\//)?.[1]
+        ?? file.path.match(/^dashboard\/decisions\/run-(\d+)\.json$/)?.[1];
+      if (!runId || /\.(jpg|jpeg|png|webp)$/i.test(file.path)) continue;
+      const group = groups.get(runId) ?? [];
+      group.push(`${file.path}:${file.sha}`);
+      groups.set(runId, group);
+    }
+    const ids = tree.flatMap((file) => file.path.match(/^output\/drafts\/\d{4}-\d{2}-\d{2}\/run-(\d+)\/status\.json$/)?.[1] ?? []);
+    return Object.fromEntries(ids.sort((a, b) => b.localeCompare(a)).map((id) => [id,
+      createHash("sha256").update((groups.get(id) ?? []).sort().join("\n")).digest("hex")]));
+  }
+
   async capabilities(existingRuns?: WorkflowRunSummary[]) {
     const runs = existingRuns ?? await this.listWorkflowRuns();
     return {
@@ -813,7 +832,10 @@ export class GitHubAutomationService {
       .filter((value) => /^output\/history\/\d+-.+\.json$/.test(value))
       .sort((left, right) => right.localeCompare(left))
       .slice(0, limit * 2);
-    const stored = (await Promise.all(historyPaths.map((value) => this.readOptionalJson<StoredAutomationHistory>(value))))
+    const index = repositoryTree.some((file) => file.path === "output/history/index.json")
+      ? await this.readOptionalJson<{ schemaVersion: number; records: StoredAutomationHistory[] }>("output/history/index.json") : null;
+    const stored = (index?.schemaVersion === 1 && Array.isArray(index.records) ? index.records.slice(0, limit * 2)
+      : await Promise.all(historyPaths.map((value) => this.readOptionalJson<StoredAutomationHistory>(value))))
       .filter((value): value is StoredAutomationHistory => Boolean(value));
     const runById = new Map(runs.map((run) => [run.id, run]));
     const savedDraftRunIds = new Set(repositoryTree
@@ -1469,6 +1491,7 @@ export class GitHubAutomationService {
   private async raw(path: string, init: RequestInit = {}): Promise<Response> {
     return this.request(`${apiBase}/repos/${encodeURIComponent(this.config.owner)}/${encodeURIComponent(this.config.repository)}${path}`, {
       ...init,
+      signal: init.signal ?? AbortSignal.timeout(15_000),
       headers: {
         Accept: "application/vnd.github+json",
         Authorization: `Bearer ${this.config.token}`,

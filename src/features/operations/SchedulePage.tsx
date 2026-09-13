@@ -5,11 +5,11 @@ import type { ApiContent, ApiFreshness } from "../../api/types";
 import { Button } from "../../components/Button";
 import { StatusBadge } from "../../components/StatusBadge";
 import { mapContent } from "../../api/mapping";
-import { readRuntimeCache, writeRuntimeCache } from "../../api/runtimeCache";
+import { cachedContents } from "../../api/client";
 
 export function SchedulePage() {
-  const cached = readRuntimeCache<{ items: ApiContent[]; freshness?: ApiFreshness }>("schedule:contents");
-  const [contents, setContents] = useState<ApiContent[]>(cached?.items ?? []);
+  const cached = cachedContents();
+  const [contents, setContents] = useState<ApiContent[]>(cached?.items.filter((content) => ["review_ready", "approved", "scheduled", "published", "measured"].includes(content.state)) ?? []);
   const [dates, setDates] = useState<Record<string, string>>({});
   const [urls, setUrls] = useState<Record<string, string>>({});
   const [message, setMessage] = useState("");
@@ -26,7 +26,6 @@ export function SchedulePage() {
       const nextFreshness = response.freshness ?? null;
       setContents(nextItems);
       setFreshness(nextFreshness);
-      writeRuntimeCache("schedule:contents", { items: nextItems, freshness: nextFreshness ?? undefined });
     } finally {
       setLoading(false);
     }

@@ -1,4 +1,5 @@
 import type { ApiAutomationHistoryItem, ApiAutomationSettings, ApiCapabilities, ApiContent, ApiContentDetail, ApiContentList, ApiJob, ApiTrendItem, ApiTrendSnapshot, ApiUser, ApiWorkflowRun } from "./types";
+import { cachedRequest, withAbort, invalidateRuntimeCache, writeRuntimeCache, readRuntimeCache, clearRuntimeCache } from "./runtimeCache";
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "";
 
@@ -263,9 +264,28 @@ function normalizeContentDetail(value: unknown): ApiContentDetail {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  if ((!init?.method || init.method === "GET") && !path.startsWith("/api/auth/")) {
+    if (path.includes("refresh=true")) clearRuntimeCache(`request:${path.split("?")[0]}`);
+    return withAbort(cachedRequest(`request:${path}`, () => requestNetwork<T>(path, { ...init, signal: undefined }), path.includes("refresh=true") ? 0 : 10_000), init?.signal);
+  }
+  const result = await requestNetwork<T>(path, init);
+  if (init?.method && init.method !== "GET") {
+    invalidateRuntimeCache();
+    if (path.startsWith("/api/contents")) {
+      clearRuntimeCache("contents:shared");
+      clearRuntimeCache("contents");
+      clearRuntimeCache("content:");
+    }
+  }
+  return result;
+}
+
+async function requestNetwork<T>(path: string, init?: RequestInit): Promise<T> {
+  const timeout = AbortSignal.timeout(!init?.method || init.method === "GET" ? 20_000 : 120_000);
   const response = await fetch(`${apiBaseUrl}${path}`, {
     ...init,
     credentials: "include",
+    signal: init?.signal ? AbortSignal.any([init.signal, timeout]) : timeout,
     headers: {
       ...(init?.body ? { "Content-Type": "application/json" } : {}),
       ...(init?.method && init.method !== "GET" ? { "X-Requested-With": "dashboard" } : {}),
@@ -304,7 +324,11 @@ export async function listContents(signal?: AbortSignal, refresh = false): Promi
   const payload = await request<unknown>(`/api/contents${refresh ? "?refresh=true" : ""}`, { signal });
   if (!isRecord(payload)) return { items: [] };
   const items = Array.isArray(payload.items) ? payload.items.map(normalizeContent).filter((item): item is ApiContent => item !== null) : [];
-  return { items, freshness: isRecord(payload.freshness) ? payload.freshness as unknown as ApiContentList["freshness"] : undefined };
+  return writeRuntimeCache("contents:shared", { items, freshness: isRecord(payload.freshness) ? payload.freshness as unknown as ApiContentList["freshness"] : undefined });
+}
+
+export function cachedContents(): ApiContentList | null {
+  return readRuntimeCache<ApiContentList>("contents:shared");
 }
 
 export function getCapabilities(signal?: AbortSignal): Promise<ApiCapabilities> {
@@ -313,7 +337,7 @@ export function getCapabilities(signal?: AbortSignal): Promise<ApiCapabilities> 
 
 export async function getContentDetail(contentId: string, signal?: AbortSignal, refresh = false): Promise<ApiContentDetail> {
   const payload = await request<unknown>(`/api/contents/${encodeURIComponent(contentId)}${refresh ? "?refresh=true" : ""}`, { signal });
-  return normalizeContentDetail(payload);
+  return writeRuntimeCache(`content:${contentId}`, normalizeContentDetail(payload));
 }
 
 export function createContent(input: { title: string; topic: string; strategy: "trend" | "original" }): Promise<ApiContent> {
@@ -413,19 +437,21 @@ export function generateContent(topic: string, strategy: "trend" | "original"): 
   });
 }
 
-export async function listWorkflowRuns(signal?: AbortSignal): Promise<{ items: ApiWorkflowRun[] }> {
-  const payload = await request<unknown>("/api/automation/runs", { signal });
-  return { items: isRecord(payload) && Array.isArray(payload.items) ? payload.items.map(normalizeWorkflowRun).filter((item): item is ApiWorkflowRun => item !== null) : [] };
+export async function listWorkflowRuns(signal?: AbortSignal, refresh = false): Promise<{ items: ApiWorkflowRun[] }> {
+  const payload = await request<unknown>(`/api/automation/runs${refresh ? "?refresh=true" : ""}`, { signal });
+  return writeRuntimeCache("home:runs", { items: isRecord(payload) && Array.isArray(payload.items) ? payload.items.map(normalizeWorkflowRun).filter((item): item is ApiWorkflowRun => item !== null) : [] });
 }
 
-export async function listAutomationHistory(signal?: AbortSignal): Promise<{ items: ApiAutomationHistoryItem[] }> {
-  const payload = await request<unknown>("/api/automation/history", { signal });
-  return { items: isRecord(payload) && Array.isArray(payload.items) ? payload.items.map(normalizeHistoryItem).filter((item): item is ApiAutomationHistoryItem => item !== null) : [] };
+export async function listAutomationHistory(signal?: AbortSignal, refresh = false): Promise<{ items: ApiAutomationHistoryItem[] }> {
+  const payload = await request<unknown>(`/api/automation/history${refresh ? "?refresh=true" : ""}`, { signal });
+  return writeRuntimeCache("automation:history", { items: isRecord(payload) && Array.isArray(payload.items) ? payload.items.map(normalizeHistoryItem).filter((item): item is ApiAutomationHistoryItem => item !== null) : [] });
 }
 
 export async function getAutomationSettings(signal?: AbortSignal): Promise<{ settings: ApiAutomationSettings | null }> {
   const payload = await request<unknown>("/api/automation/settings", { signal });
-  return { settings: isRecord(payload) ? normalizeAutomationSettings(payload.settings) : null };
+  const settings = isRecord(payload) ? normalizeAutomationSettings(payload.settings) : null;
+  if (settings) writeRuntimeCache("automation:settings", settings);
+  return { settings };
 }
 
 export async function updateAutomationSettings(settings: ApiAutomationSettings): Promise<{ settings: ApiAutomationSettings }> {
@@ -439,7 +465,7 @@ export async function getTrends(signal?: AbortSignal, refresh = false): Promise<
     return { collectionDate: "", collectedAt: fallbackDate, queryCount: 0, itemCount: 0, source: "unknown", items: [] };
   }
   const items = Array.isArray(payload.items) ? payload.items.map(normalizeTrendItem).filter((item): item is ApiTrendItem => item !== null) : [];
-  return {
+  return writeRuntimeCache("trends", {
     collectionDate: asString(payload.collectionDate),
     collectedAt: asDateString(payload.collectedAt),
     queryCount: asNumber(payload.queryCount),
@@ -450,7 +476,7 @@ export async function getTrends(signal?: AbortSignal, refresh = false): Promise<
     unavailableMetrics: isRecord(payload.unavailableMetrics) ? payload.unavailableMetrics as Record<string, string> : null,
     searchTrend: isRecord(payload.searchTrend) ? payload.searchTrend as ApiTrendSnapshot["searchTrend"] : null,
     items,
-  };
+  });
 }
 
 export function scheduleContent(contentId: string, scheduledAt: string): Promise<{ mirrorSynced?: boolean }> {

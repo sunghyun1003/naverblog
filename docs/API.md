@@ -35,6 +35,7 @@
 | POST | `/api/contents/:id/schedule` | 발행 예약 |
 | POST | `/api/contents/:id/publish` | 승인·예약된 원고 발행 |
 | GET | `/api/trends` | 수집된 트렌드 목록 |
+| GET | `/api/trends/summary` | 홈 전용 수집일·건수·최상위 제목 요약. `?refresh=true`는 전체 트렌드와 같은 원본을 최신화 |
 
 ## 오류 형식
 

@@ -52,6 +52,7 @@ test("compression does not change authentication, image bytes or accepted reques
   const blocked = await app.inject({ method: "GET", url: "/api/trends", headers });
   assert.equal(blocked.statusCode, 401);
   assert.equal(blocked.headers["cache-control"], "private, no-store");
+  assert.equal((await app.inject({ method: "GET", url: "/api/trends/summary", headers })).statusCode, 401);
   const login = await app.inject({ method: "POST", url: "/api/auth/login", headers, payload: { username: "test", password: "test" } });
   assert.equal(login.statusCode, 200);
   assert.equal(login.headers["content-encoding"], undefined);

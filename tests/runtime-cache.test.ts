@@ -51,3 +51,30 @@ test("changing authenticated users never shares private cache entries", () => {
   setRuntimeCacheUser("second"); assert.equal(readRuntimeCache("private"), null);
   clearRuntimeCache();
 });
+
+test("memory-only requests do not serialize the saved page cache again", async (context) => {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, "sessionStorage");
+  let writes = 0;
+  const saved = new Map<string, string>();
+  Object.defineProperty(globalThis, "sessionStorage", { configurable: true, value: {
+    getItem: (key: string) => saved.get(key) ?? null,
+    setItem: (key: string, value: string) => { writes++; saved.set(key, value); },
+  } });
+  context.after(() => {
+    clearRuntimeCache();
+    if (previous) Object.defineProperty(globalThis, "sessionStorage", previous);
+    else Reflect.deleteProperty(globalThis, "sessionStorage");
+  });
+  setRuntimeCacheUser("storage-test");
+  writeRuntimeCache("trends", { items: ["full data"] });
+  assert.equal(writes, 1);
+  await cachedRequest("request:/api/trends/summary", async () => ({ itemCount: 1 }));
+  clearRuntimeCache("request:/api/trends");
+  assert.equal(writes, 1);
+  writeRuntimeCache("trends:summary", { itemCount: 1 });
+  assert.equal(writes, 2);
+  assert.deepEqual(readRuntimeCache("trends"), { items: ["full data"] });
+  assert.equal(JSON.parse([...saved.values()][0]!).length, 2);
+  clearRuntimeCache();
+  assert.equal([...saved.values()][0], "[]");
+});

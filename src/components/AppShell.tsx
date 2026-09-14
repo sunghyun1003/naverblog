@@ -14,9 +14,13 @@ import { useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { BrandMark } from "./BrandMark";
 import { useAuth } from "../features/auth/AuthProvider";
-import { getAutomationSettings, getTrends, listAutomationHistory, listContents } from "../api/client";
+import { getAutomationSettings, getTrends, getTrendSummary, listAutomationHistory, listContents, listWorkflowRuns } from "../api/client";
 
 function preloadPage(path: string): void {
+  if (path === "/home") {
+    void Promise.allSettled([listContents(), listWorkflowRuns(), getTrendSummary()]);
+    return;
+  }
   const load = path === "/settings" ? getAutomationSettings
     : path === "/history" ? listAutomationHistory
     : path === "/trends" ? getTrends : listContents;

@@ -1,4 +1,4 @@
-import type { ApiAutomationHistoryItem, ApiAutomationSettings, ApiCapabilities, ApiContent, ApiContentDetail, ApiContentList, ApiJob, ApiTrendItem, ApiTrendSnapshot, ApiUser, ApiWorkflowRun } from "./types";
+import type { ApiAutomationHistoryItem, ApiAutomationSettings, ApiCapabilities, ApiContent, ApiContentDetail, ApiContentList, ApiJob, ApiTrendItem, ApiTrendSnapshot, ApiTrendSummary, ApiUser, ApiWorkflowRun } from "./types";
 import { cachedRequest, withAbort, invalidateRuntimeCache, writeRuntimeCache, readRuntimeCache, clearRuntimeCache } from "./runtimeCache";
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "";
@@ -476,6 +476,27 @@ export async function getTrends(signal?: AbortSignal, refresh = false): Promise<
     unavailableMetrics: isRecord(payload.unavailableMetrics) ? payload.unavailableMetrics as Record<string, string> : null,
     searchTrend: isRecord(payload.searchTrend) ? payload.searchTrend as ApiTrendSnapshot["searchTrend"] : null,
     items,
+  });
+}
+
+export function cachedTrendSummary(): ApiTrendSummary | null {
+  const summary = readRuntimeCache<ApiTrendSummary>("trends:summary");
+  const full = readRuntimeCache<ApiTrendSnapshot>("trends");
+  if (!full || (summary && summary.collectedAt >= full.collectedAt)) return summary;
+  return { collectionDate: full.collectionDate, collectedAt: full.collectedAt, queryCount: full.queryCount,
+    itemCount: full.itemCount, source: full.source, topTitle: full.items[0]?.title ?? null };
+}
+
+export async function getTrendSummary(signal?: AbortSignal, refresh = false): Promise<ApiTrendSummary> {
+  // A home refresh also invalidates the full response's short request cache,
+  // but never replaces the searchable full snapshot with a partial response.
+  if (refresh) clearRuntimeCache("request:/api/trends");
+  const payload = await request<unknown>(`/api/trends/summary${refresh ? "?refresh=true" : ""}`, { signal });
+  const value = isRecord(payload) ? payload : {};
+  return writeRuntimeCache("trends:summary", {
+    collectionDate: asString(value.collectionDate), collectedAt: asDateString(value.collectedAt),
+    queryCount: asNumber(value.queryCount), itemCount: asNumber(value.itemCount), source: asString(value.source, "unknown"),
+    topTitle: typeof value.topTitle === "string" ? value.topTitle : null,
   });
 }
 

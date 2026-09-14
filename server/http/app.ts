@@ -938,11 +938,10 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     };
   }
 
-  getCompressed("/api/trends", async (request) => {
-    const query = refreshQuerySchema.parse(request.query);
+  async function loadTrends(forceRefresh: boolean) {
     if (githubAutomation) {
-      if (snapshotStore) return snapshotOrLoad("trends", () => githubAutomation.getTrends(query.refresh === "true"), query.refresh === "true");
-      if (persistGitHubData && query.refresh !== "true") {
+      if (snapshotStore) return snapshotOrLoad("trends", () => githubAutomation.getTrends(forceRefresh), forceRefresh);
+      if (persistGitHubData && !forceRefresh) {
         const cached = await system.repository.listTrendSignals();
         // A cache from a previous collection day is useful as a fallback, but
         // it must not mask a newer GitHub snapshot. This was the reason the UI
@@ -953,7 +952,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       }
       let trends;
       try {
-        trends = await githubAutomation.getTrends(query.refresh === "true");
+        trends = await githubAutomation.getTrends(forceRefresh);
       } catch (error) {
         if (!persistGitHubData) throw error;
         const cached = await system.repository.listTrendSignals();
@@ -1008,6 +1007,21 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
         },
       })),
       searchTrend: { status: "ok", windowDays: 28, recentDays: 7, baselineDays: 21, requestCount: trends.length },
+    };
+  }
+
+  getCompressed("/api/trends", async (request) => loadTrends(refreshQuerySchema.parse(request.query).refresh === "true"));
+  // Home only renders these fields. Keep the complete snapshot and search data
+  // in the existing endpoint; both reads share the same source and refresh path.
+  getCompressed("/api/trends/summary", async (request) => {
+    const snapshot = await loadTrends(refreshQuerySchema.parse(request.query).refresh === "true");
+    return {
+      collectionDate: snapshot.collectionDate,
+      collectedAt: snapshot.collectedAt,
+      queryCount: snapshot.queryCount,
+      itemCount: snapshot.itemCount,
+      source: snapshot.source,
+      topTitle: snapshot.items[0]?.title ?? null,
     };
   });
 

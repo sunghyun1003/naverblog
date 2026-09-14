@@ -210,6 +210,8 @@ export interface ApiCapabilities {
   integrations: Record<string, { configured: boolean; provider: string }>;
 }
 
+export type ApiTrendSummary = Pick<ApiTrendSnapshot, "collectionDate" | "collectedAt" | "queryCount" | "itemCount" | "source"> & { topTitle: string | null };
+
 export interface ApiUser {
   id: string;
   name: string;

@@ -11,17 +11,17 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { cachedContents as readContents, getTrends, listContents, listWorkflowRuns } from "../../api/client";
+import { cachedContents as readContents, cachedTrendSummary, getTrendSummary, listContents, listWorkflowRuns } from "../../api/client";
 import { mapContent } from "../../api/mapping";
 import type {
   ApiContent,
   ApiFreshness,
-  ApiTrendSnapshot,
+  ApiTrendSummary,
   ApiWorkflowRun,
 } from "../../api/types";
 import { Button } from "../../components/Button";
 import { StatusBadge } from "../../components/StatusBadge";
-import { readRuntimeCache, writeRuntimeCache } from "../../api/runtimeCache";
+import { readRuntimeCache } from "../../api/runtimeCache";
 import { isCurrentSeoulDate } from "../../api/date";
 
 function runLabel(run: ApiWorkflowRun | undefined, loading = false): string {
@@ -60,7 +60,7 @@ function formatCollectionDate(value: string): string {
 export function HomePage() {
   const navigate = useNavigate();
   const cachedContents = readContents();
-  const cachedTrendValue = readRuntimeCache<ApiTrendSnapshot>("trends");
+  const cachedTrendValue = cachedTrendSummary();
   const cachedRuns = readRuntimeCache<{ items: ApiWorkflowRun[] }>("home:runs");
   const cachedTrends = cachedTrendValue && isCurrentSeoulDate(cachedTrendValue.collectionDate)
     ? cachedTrendValue
@@ -69,7 +69,7 @@ export function HomePage() {
   const [contents, setContents] = useState<ApiContent[]>(initialContents);
   const [runs, setRuns] = useState<ApiWorkflowRun[]>(cachedRuns?.items ?? []);
   const [freshness, setFreshness] = useState<ApiFreshness | null>(cachedContents?.freshness ?? null);
-  const [trends, setTrends] = useState<ApiTrendSnapshot | null>(cachedTrends);
+  const [trends, setTrends] = useState<ApiTrendSummary | null>(cachedTrends);
   const [loading, setLoading] = useState(!cachedContents && !cachedTrends);
   const [error, setError] = useState("");
 
@@ -86,11 +86,11 @@ export function HomePage() {
         return value;
       }),
       listWorkflowRuns(signal, force).then((value) => {
-        if (!signal?.aborted) { setRuns(value.items); writeRuntimeCache("home:runs", value); }
+        if (!signal?.aborted) setRuns(value.items);
         return value;
       }),
-      getTrends(signal, force).then((value) => {
-        if (!signal?.aborted) { setTrends(value); writeRuntimeCache("trends", value); }
+      getTrendSummary(signal, force).then((value) => {
+        if (!signal?.aborted) setTrends(value);
         return value;
       }),
     ]);
@@ -210,7 +210,7 @@ export function HomePage() {
                   <div><small>수집일</small><strong>{formatCollectionDate(trends.collectionDate)}</strong></div>
                   <div><small>검색어</small><strong>{trends.queryCount}개</strong></div>
                   <div><small>후보</small><strong>{trends.itemCount}개</strong></div>
-                  <p>{trends.items[0]?.title ?? "수집된 소재 후보가 없습니다."}</p>
+                  <p>{trends.topTitle ?? "수집된 소재 후보가 없습니다."}</p>
                 </div>
               ) : <div className="home-card-empty">{loading ? "최신 수집 결과를 불러오는 중입니다." : "오늘 수집 결과가 없습니다. 소재 수집을 실행해주세요."}</div>}
             </section>

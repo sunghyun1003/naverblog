@@ -28,6 +28,8 @@
 
 ## 배포·검증
 
+홈은 `/api/trends/summary`에서 수집일·검색어/후보 건수·최상위 제목만 받는다. 전체 트렌드와 같은 저장 자료와 새로고침 경로를 사용한다. 브라우저의 요약 캐시와 전체 검색 캐시는 분리하여 요약 조회로 목록이 잘리지 않게 한다. 메모리 전용 요청 캐시는 sessionStorage 재직렬화를 유발하지 않는다.
+
 - `005_dashboard_snapshots.sql`을 먼저 적용한다. 기존 데이터 테이블을 삭제하거나 바꾸지 않는다.
 - 대시보드 `main` push → 테스트 → DB 검증 → Cloud Run → Firebase Hosting 순서로 배포한다.
 - 배포 계정에는 기존 Cloud Run 권한 외 Firebase Hosting 배포 권한이 필요하다.

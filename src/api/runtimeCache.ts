@@ -34,7 +34,9 @@ export function readRuntimeCache<T>(key: string): T | null {
 
 export function writeRuntimeCache<T>(key: string, value: T): T {
   values.set(key, { value, storedAt: Date.now() });
-  persist();
+  // Raw request entries are memory-only. Saving one must not serialize every
+  // normalized page again before that page's own cache entry is written.
+  if (!key.startsWith("request:")) persist();
   return value;
 }
 
@@ -44,7 +46,7 @@ export function clearRuntimeCache(prefix?: string): void {
     for (const key of values.keys()) if (key.startsWith(prefix)) values.delete(key);
     for (const key of pending.keys()) if (key.startsWith(prefix)) pending.delete(key);
   }
-  persist();
+  if (!prefix?.startsWith("request:")) persist();
 }
 
 export function invalidateRuntimeCache(): void {

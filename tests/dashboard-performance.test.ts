@@ -35,7 +35,7 @@ test("all persisted page reads return without contacting a blocked GitHub server
   let calls = 0;
   const github = new Proxy({}, { get: () => () => { calls++; throw new Error("GitHub deliberately unavailable"); } }) as GitHubAutomationService;
   const app = buildApp({ system: createAutomationSystem({ repository }), databaseProvider: "postgres", githubAutomation: github });
-  for (const url of ["/api/contents", "/api/contents/321", "/api/automation/history", "/api/automation/runs", "/api/automation/settings", "/api/trends"]) {
+  for (const url of ["/api/contents", "/api/contents/321", "/api/automation/history", "/api/automation/runs", "/api/automation/settings", "/api/trends", "/api/trends/summary"]) {
     const response = await app.inject({ method: "GET", url });
     assert.equal(response.statusCode, 200, url);
     assert.equal(response.headers["cache-control"], "private, no-store");
@@ -43,6 +43,37 @@ test("all persisted page reads return without contacting a blocked GitHub server
   assert.equal(calls, 0);
   assert.equal((await app.inject({ method: "POST", url: "/api/internal/sync" })).statusCode, 401);
   await app.close();
+});
+
+test("home trend summary stays small without truncating search data and refreshes the shared source", async (context) => {
+  const repository = new SnapshotRepository();
+  const items = Array.from({ length: 739 }, (_, i) => ({ title: `트렌드 ${i}`, description: "원본 검색 자료 ".repeat(50), link: `https://example.test/${i}` }));
+  const snapshot = { collectionDate: "2026-09-13", collectedAt: "2026-09-13T00:00:00Z", queryCount: 10, itemCount: items.length, source: "github", items };
+  await repository.saveSnapshot("trends", snapshot);
+  let calls = 0;
+  const github = { getTrends: async (force: boolean) => {
+    calls++; assert.equal(force, true);
+    return { ...snapshot, collectionDate: "2026-09-14", collectedAt: "2026-09-14T00:00:00Z" };
+  } } as unknown as GitHubAutomationService;
+  const app = buildApp({ system: createAutomationSystem({ repository }), databaseProvider: "postgres", githubAutomation: github });
+  context.after(() => app.close());
+  const summary = await app.inject({ method: "GET", url: "/api/trends/summary" });
+  assert.equal(summary.statusCode, 200);
+  assert.deepEqual(summary.json(), { collectionDate: snapshot.collectionDate, collectedAt: snapshot.collectedAt, queryCount: 10, itemCount: 739, source: "github", topTitle: "트렌드 0" });
+  assert.ok(summary.rawPayload.length < 400);
+  const full = (await app.inject({ method: "GET", url: "/api/trends" })).json();
+  assert.deepEqual(full.items, items);
+  assert.equal(calls, 0);
+  const refreshed = await app.inject({ method: "GET", url: "/api/trends/summary?refresh=true" });
+  assert.equal(refreshed.json().collectionDate, "2026-09-14");
+  const after = (await app.inject({ method: "GET", url: "/api/trends" })).json();
+  assert.equal(after.collectionDate, "2026-09-14");
+  assert.deepEqual(after.items, items);
+  assert.equal(calls, 1);
+  await repository.saveSnapshot("trends", { ...snapshot, items: [], itemCount: 0 });
+  const empty = (await app.inject({ method: "GET", url: "/api/trends/summary" })).json();
+  assert.equal(empty.topTitle, null);
+  assert.equal(empty.itemCount, 0);
 });
 
 test("sync updates a changed saved draft once, and keeps previous snapshots on failure", async () => {

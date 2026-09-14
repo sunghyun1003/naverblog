@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { collectTrends, getTrends } from "../../api/client";
 import type { ApiTrendSnapshot } from "../../api/types";
 import { Button } from "../../components/Button";
-import { readRuntimeCache, writeRuntimeCache } from "../../api/runtimeCache";
+import { readRuntimeCache } from "../../api/runtimeCache";
 import { isCurrentSeoulDate } from "../../api/date";
 
 function searchTrendLabel(item: ApiTrendSnapshot["items"][number]) {
@@ -50,7 +50,6 @@ export function TrendsPage() {
     setMessage("");
     try {
       const next = await getTrends(signal, force);
-      writeRuntimeCache("trends", next);
       // A collection can be delayed (for example, when the scheduled
       // workflow is still queued). Keep the newest snapshot returned by the
       // API visible instead of turning the page blank just because its date

@@ -22,11 +22,16 @@
 
 사용자 인증 뒤 해당 사용자·브라우저 탭의 sessionStorage 사본을 복원한다. 최근 자료를 즉시 표시한 뒤 재조회한다. 동일 요청을 공유하고, 탭을 떠난 요청 하나의 취소가 다음 탭 요청을 취소하지 않는다. 로그아웃·수정으로 무효화된 과거 응답은 다시 캐시에 쓸 수 없다. API 응답은 공개 CDN에 저장하지 않는다.
 
+## 조회 응답 전송
+
+목록·상세·트렌드·실행 이력·자동 실행 설정의 GET JSON만 2KB 이상일 때 gzip으로 전송한다. 압축을 지원하지 않는 요청은 원래 JSON을 받는다. 비동기 스트림과 압축 수준 4를 사용해 서버 CPU 부담을 제한한다. `Vary: Accept-Encoding`과 `private, no-store`를 유지한다. 로그인·변경 요청·이미지 파일은 제외하며 압축된 요청 본문을 새로 허용하지 않는다.
+
 ## 배포·검증
 
 - `005_dashboard_snapshots.sql`을 먼저 적용한다. 기존 데이터 테이블을 삭제하거나 바꾸지 않는다.
 - 대시보드 `main` push → 테스트 → DB 검증 → Cloud Run → Firebase Hosting 순서로 배포한다.
 - 배포 계정에는 기존 Cloud Run 권한 외 Firebase Hosting 배포 권한이 필요하다.
+- 2026-09-14 사용자 승인 후 `github-codex-automation` 서비스 계정에 `roles/firebasehosting.admin`을 추가했고 GitHub Actions의 Firebase 정적 배포 성공을 확인했다. 별도 수동 배포를 요구하지 않는다.
 - 비공개 저장소 코드를 push한 뒤 `Sync dashboard read model`을 1회 실행하여 기존 자료를 채운다. 출력 `remaining: 0`을 확인한다.
 - 후속 자동화 실행 후 동일 workflow 성공 여부로 사본 갱신을 확인한다.
 - 회귀 검증: `npm run verify`, 비공개 저장소 `npm test`. 스냅샷 조회 무외부호출, 일괄 저장, 사용자별 캐시, 요청 취소, 삭제 보호, OIDC 거부, 기존 이미지·복구 동작을 포함한다.

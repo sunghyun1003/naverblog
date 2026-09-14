@@ -1,5 +1,6 @@
-import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
+import Fastify, { type FastifyInstance, type FastifyRequest, type RouteHandlerMethod, type RouteShorthandOptions } from "fastify";
 import fastifyStatic from "@fastify/static";
+import fastifyCompress from "@fastify/compress";
 import path from "node:path";
 import { z } from "zod";
 import { DomainError, isDomainError } from "../domain/errors.js";
@@ -336,6 +337,20 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     }
   }
 
+  // Enable only for large read responses. Authentication, mutations and image
+  // bytes retain their existing behavior; request decompression stays disabled.
+  app.register(fastifyCompress, { global: false });
+  const compressedRead: RouteShorthandOptions = {
+    compress: { encodings: ["gzip"], threshold: 2048, syncThreshold: 0, zlibOptions: { level: 4 } },
+  };
+  // The plugin configures routes through onRoute. Defer only these reads until
+  // it is initialized; buildApp and all other route registration stay unchanged.
+  const getCompressed = (url: string, handler: RouteHandlerMethod) => {
+    app.after((error) => {
+      if (error) throw error;
+      app.get(url, compressedRead, handler);
+    });
+  };
   app.addHook("onRequest", async (request, reply) => {
     reply.header("Access-Control-Allow-Origin", origin);
     reply.header("Access-Control-Allow-Credentials", "true");
@@ -440,9 +455,9 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     const runs = await githubAutomation.listWorkflowRuns();
     return { ...(await githubAutomation.capabilities(runs)), runs };
   });
-  app.get("/api/automation/runs", async (request) => ({ items: githubAutomation ? await snapshotOrLoad("automation:runs", () => githubAutomation.listWorkflowRuns(), refreshQuerySchema.parse(request.query).refresh === "true") : [] }));
-  app.get("/api/automation/history", async (request) => ({ items: githubAutomation ? await snapshotOrLoad("automation:history", () => githubAutomation.listAutomationHistory(), refreshQuerySchema.parse(request.query).refresh === "true") : [] }));
-  app.get("/api/automation/settings", async () => ({
+  getCompressed("/api/automation/runs", async (request) => ({ items: githubAutomation ? await snapshotOrLoad("automation:runs", () => githubAutomation.listWorkflowRuns(), refreshQuerySchema.parse(request.query).refresh === "true") : [] }));
+  getCompressed("/api/automation/history", async (request) => ({ items: githubAutomation ? await snapshotOrLoad("automation:history", () => githubAutomation.listAutomationHistory(), refreshQuerySchema.parse(request.query).refresh === "true") : [] }));
+  getCompressed("/api/automation/settings", async () => ({
     settings: githubAutomation ? await snapshotOrLoad("automation:settings", () => githubAutomation.getAutomationSettings()) : null,
   }));
   app.put("/api/automation/settings", async (request, reply) => {
@@ -464,7 +479,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     return reply.status(202).send({ accepted: true });
   });
 
-  app.get("/api/contents", async (request) => {
+  getCompressed("/api/contents", async (request) => {
     const query = refreshQuerySchema.parse(request.query);
     if (githubAutomation) return listGitHubContents(query.refresh === "true");
     return { items: await system.contentService.list(), freshness: freshness("local", false, new Date().toISOString()) };
@@ -506,7 +521,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     }
     return { items, failures };
   });
-  app.get("/api/contents/:id", async (request) => {
+  getCompressed("/api/contents/:id", async (request) => {
     const { id } = idParamsSchema.parse(request.params);
     const query = refreshQuerySchema.parse(request.query);
     if (githubAutomation) return getGitHubDetail(id, query.refresh === "true");
@@ -923,7 +938,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     };
   }
 
-  app.get("/api/trends", async (request) => {
+  getCompressed("/api/trends", async (request) => {
     const query = refreshQuerySchema.parse(request.query);
     if (githubAutomation) {
       if (snapshotStore) return snapshotOrLoad("trends", () => githubAutomation.getTrends(query.refresh === "true"), query.refresh === "true");

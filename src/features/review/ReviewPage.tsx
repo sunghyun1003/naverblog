@@ -20,7 +20,8 @@ import {
 } from "lucide-react";
 import { Fragment, useEffect, useState, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { contentImageUrl, generateContentImages, getContentCopyAssets } from "../../api/client";
+import { contentImageUrl, generateContentImages, getContentCopyAssets, selectContentImages } from "../../api/client";
+import { markdownBlocks, renderableImages } from "./imageUsage";
 import type { ApiContent, ApiContentVersion, ApiGeneratedImagePackage } from "../../api/types";
 import { Button } from "../../components/Button";
 import { PageLoadingState } from "../../components/PageLoadingState";
@@ -91,15 +92,6 @@ function imagePackageFrom(version: ApiContentVersion | null): ApiGeneratedImageP
   return candidate as unknown as ApiGeneratedImagePackage;
 }
 
-/** Only a package that passed both gates can safely provide image URLs. */
-function isReadyImagePackage(value: ApiGeneratedImagePackage | null | undefined): value is ApiGeneratedImagePackage {
-  return value?.status === "ready"
-    && value.technicalQualityPassed === true
-    && value.visualQualityPassed === true
-    && Array.isArray(value.assets)
-    && value.assets.length > 0;
-}
-
 function queuedImagePackage(content: ApiContent): ApiGeneratedImagePackage | null {
   if (content.imageGenerationStatus !== "queued") return null;
   return {
@@ -152,7 +144,7 @@ const generationStageLabel: Record<string, string> = {
 export function ReviewPage() {
   const navigate = useNavigate();
   const { contentId } = useParams();
-  const { detail, connectionStatus, loadError, reload, refresh, reject: rejectApi, resumeTone: resumeToneApi, retryFailed: retryFailedApi, edit: editApi, remove: removeApi } = useContentDetail(contentId);
+  const { detail, connectionStatus, loadError, reload, refresh, applyDetail, reject: rejectApi, resumeTone: resumeToneApi, retryFailed: retryFailedApi, edit: editApi, remove: removeApi } = useContentDetail(contentId);
   const [tab, setTab] = useState<ReviewTab>("draft");
   const [activeOutline, setActiveOutline] = useState("summary");
   const [expandedQuality, setExpandedQuality] = useState("");
@@ -182,9 +174,13 @@ export function ReviewPage() {
       try {
         const next = await refresh();
         if (stopped) return;
-        if (!next.recovery || next.content.state === "review_ready" || next.content.state === "approved") {
+        if (next.content.rewriteStatus === "completed") {
           setRewritePending(false);
-          setToast("수정 의견을 반영한 새 버전이 완성됐어요.");
+          setToast("원고 수정이 완료됐습니다. 이미지 진행 상태는 이미지 탭에서 별도로 확인할 수 있어요.");
+          window.setTimeout(() => setToast(""), 5000);
+        } else if (next.content.rewriteStatus === "failed") {
+          setRewritePending(false);
+          setToast("원고 수정이 중단됐습니다. 저장된 원고와 실패 단계부터 재작업할 수 있습니다.");
           window.setTimeout(() => setToast(""), 5000);
         } else if (attempts >= 40) {
           setRewritePending(false);
@@ -225,7 +221,9 @@ export function ReviewPage() {
           setImagePending(false);
           setImageRequestStartedAt(null);
           setTab("images");
-          setToast("이미지 생성이 완료되지 않았습니다. 이미지 탭에서 다시 요청할 수 있어요.");
+          setToast(nextPackage?.assets?.length
+            ? "이미지는 저장됐지만 일부 검수를 통과하지 못했습니다. 이미지 탭에서 이유를 보고 본문에 적용하거나 해당 이미지만 수정할 수 있어요."
+            : "이미지 생성이 중단됐습니다. 원고는 보존되어 있으며 이미지 탭에서 오류를 확인하고 다시 요청할 수 있어요.");
           window.setTimeout(() => setToast(""), 5000);
         } else if (attempts >= 40) {
           setImagePending(false);
@@ -344,9 +342,9 @@ export function ReviewPage() {
   }));
   const latestVersion = detail.versions.at(-1) ?? null;
   const imagePackage = imagePackageFrom(latestVersion) ?? queuedImagePackage(detail.content);
-  const renderableImagePackage = isReadyImagePackage(imagePackage) ? imagePackage : null;
-  const imageGenerationFailed = imagePackage?.status === "failed" || detail.content.imageGenerationStatus === "failed";
-  const imageGenerationReady = isReadyImagePackage(imagePackage);
+  const renderableImagePackage = renderableImages(imagePackage);
+  const imageGenerationFailed = !renderableImagePackage && (imagePackage?.status === "failed" || detail.content.imageGenerationStatus === "failed");
+  const imageGenerationReady = renderableImagePackage !== null;
   const imageGenerationQueued = imagePackage?.status === "queued";
   const evidenceReview = evidenceReviewFrom(latestVersion);
   const effectiveQualityItems = detail.qualityResults.map((result) => {
@@ -385,6 +383,7 @@ export function ReviewPage() {
   const prepareCopyHtml = async () => {
     const response = await getContentCopyAssets(detail.content.id);
     const imageUrls = Object.fromEntries(response.items.map((item) => [item.assetId, item.url]));
+    if (renderableImagePackage?.assets?.some(asset => !imageUrls[asset.id])) throw new Error("이미지 선택 또는 생성 결과가 변경됐습니다. 새로고침 후 다시 복사해주세요.");
     return buildCopyHtml(storedCopyHtml, latestVersion?.title ?? detail.content.title, latestVersion?.body ?? "", detail.content.id, renderableImagePackage, imageUrls);
   };
   const copySource = async () => {
@@ -427,6 +426,33 @@ export function ReviewPage() {
       setImageBusy(false);
       window.setTimeout(() => setToast(""), 4200);
     }
+  };
+
+  const selectImage = async (assetId: string) => {
+    if (!contentId || imageBusy || !imagePackage?.manifestKey || !imagePackage.selectionStateUpdatedAt) return;
+    const selected = new Set(imagePackage.appliedAssetIds ?? renderableImagePackage?.assets?.map(asset => asset.id) ?? []);
+    const rejected = imagePackage.visualQuality?.assets?.find(asset => asset.id === assetId)?.passed !== true;
+    const acknowledged = new Set(imagePackage.selection?.acknowledgedRejectedIds ?? []);
+    if (selected.has(assetId)) selected.delete(assetId);
+    else {
+      if (rejected) {
+        const review = imagePackage.visualQuality?.assets?.find(asset => asset.id === assetId);
+        if (!window.confirm(`반려 이유: ${review?.defects.join(" · ") || review?.recommendation || "자동 검수 미통과"}\n\n이미지를 직접 확인했으며 이대로 본문에 사용하시겠어요? 자동 검수 기록은 변경하지 않습니다.`)) return;
+        acknowledged.add(assetId);
+      }
+      selected.add(assetId);
+    }
+    setImageBusy(true);
+    try {
+      const updated = await selectContentImages(contentId, {
+        manifestKey: imagePackage.manifestKey, revision: imagePackage.currentRevision ?? 1,
+        expectedUpdatedAt: imagePackage.selectionStateUpdatedAt, assetIds: [...selected], acknowledgedRejectedIds: [...acknowledged],
+      });
+      applyDetail(updated);
+      setToast(`본문과 이미지 포함 복사에 ${selected.size}장을 적용했습니다. 재생성 비용은 발생하지 않습니다.`);
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "이미지 적용에 실패했습니다.");
+    } finally { setImageBusy(false); window.setTimeout(() => setToast(""), 5000); }
   };
 
   const reject = async (reason: string) => {
@@ -583,7 +609,7 @@ export function ReviewPage() {
 
           {tab === "draft" ? <ArticleDraft title={latestVersion?.title} body={latestVersion?.body} contentId={detail.content.id} imagePackage={renderableImagePackage} /> : null}
           {tab === "sources" ? <EvidenceReviewPanel evidence={evidenceReview} sources={detail.sources} claims={detail.claims} /> : null}
-          {tab === "images" ? <ImageAssetsView contentId={detail.content.id} packageState={imagePackage} contentStatus={status} pending={imagePending} busy={imageBusy} onGenerate={(assetId, feedback) => void generateImages(assetId, feedback)} /> : null}
+          {tab === "images" ? <ImageAssetsView contentId={detail.content.id} packageState={imagePackage} contentStatus={status} pending={imagePending || pipelineBusy} busy={imageBusy} onSelect={(assetId) => void selectImage(assetId)} onGenerate={(assetId, feedback) => void generateImages(assetId, feedback)} /> : null}
           {tab === "history" ? <HistoryView versions={detail.versions} /> : null}
         </section>
 
@@ -594,9 +620,11 @@ export function ReviewPage() {
             {staleDetail ? "최신 원고 조회 지연 · 저장된 내용 표시 중" : "최신 원고와 자동 실행 기록 확인 완료"}
           </div>
           <section className="inspector-section auto-completion-state" aria-live="polite">
-            <h3>{imageGenerationFailed ? "이미지 보완 필요" : imageGenerationReady ? "자동 완성 완료" : imageGenerationQueued ? "이미지 생성 중" : "자동 완성 상태"}</h3>
-            <p>{imageGenerationFailed
-              ? "원고는 저장되어 있습니다. 이미지 탭에서 실패한 이미지별로 재생성하거나 수정 의견을 남길 수 있습니다."
+            <h3>{imagePackage?.selection ? "선택 이미지 적용됨" : imageGenerationFailed ? "이미지 보완 필요" : imageGenerationReady ? "자동 완성 완료" : imageGenerationQueued ? "이미지 생성 중" : "자동 완성 상태"}</h3>
+            <p>{imagePackage?.selection
+              ? `직접 선택한 ${renderableImagePackage?.assets?.length ?? 0}장이 본문과 복사에 반영됩니다. 자동 검수 결과는 이미지 탭에 그대로 보존됩니다.`
+              : imageGenerationFailed
+              ? "원고는 저장되어 있습니다. 이미지 탭에서 반려 이유를 확인하고 본문에 적용하거나 해당 이미지만 다시 생성할 수 있습니다."
               : imageGenerationReady
                 ? "원고와 이미지가 모두 저장되었습니다. 필요할 때만 수정 요청을 사용하세요."
                 : imageGenerationQueued
@@ -752,6 +780,7 @@ function ImageAssetsView({
   pending,
   busy,
   onGenerate,
+  onSelect,
 }: {
   contentId: string;
   packageState: ApiGeneratedImagePackage | null;
@@ -759,16 +788,15 @@ function ImageAssetsView({
   pending: boolean;
   busy: boolean;
   onGenerate: (assetId?: string, feedback?: string) => void;
+  onSelect: (assetId: string) => void;
 }) {
   const [feedback, setFeedback] = useState<Record<string, string>>({});
   // Image generation is independent from editorial approval. A draft can be
   // generated, reviewed, and repaired before any publication decision.
   const canGenerate = contentStatus !== "deleted";
-  const readyPackage = isReadyImagePackage(packageState) ? packageState : null;
+  const readyPackage = renderableImages(packageState);
   const ready = readyPackage !== null;
-  // Failed packages now retain their generated candidates. Show them in the
-  // image tab for diagnosis and targeted repair, but never use them for copy
-  // or publication (those paths remain ready-only below).
+  // Keep every candidate visible; applied IDs independently control article/copy.
   const inspectablePackage = packageState && (packageState.assets?.length ?? 0) > 0 ? packageState : null;
   const assets = inspectablePackage?.assets ?? [];
   const previewOnly = inspectablePackage?.status === "failed";
@@ -797,7 +825,7 @@ function ImageAssetsView({
         <>
           {previewOnly ? (
             <div className="image-assets__preview-warning" role="status">
-              품질 검수 전 미리보기입니다. 현재 이미지는 진단·수정용이며 게시용 복사에는 포함되지 않습니다.
+              일부 이미지가 자동 검수에서 반려되었습니다. 이유를 확인한 뒤 ‘본문에 적용’을 누르면 재생성 없이 사용할 수 있습니다. 원본 검수 기록은 유지됩니다.
             </div>
           ) : null}
           <div className="image-assets__grid">
@@ -816,8 +844,15 @@ function ImageAssetsView({
                       </div>
                     );
                   })()}
-                  <div><strong>{asset.role === "hero" ? "대표 이미지" : `본문 ${asset.afterSection}절 뒤`}</strong><span>AI 실사·일러스트</span></div>
+                  <div className="image-asset__caption-heading"><strong>{asset.role === "hero" ? "대표 이미지" : `본문 ${asset.afterSection}절 뒤`}</strong><span>AI 실사·일러스트</span></div>
                   <p>{asset.altText}</p>
+                  <Button size="small" variant={readyPackage?.assets?.some(item => item.id === asset.id) ? "outline" : "brand"}
+                    disabled={pending || busy || !packageState?.technicalQualityPassed || !packageState.manifestKey || contentStatus === "scheduled" || contentStatus === "published" || contentStatus === "deleted"}
+                    onClick={() => onSelect(asset.id)}>
+                    {readyPackage?.assets?.some(item => item.id === asset.id) ? "본문에서 제외" : "본문에 적용"}
+                  </Button>
+                  {visualQualityByAsset.get(asset.id)?.passed ? <small>자동 검수 통과</small> : null}
+                  {packageState?.selection?.acknowledgedRejectedIds.includes(asset.id) ? <small>반려 이유 확인 후 사용자 선택</small> : null}
                   <div className="image-asset__feedback">
                     <label>
                       <span className="sr-only">{asset.id} 수정 의견</span>
@@ -830,14 +865,13 @@ function ImageAssetsView({
                     </label>
                     <Button
                       size="small"
-                      disabled={pending || busy || !feedback[asset.id]?.trim()}
+                      disabled={pending || busy || !canGenerate}
                       onClick={() => {
                         const value = feedback[asset.id]?.trim();
-                        if (!value) return;
                         onGenerate(asset.id, value);
                       }}
                     >
-                      이 이미지 수정
+                      이 이미지만 다시 생성
                     </Button>
                   </div>
                   <small>{asset.width}×{asset.height} · {Math.round(asset.bytes / 1024)}KB</small>
@@ -896,7 +930,7 @@ function renderGeneratedBlocks(body: string): ReactNode[] {
 }
 
 function renderGeneratedBlocksWithImages(body: string, contentId: string, imagePackage: ApiGeneratedImagePackage | null): ReactNode[] {
-  const usableImagePackage = isReadyImagePackage(imagePackage) ? imagePackage : null;
+  const usableImagePackage = renderableImages(imagePackage);
   const assets = usableImagePackage?.assets ?? [];
   const imagesBySection = new Map<number, typeof assets>();
   for (const asset of assets.filter((item) => item.role === "inline")) {
@@ -917,7 +951,7 @@ function renderGeneratedBlocksWithImages(body: string, contentId: string, imageP
       );
     }
   };
-  for (const [index, block] of body.split("\n\n").entries()) {
+  for (const [index, block] of markdownBlocks(body).entries()) {
     const text = block.trim();
     if (!text) continue;
     if (text.startsWith("### ")) {
@@ -984,9 +1018,9 @@ function buildCopyHtml(
   imagePackage: ApiGeneratedImagePackage | null,
   imageUrls: Record<string, string> = {},
 ): string {
-  const usableImagePackage = isReadyImagePackage(imagePackage) ? imagePackage : null;
+  const usableImagePackage = renderableImages(imagePackage);
   const assets = usableImagePackage?.assets ?? [];
-  const source = storedHtml.trim() || `<article><h1>${escapeCopyHtml(title)}</h1>${body.split("\n\n").map((block) => {
+  const source = storedHtml.trim() || `<article><h1>${escapeCopyHtml(title)}</h1>${markdownBlocks(body).map((block) => {
     const text = block.trim();
     if (!text) return "";
     if (text.startsWith("### ")) return `<h3>${escapeCopyHtml(text.slice(4))}</h3>`;
@@ -996,13 +1030,10 @@ function buildCopyHtml(
     if (text.startsWith("> ")) return `<blockquote><p>${escapeCopyHtml(text.slice(2))}</p></blockquote>`;
     return `<p>${escapeCopyHtml(text)}</p>`;
   }).join("")}</article>`;
-  const withoutUnavailableImages = assets.length > 0 ? source : removeUnavailableImages(source);
-  const withResolvedImages = withoutUnavailableImages.replace(/(src=["'])images\/([^"']+)(["'])/g, (_match, prefix: string, fileName: string, suffix: string) => {
-    const asset = assets.find((item) => item.path === fileName || `${item.id}.jpg` === fileName);
-    const url = asset ? imageUrls[asset.id] ?? contentImageUrl(contentId, asset.id, usableImagePackage?.generatedAt) : `images/${fileName}`;
-    return `${prefix}${url}${suffix}`;
-  });
-  return decorateNaverCopyHtml(withResolvedImages, assets, imageUrls, contentId, usableImagePackage?.generatedAt);
+  // Stored HTML can still contain a previously rejected/deselected image.
+  // Rebuild its images exclusively from the current server-approved selection.
+  const withoutUnavailableImages = removeUnavailableImages(source);
+  return decorateNaverCopyHtml(withoutUnavailableImages, assets, imageUrls, contentId, usableImagePackage?.generatedAt);
 }
 
 function removeUnavailableImages(html: string): string {

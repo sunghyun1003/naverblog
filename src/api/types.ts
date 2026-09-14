@@ -46,6 +46,11 @@ export interface ApiGeneratedImageAsset {
 }
 
 export interface ApiGeneratedImagePackage {
+  manifestKey?: string;
+  currentRevision?: number;
+  selectionStateUpdatedAt?: string;
+  appliedAssetIds?: string[];
+  selection?: { assetIds: string[]; acknowledgedRejectedIds: string[]; selectedAt: string; selectedBy: string } | null;
   schemaVersion: number;
   status: "queued" | "ready" | "failed";
   generatedAt?: string;
@@ -62,7 +67,7 @@ export interface ApiGeneratedImagePackage {
     assets: Array<{
       id: string;
       passed: boolean;
-      scores: { realism: number; composition: number; relevance: number; artifactControl: number };
+      scores: { realism: number; composition: number; relevance: number; artifactControl: number; novelty?: number };
       defects: string[];
       recommendation: string;
     }>;

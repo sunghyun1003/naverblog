@@ -85,6 +85,7 @@ test("sync updates a changed saved draft once, and keeps previous snapshots on f
     listWorkflowRuns: async () => [], listAutomationHistory: async () => [], getAutomationSettings: async () => ({}), getTrends: async () => ({}),
   } as unknown as GitHubAutomationService;
   const sync = new DashboardSync(repository, github);
+  await repository.saveSnapshot("sync:revisions", { "321": "a" }); // previous mapper contract
   assert.deepEqual(await sync.run(), { updated: 1, remaining: 0 });
   assert.deepEqual(await sync.run(), { updated: 0, remaining: 0 });
   assert.equal(calls, 1);

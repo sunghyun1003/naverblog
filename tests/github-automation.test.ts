@@ -256,6 +256,8 @@ test("이미지 manifest에 등록된 파일만 GitHub에서 읽는다", async (
     ] });
     if (url.includes("images%2Fmanifest.json") || url.includes("images/manifest.json")) return file({
       status: "ready",
+      technicalQualityPassed: true,
+      visualQualityPassed: true,
       assets: [{ id: "hero", path: "hero.jpg" }],
     });
     if (url.includes("hero.jpg")) return json({ content: imageBytes.toString("base64"), encoding: "base64", sha: "image-sha" });

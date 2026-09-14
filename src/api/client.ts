@@ -413,6 +413,12 @@ export function generateContentImages(contentId: string, input?: { assetId?: str
   });
 }
 
+export function selectContentImages(contentId: string, input: {
+  manifestKey: string; revision: number; expectedUpdatedAt: string; assetIds: string[]; acknowledgedRejectedIds: string[];
+}): Promise<ApiContentDetail> {
+  return request(`/api/contents/${encodeURIComponent(contentId)}/images/selection`, { method: "POST", body: JSON.stringify(input) });
+}
+
 export function contentImageUrl(contentId: string, assetId: string, version?: string, preview = false): string {
   const base = `${apiBaseUrl}/api/contents/${encodeURIComponent(contentId)}/images/${encodeURIComponent(assetId)}`;
   const params = new URLSearchParams();

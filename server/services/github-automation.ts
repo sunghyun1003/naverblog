@@ -1,5 +1,6 @@
 import { DomainError } from "../domain/errors.js";
 import { createHash } from "node:crypto";
+import { appliedImageIds, imageManifestKey, imageReviewAccepted, validImageSelection, type ImageSelection } from "./image-usage.js";
 
 export interface GitHubAutomationConfig {
   owner: string;
@@ -42,6 +43,8 @@ export interface DashboardDecisionEvent {
 }
 
 export interface DashboardDraftState {
+  imageSelection?: ImageSelection | null;
+  textQualityPassed?: boolean;
   schemaVersion: 1;
   runId: string;
   reviewStatus: DashboardReviewStatus;
@@ -71,6 +74,9 @@ export interface DashboardDraftState {
 }
 
 export interface AutomationDraftSummary {
+  selectedImageCount?: number;
+  imageSelectionActive?: boolean;
+  textQualityPassed?: boolean;
   runId: string;
   title: string;
   topic: string;
@@ -156,6 +162,11 @@ export interface GeneratedImageAsset {
 }
 
 export interface GeneratedImageManifest {
+  manifestKey?: string;
+  appliedAssetIds?: string[];
+  selection?: ImageSelection | null;
+  currentRevision?: number;
+  selectionStateUpdatedAt?: string;
   schemaVersion: number;
   status: "ready" | "failed";
   generatedAt: string;
@@ -164,14 +175,14 @@ export interface GeneratedImageManifest {
   styleProfileId: string;
   technicalQualityPassed: boolean;
   visualQualityPassed?: boolean;
-  humanReviewRequired: true;
+  humanReviewRequired: boolean;
   visualQuality: {
     overallPassed: boolean;
     summary: string;
     assets: Array<{
       id: string;
       passed: boolean;
-      scores: { realism: number; composition: number; relevance: number; artifactControl: number };
+      scores: { realism: number; composition: number; relevance: number; artifactControl: number; novelty?: number };
       defects: string[];
       recommendation: string;
     }>;
@@ -936,7 +947,10 @@ export class GitHubAutomationService {
         this.readState(runId),
         this.readOptionalJson<GeneratedRecoveryCheckpoint>(`${basePath}/recovery.json`),
       ]);
-      return this.summary(runId, status, article ?? {}, state, recovery);
+      const manifest = state.imageSelection ? await this.readOptionalJson<GeneratedImageManifest>(`${basePath}/images/manifest.json`) : null;
+      return { ...this.summary(runId, status, article ?? {}, state, recovery),
+        imageSelectionActive: validImageSelection(manifest, state.imageSelection, state.revision ?? status.revision ?? 1),
+        selectedImageCount: validImageSelection(manifest, state.imageSelection, state.revision ?? status.revision ?? 1) ? appliedImageIds(manifest, state.imageSelection, state.revision ?? status.revision ?? 1).length : 0 };
     }));
   }
 
@@ -1020,6 +1034,8 @@ export class GitHubAutomationService {
       toneReview,
       toneAttempts,
       imageManifest,
+      imageSelectionActive: validImageSelection(imageManifest, state.imageSelection, state.revision ?? status.revision ?? 1),
+      selectedImageCount: validImageSelection(imageManifest, state.imageSelection, state.revision ?? status.revision ?? 1) ? appliedImageIds(imageManifest, state.imageSelection, state.revision ?? status.revision ?? 1).length : 0,
       imageStatus,
       recovery,
       state,
@@ -1152,12 +1168,10 @@ export class GitHubAutomationService {
     if (!statusPath) throw new DomainError("IMAGE_NOT_FOUND", "원고를 찾을 수 없습니다.", 404);
     const basePath = statusPath.slice(0, -"/status.json".length);
     const manifest = await this.readOptionalJson<GeneratedImageManifest>(`${basePath}/images/manifest.json`);
-    // The dashboard may explicitly request a failed candidate for diagnosis.
-    // Keep the normal ready-only guard below unchanged for every other caller.
-    if (options.allowFailed === true && manifest?.status === "failed") {
-      manifest.status = "ready";
-    }
-    if (manifest?.status !== "ready") throw new DomainError("IMAGE_NOT_FOUND", "품질 검수를 통과한 이미지를 찾을 수 없습니다.", 404);
+    const state = await this.readState(runId);
+    if (state.deletedAt) throw new DomainError("IMAGE_NOT_FOUND", "삭제된 원고입니다.", 404);
+    const allowedIds = appliedImageIds(manifest, state.imageSelection, state.revision ?? manifest?.sourceRevision ?? 1);
+    if (options.allowFailed !== true && !allowedIds.includes(assetId)) throw new DomainError("IMAGE_NOT_FOUND", "본문에 적용된 이미지를 찾을 수 없습니다.", 404);
     const asset = manifest?.assets.find((candidate) => candidate.id === assetId);
     if (!asset || pathHasTraversal(asset.path)) throw new DomainError("IMAGE_NOT_FOUND", "생성된 이미지를 찾을 수 없습니다.", 404);
     const file = await this.file(`${basePath}/images/${asset.path}`);
@@ -1169,7 +1183,7 @@ export class GitHubAutomationService {
     };
   }
 
-  /** Return ready image ids without loading the complete draft package. */
+  /** Return allowed image ids without loading the complete draft package. */
   async getDraftImageAssetIds(runId: string): Promise<string[]> {
     if (!/^\d+$/.test(runId)) return [];
     const tree = await this.tree();
@@ -1177,10 +1191,38 @@ export class GitHubAutomationService {
     if (!statusPath) return [];
     const basePath = statusPath.slice(0, -"/status.json".length);
     const manifest = await this.readOptionalJson<GeneratedImageManifest>(`${basePath}/images/manifest.json`);
-    if (manifest?.status !== "ready") return [];
-    return (manifest.assets ?? [])
-      .map((asset) => asset.id)
+    const state = await this.readState(runId);
+    if (state.deletedAt) return [];
+    return appliedImageIds(manifest, state.imageSelection, state.revision ?? manifest?.sourceRevision ?? 1)
       .filter((assetId) => /^[a-z0-9-]+$/.test(assetId));
+  }
+
+  async selectDraftImages(runId: string, input: { manifestKey: string; revision: number; expectedUpdatedAt: string; assetIds: string[]; acknowledgedRejectedIds: string[] }, actor: string): Promise<AutomationDraftDetail> {
+    const draft = await this.getDraft(runId);
+    const manifest = draft.imageManifest;
+    if (draft.deleted || draft.publicationStatus !== "none" || draft.state.rewriteStatus === "queued" || draft.state.imageGenerationStatus === "queued") {
+      throw new DomainError("IMAGE_SELECTION_UNAVAILABLE", "작업 중이거나 예약·발행·삭제된 원고는 이미지 선택을 변경할 수 없습니다.", 409);
+    }
+    if (!manifest || imageManifestKey(manifest) !== input.manifestKey || (draft.revision ?? 1) !== input.revision || draft.state.updatedAt !== input.expectedUpdatedAt) {
+      throw new DomainError("IMAGE_SELECTION_STALE", "원고 또는 이미지가 변경되었습니다. 새로고침 후 다시 선택해주세요.", 409);
+    }
+    if (!manifest.technicalQualityPassed) throw new DomainError("IMAGE_TECHNICAL_FAILED", "파일 검사를 통과하지 못한 이미지는 적용할 수 없습니다.", 409);
+    const ids = [...new Set(input.assetIds)];
+    const rejected = ids.filter(id => !imageReviewAccepted(manifest, id));
+    if (rejected.some(id => !input.acknowledgedRejectedIds.includes(id))) throw new DomainError("IMAGE_REVIEW_ACK_REQUIRED", "반려 이유를 확인한 뒤 이미지 사용을 선택해주세요.", 409);
+    await Promise.all(ids.map(async id => {
+      const asset = manifest.assets.find(item => item.id === id);
+      if (!asset || !/^[a-z0-9-]+$/.test(id)) throw new DomainError("IMAGE_NOT_FOUND", "선택한 이미지가 없습니다.", 404);
+      const image = await this.getDraftImage(runId, id, { allowFailed: true });
+      if (image.body.length !== asset.bytes || createHash("sha256").update(image.body).digest("hex") !== asset.sha256) {
+        throw new DomainError("IMAGE_FILE_CHANGED", "이미지 파일이 검사 결과와 다릅니다. 다시 생성하거나 새로고침해주세요.", 409);
+      }
+    }));
+    const state = await this.updateState(runId, { imageSelection: {
+      manifestKey: input.manifestKey, revision: input.revision, assetIds: ids,
+      acknowledgedRejectedIds: rejected, selectedAt: new Date().toISOString(), selectedBy: actor,
+    } }, actor, draft.state);
+    return { ...draft, state, updatedAt: state.updatedAt, selectedImageCount: ids.length, imageSelectionActive: true };
   }
 
   async getTrends(force = false) {
@@ -1276,6 +1318,7 @@ export class GitHubAutomationService {
       pipelineStatus: status.status ?? "UNKNOWN",
       toneSkillApplied: status.toneSkillApplied === true,
       toneVerdict: status.toneVerdict ?? null,
+      textQualityPassed: state.textQualityPassed === true,
       updatedAt,
       reviewStatus: state.reviewStatus,
       autoApproved: state.autoApproved === true,

@@ -958,9 +958,15 @@ test("원고 승인 시 이미지 생성을 시작하고 승인 원고는 다시
   assert.equal(approved.json<{ imagesQueued: boolean }>().imagesQueued, true);
   assert.deepEqual(dispatches[0], { workflow: "images", inputs: { run_id: "909" } });
 
+  const duplicate = await app.inject({ method: "POST", url: "/api/contents/909/images/generate" });
+  assert.equal(duplicate.statusCode, 409);
+  assert.equal(dispatches.length, 1);
+  draft.state.imageGenerationStatus = "ready";
+
   const regenerated = await app.inject({ method: "POST", url: "/api/contents/909/images/generate" });
   assert.equal(regenerated.statusCode, 202);
   assert.deepEqual(dispatches[1], { workflow: "images", inputs: { run_id: "909", force: "true" } });
+  draft.state.imageGenerationStatus = "ready";
 
   const editedImage = await app.inject({
     method: "POST",

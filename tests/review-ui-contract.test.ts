@@ -26,3 +26,11 @@ test("완성 원고 본문은 원고별 이미지 패키지를 직접 전달해 
   assert.match(source, /<img src=\{contentImageUrl\(contentId, hero\.id/);
   assert.match(source, /<img src=\{contentImageUrl\(contentId, asset\.id/);
 });
+
+test("원고 수정 완료는 복구 정보 유무가 아니라 명시적인 작업 결과로 판정한다", async () => {
+  const source = await readFile(new URL("../src/features/review/ReviewPage.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /if \(!next.recovery/);
+  assert.match(source, /next.content.rewriteStatus === "completed"/);
+  assert.match(source, /next.content.rewriteStatus === "failed"/);
+  assert.match(source, /const withoutUnavailableImages = removeUnavailableImages\(source\)/);
+});

@@ -9,6 +9,10 @@ export function useContentDetail(contentId: string | undefined) {
   const [connectionStatus, setConnectionStatus] = useState<"loading" | "connected" | "offline">(cachedDetail ? "connected" : "loading");
   const [loadError, setLoadError] = useState("");
   const [requestVersion, setRequestVersion] = useState(0);
+  const applyDetail = (response: ApiContentDetail) => {
+    setDetail(response);
+    if (contentId) writeRuntimeCache(`content:${contentId}`, response);
+  };
 
   // Polling should read the mirrored detail first. Forcing a GitHub sync on
   // every 15-second poll recreated the long-loading behaviour and multiplied
@@ -112,5 +116,5 @@ export function useContentDetail(contentId: string | undefined) {
 
   const reload = () => setRequestVersion((current) => current + 1);
 
-  return { detail, connectionStatus, loadError, reload, refresh, reject, resumeTone, retryFailed, edit, remove };
+  return { detail, connectionStatus, loadError, reload, refresh, reject, resumeTone, retryFailed, edit, remove, applyDetail };
 }

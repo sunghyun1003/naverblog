@@ -14,6 +14,7 @@ import { createAutomationSystem, type AutomationSystem } from "../system.js";
 import { DashboardSync } from "../services/dashboard-sync.js";
 import type { GitHubSyncIdentity } from "../services/github-oidc.js";
 import type { ContentDetail } from "../domain/types.js";
+import { appliedImageIds, validImageSelection } from "../services/image-usage.js";
 
 const createContentSchema = z.object({
   title: z.string().trim().min(5).max(120),
@@ -56,6 +57,13 @@ const imageGenerationSchema = z.object({
   assetId: z.string().regex(/^[a-z0-9-]+$/).optional(),
   feedback: z.string().trim().max(1000).optional(),
 }).default({});
+const imageSelectionSchema = z.object({
+  manifestKey: z.string().regex(/^[a-f0-9]{64}$/),
+  revision: z.number().int().positive(),
+  expectedUpdatedAt: z.string().min(1),
+  assetIds: z.array(z.string().regex(/^[a-z0-9-]+$/)).max(3),
+  acknowledgedRejectedIds: z.array(z.string().regex(/^[a-z0-9-]+$/)).max(3),
+});
 const refreshQuerySchema = z.object({ refresh: z.enum(["true", "false"]).default("false") });
 const automationScheduleSchema = z.object({
   enabled: z.boolean(),
@@ -124,6 +132,9 @@ function draftWithState(draft: AutomationDraftDetail, state: DashboardDraftState
     copyPackage: manualEdit?.body ?? draft.copyPackage,
     article,
     state,
+    imageSelectionActive: validImageSelection(draft.imageManifest, state.imageSelection, state.revision ?? draft.revision ?? 1),
+    selectedImageCount: validImageSelection(draft.imageManifest, state.imageSelection, state.revision ?? draft.revision ?? 1)
+      ? appliedImageIds(draft.imageManifest, state.imageSelection, state.revision ?? draft.revision ?? 1).length : 0,
     reviewStatus: state.reviewStatus,
     publicationStatus: state.publicationStatus,
     scheduledAt: state.scheduledAt,
@@ -571,12 +582,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       return { expiresAt: new Date(expiresAt).toISOString(), items: [] };
     }
     if (!auth) return reply.status(404).send({ error: { code: "IMAGE_NOT_FOUND", message: "복사용 이미지를 찾을 수 없습니다.", details: null } });
-    // 실패한 manifest는 진단용 asset 메타데이터만 남기고 실제 파일을 삭제한다.
-    // 그런 상태에서 URL을 발급하면 복사 결과에 깨진 이미지가 들어가므로
-    // ready manifest의 실제 asset만 서명한다.
-    // Failed candidates are retained for authenticated preview, but this
-    // endpoint intentionally reads ready-only IDs so copy/public URLs never
-    // expose a package that failed visual quality.
+    // Sign only automatically accepted or explicitly selected, validated assets.
     // Use the manifest-only reader in production. Keep a fallback for older
     // adapters so the copy endpoint remains backwards compatible.
     const assetIds = typeof githubAutomation.getDraftImageAssetIds === "function"
@@ -736,6 +742,15 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     }
   });
 
+  app.post("/api/contents/:id/images/selection", async (request, reply) => {
+    const { id } = idParamsSchema.parse(request.params);
+    if (!githubAutomation) return reply.status(409).send({ error: { code: "AUTOMATION_UNAVAILABLE", message: "자동화 연결이 설정되지 않았습니다.", details: null } });
+    const body = imageSelectionSchema.parse(request.body);
+    const actor = actorFrom(request, auth?.verifyCookie(request.headers.cookie)?.username);
+    const draft = await githubAutomation.selectDraftImages(id, body, actor.id);
+    const mirrorSynced = await persistGitHubDetailSafely(draft, "image-selection");
+    return { ...draftToDetail(draft), mirrorSynced };
+  });
   app.post("/api/contents/:id/images/generate", async (request, reply) => {
     const { id } = idParamsSchema.parse(request.params);
     if (!githubAutomation) return reply.status(409).send({ error: { code: "AUTOMATION_UNAVAILABLE", message: "이미지 자동화가 연결되지 않았습니다.", details: null } });
@@ -746,6 +761,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     if (draft.state.rewriteStatus === "queued") {
       return reply.status(409).send({ error: { code: "CONTENT_REWRITE_IN_PROGRESS", message: "A rewrite is already in progress for this draft.", details: null } });
     }
+    if (draft.state.imageGenerationStatus === "queued") return reply.status(409).send({ error: { code: "IMAGE_GENERATION_IN_PROGRESS", message: "이미 이미지 생성 요청을 처리 중입니다. 완료 후 다시 요청해주세요.", details: null } });
     const body = imageGenerationSchema.parse(request.body);
     const actor = actorFrom(request, auth?.verifyCookie(request.headers.cookie)?.username);
     // Persist the asynchronous state before dispatching. This prevents a

@@ -17,7 +17,9 @@ export class DashboardSync {
   private async sync(): Promise<{ updated: number; remaining: number }> {
     const { repository, github } = this;
     if (!repository.getSnapshot || !repository.saveSnapshot) throw new Error("Dashboard snapshot storage is not configured");
-    const revisions = await github.draftRevisions();
+    // Rebuild old snapshots once when the mapper contract changes, even when
+    // the source draft is unchanged. Keep this off the page-loading path.
+    const revisions = Object.fromEntries(Object.entries(await github.draftRevisions()).map(([id, revision]) => [id, `image-selection-v1:${revision}`]));
     const saved = (await repository.getSnapshot<Record<string, string>>("sync:revisions"))?.value ?? {};
     const changed = Object.entries(revisions).filter(([id, revision]) => saved[id] !== revision);
     // Only rebuild a maximum of five changed draft packages per request; the

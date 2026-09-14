@@ -1166,6 +1166,7 @@
 }
 
 .image-asset {
+  margin: 0;
   min-width: 0;
   overflow: hidden;
   border: 1px solid var(--color-border);
@@ -1210,7 +1211,7 @@
   line-height: 16px;
 }
 
-.image-asset figcaption > div {
+.image-asset__caption-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1222,7 +1223,7 @@
   line-height: 20px;
 }
 
-.image-asset figcaption span {
+.image-asset__caption-heading > span {
   flex: none;
   border-radius: var(--radius-full);
   padding: 3px 8px;
@@ -1250,6 +1251,10 @@
   display: grid;
   gap: 8px;
   margin-top: 12px;
+}
+
+.image-asset__feedback label {
+  min-width: 0;
 }
 
 .image-asset__feedback textarea {
@@ -1443,6 +1448,11 @@
   .image-assets__grid,
   .image-assets__checks {
     grid-template-columns: 1fr;
+  }
+
+  .image-asset__feedback .button {
+    width: 100%;
+    white-space: normal;
   }
 
   .image-assets__checks > strong,

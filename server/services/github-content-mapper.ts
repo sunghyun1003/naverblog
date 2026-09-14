@@ -1,4 +1,5 @@
 import { pipelineStages, type ContentDetail, type ContentRecord, type ContentState } from "../domain/types.js";
+import { imageUsageMetadata } from "./image-usage.js";
 import type {
   AutomationDraftDetail,
   AutomationDraftSummary,
@@ -20,6 +21,8 @@ function sourceKey(url: string): string {
 }
 
 function hasCompleteImagePackage(draft: AutomationDraftSummary): boolean {
+  if (draft.imageSelectionActive) return draft.textQualityPassed === true && (draft.selectedImageCount ?? 0) > 0
+    && draft.rewriteStatus !== "queued" && draft.imageGenerationStatus !== "queued";
   if (draft.pipelineStatus !== "CONTENT_READY" || draft.imageGenerationStatus !== "ready") return false;
   if (!("imageManifest" in draft)) return true;
   const manifest = (draft as AutomationDraftDetail).imageManifest;
@@ -63,7 +66,8 @@ function imagePackage(draft: AutomationDraftDetail): GeneratedImageManifest | Ge
       assets: [],
     };
   }
-  if (draft.imageManifest) return draft.imageManifest;
+  if (draft.imageManifest) return { ...imageUsageMetadata(draft.imageManifest, draft.state.imageSelection, draft.revision ?? 1),
+    currentRevision: draft.revision ?? 1, selectionStateUpdatedAt: draft.state.updatedAt };
   if (draft.imageStatus) return draft.imageStatus;
   return null;
 }

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
 import { GitHubAutomationService, type AutomationDraftDetail, type DashboardDraftState, type GeneratedImageManifest } from "../server/services/github-automation.js";
-import { appliedImageIds, imageManifestKey, imageUsageMetadata } from "../server/services/image-usage.js";
+import { appliedImageIds, imageManifestKey, imageUsageMetadata, imageReviewAccepted } from "../server/services/image-usage.js";
 import { draftToDetail } from "../server/services/github-content-mapper.js";
 import { markdownBlocks, renderableImages } from "../src/features/review/imageUsage.js";
 import { buildApp } from "../server/http/app.js";
@@ -53,6 +53,27 @@ function fixture() {
   const input = (assetIds = ["hero", "visual-02"]) => ({ manifestKey: imageManifestKey(manifest), revision: 1, expectedUpdatedAt: state.updatedAt, assetIds, acknowledgedRejectedIds: [] as string[] });
   return { service, manifest, input, bytes, state: () => state };
 }
+
+test("새 검수 정책의 사용 가능 이미지는 낮은 참신성으로 다시 반려하지 않는다", () => {
+  const { manifest } = fixture();
+  manifest.visualQuality.policyVersion = 2;
+  manifest.visualQuality.overallPassed = true;
+  manifest.status = "ready";
+  manifest.visualQualityPassed = true;
+  for (const asset of manifest.visualQuality.assets) {
+    asset.passed = true;
+    asset.defects = [];
+    asset.warnings = ["유사한 장면"];
+    asset.scores = { realism: 3, composition: 3, relevance: 3, artifactControl: 3, novelty: 1 };
+  }
+  assert.ok(ids.every(id => imageReviewAccepted(manifest, id)));
+  assert.deepEqual(appliedImageIds(manifest), ids);
+  assert.deepEqual(renderableImages(manifest)?.assets?.map(asset => asset.id), ids);
+  manifest.visualQuality.assets[0].defects = ["심한 왜곡"];
+  assert.equal(imageReviewAccepted(manifest, "hero"), false);
+  delete manifest.visualQuality.policyVersion;
+  assert.equal(imageReviewAccepted(manifest, "visual-01"), false, "기존 검수는 재평가 없이 자동 승인하지 않습니다.");
+});
 
 test("실패 패키지 미리보기는 검수 원본이나 일반 이미지 권한을 변경하지 않는다", async () => {
   const { service, manifest } = fixture();

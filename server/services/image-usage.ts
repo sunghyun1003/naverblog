@@ -17,9 +17,13 @@ export function imageManifestKey(manifest: GeneratedImageManifest): string {
 
 export function imageReviewAccepted(manifest: GeneratedImageManifest, id: string): boolean {
   const review = manifest.visualQuality?.assets?.find(item => item.id === id);
+  const usablePolicy = manifest.visualQuality?.policyVersion === 2;
   return review?.passed === true && review.defects.length === 0
-    && [review.scores.realism, review.scores.composition, review.scores.artifactControl, review.scores.novelty ?? 4].every(score => score >= 4)
-    && review.scores.relevance >= 3;
+    && (!usablePolicy || Array.isArray(review.warnings))
+    && (usablePolicy ? [review.scores.realism, review.scores.composition, review.scores.artifactControl]
+      : [review.scores.realism, review.scores.composition, review.scores.artifactControl, review.scores.novelty ?? 4])
+      .every(score => Number.isInteger(score) && score >= (usablePolicy ? 3 : 4) && score <= 5)
+    && Number.isInteger(review.scores.relevance) && review.scores.relevance >= 3 && review.scores.relevance <= 5;
 }
 
 export function validImageSelection(manifest: GeneratedImageManifest | null | undefined, selection: ImageSelection | null | undefined, revision: number): boolean {

@@ -177,6 +177,7 @@ export interface GeneratedImageManifest {
   visualQualityPassed?: boolean;
   humanReviewRequired: boolean;
   visualQuality: {
+    policyVersion?: number;
     overallPassed: boolean;
     summary: string;
     assets: Array<{
@@ -184,6 +185,7 @@ export interface GeneratedImageManifest {
       passed: boolean;
       scores: { realism: number; composition: number; relevance: number; artifactControl: number; novelty?: number };
       defects: string[];
+      warnings?: string[];
       recommendation: string;
     }>;
   };

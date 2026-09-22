@@ -326,6 +326,35 @@ test("재작성된 원고와 이전 버전을 함께 읽는다", async () => {
   assert.equal(draft.revisions?.[0]?.articleMarkdown, "# 초기 원고");
 });
 
+test("실패 백업을 정식 버전으로 읽어 전체 원고 동기화를 중단하지 않는다", async () => {
+  const base = "output/drafts/2026-09-22/run-35669106436";
+  const requested: string[] = [];
+  const fetcher = (async (input: string | URL | Request) => {
+    const url = String(input);
+    requested.push(url);
+    if (url.includes("/git/trees/main")) return json({ truncated: false, tree: [
+      `${base}/status.json`, `${base}/article.json`,
+      `${base}/revisions/v1/status.json`,
+      `${base}/revisions/v1-tone-blocked-35688521168-1790052779439/status.json`,
+      `${base}/revisions/v1-tone-blocked-35688521168-1790052779439/article.json`,
+      `${base}/revisions/v1/images/status.json`,
+    ].map(path => ({ path, type: "blob" })) });
+    if (url.includes("tone-blocked") || url.includes("/revisions/v1/images/")) {
+      throw new Error("Partial diagnostics must not be requested as a version package");
+    }
+    if (url.includes("/status.json")) return file({ status: "CONTENT_READY", toneSkillApplied: true, toneVerdict: "PASS", revision: 2 });
+    if (url.includes("/article.json")) return file({ article: { title: "저장된 원고" } });
+    if (url.includes("/revisions/v1/article.md")) return file("# 이전 원고");
+    if (url.includes("/revisions/v1/copy-package.txt")) return file("이전 복사본");
+    return json({ message: "Not Found" }, 404);
+  }) as typeof fetch;
+  const service = new GitHubAutomationService({ owner: "owner", repository: "repo", branch: "main", token: "token" }, fetcher);
+  const draft = await service.getDraft("35669106436");
+  assert.equal(draft.title, "저장된 원고");
+  assert.deepEqual(draft.revisions?.map(item => item.revision), [1]);
+  assert.equal(requested.some(url => url.includes("tone-blocked")), false);
+});
+
 test("이미 읽은 원고 상태로 decision을 갱신할 때 원고를 다시 조회하지 않는다", async () => {
   const requests: Array<{ url: string; method: string; body: string }> = [];
   const mockFetch = (async (input: string | URL | Request, init?: RequestInit) => {

@@ -963,7 +963,11 @@ export class GitHubAutomationService {
     if (!statusPath) throw new Error("원고를 찾을 수 없습니다.");
     const basePath = statusPath.slice(0, -"/status.json".length);
     const revisionStatusPaths = paths
-      .filter((file) => file.startsWith(`${basePath}/revisions/v`) && file.endsWith("/status.json"))
+      // v1-tone-blocked-* holds partial diagnostic backups, not published
+      // revision packages. Treating it as v0 both requests nonexistent files
+      // and violates the database's positive version-sequence constraint.
+      .filter((file) => file.startsWith(`${basePath}/revisions/`)
+        && /^v\d+\/status\.json$/.test(file.slice(`${basePath}/revisions/`.length)))
       .sort((left, right) => left.localeCompare(right, undefined, { numeric: true }));
     const [status, storedArticle, storedArticleMarkdown, storedCopyPackage, copyPackageHtml, storedSourcesMarkdown, evidencePackage, discoveryQuality, advertisingQuality, editorialQuality, nativeKoreanQuality, toneReview, toneAttempts, imageManifest, imageStatus, state, recovery] = await Promise.all([
       this.readJson<GeneratedStatus>(statusPath),

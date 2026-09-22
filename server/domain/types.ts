@@ -183,7 +183,7 @@ export interface ContentDetail {
   recovery?: {
     failedStage: string;
     lastCompletedStage: string | null;
-    resumeFrom: "evidence" | "article" | "tone" | "images";
+    resumeFrom: "evidence" | "article" | "tone" | "render" | "images";
     recoverable: boolean;
     message: string;
     artifacts: Array<{ id: string; label: string; path: string }>;

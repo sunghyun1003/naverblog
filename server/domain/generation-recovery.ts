@@ -8,7 +8,7 @@ export function recoveryFromVersions(versions: ContentVersion[]): NonNullable<Co
   if (!value || typeof value !== "object") return null;
   const candidate = value as NonNullable<ContentDetail["recovery"]>;
   if (typeof candidate.failedStage !== "string" || typeof candidate.message !== "string"
-    || !["evidence", "article", "tone", "images"].includes(candidate.resumeFrom)
+    || !["evidence", "article", "tone", "render", "images"].includes(candidate.resumeFrom)
     || !Array.isArray(candidate.artifacts)) return null;
   return candidate;
 }

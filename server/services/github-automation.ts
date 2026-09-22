@@ -138,7 +138,7 @@ export interface GeneratedRecoveryCheckpoint {
   status: "failed";
   failedStage: string;
   lastCompletedStage: string | null;
-  resumeFrom: "evidence" | "article" | "tone" | "images";
+  resumeFrom: "evidence" | "article" | "tone" | "render" | "images";
   recoverable: boolean;
   title: string;
   topic: string;
@@ -471,7 +471,7 @@ interface GeneratedStatus {
   topic?: string;
   failedStage?: string | null;
   lastCompletedStage?: string | null;
-  resumeFrom?: "evidence" | "article" | "tone" | "images" | null;
+  resumeFrom?: "evidence" | "article" | "tone" | "render" | "images" | null;
   failureMessage?: string | null;
 }
 

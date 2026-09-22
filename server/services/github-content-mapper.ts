@@ -324,7 +324,7 @@ export function draftToDetail(draft: AutomationDraftDetail): ContentDetail {
     recovery: draft.recovery ? {
       failedStage: draft.recovery.failedStage,
       lastCompletedStage: draft.recovery.lastCompletedStage,
-      resumeFrom: draft.recovery.resumeFrom,
+      resumeFrom: draft.recovery.failedStage === "package_render" ? "render" : draft.recovery.resumeFrom,
       recoverable: draft.recovery.recoverable,
       message: draft.recovery.message,
       artifacts: draft.recovery.artifacts,

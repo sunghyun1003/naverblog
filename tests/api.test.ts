@@ -515,6 +515,30 @@ test("중단된 원고는 저장된 체크포인트부터 다시 실행한다", 
   assert.deepEqual(dispatched, { run_id: draft.runId, mode: "retry_failed" });
 });
 
+test("저장 단계 실패 재시도는 말투 보정 대신 AI 없는 렌더링만 요청한다", async (context) => {
+  const draft = reviewDraft("failed-render-1");
+  draft.pipelineStatus = "GENERATION_FAILED";
+  draft.recovery = {
+    schemaVersion: 1, runId: draft.runId, status: "failed", failedStage: "package_render",
+    lastCompletedStage: "tone_review", resumeFrom: "tone", recoverable: true,
+    title: draft.title, topic: draft.topic, message: "저장 실패", artifacts: [], updatedAt: draft.updatedAt,
+  };
+  let dispatched: Record<string, string> | null = null;
+  const githubAutomation = {
+    getDraft: async () => draft,
+    updateState: async (_runId: string, changes: Partial<DashboardDraftState>, actor: string) => changedState(draft, changes, actor),
+    dispatch: async (workflow: string, inputs: Record<string, string>) => {
+      assert.equal(workflow, "rewrite");
+      dispatched = inputs;
+    },
+  } as unknown as GitHubAutomationService;
+  const app = buildApp({ githubAutomation, databaseProvider: "memory" });
+  context.after(() => app.close());
+  const response = await app.inject({ method: "POST", url: `/api/contents/${draft.runId}/retry` });
+  assert.equal(response.statusCode, 202);
+  assert.deepEqual(dispatched, { run_id: draft.runId, mode: "render_only" });
+});
+
 test("서로 다른 GitHub 원고를 연속으로 반려한다", async (context) => {
   const drafts = new Map([
     ["101", reviewDraft("101", "첫 번째 검토 원고")],

@@ -126,6 +126,7 @@ const recoveryStageLabel = {
   evidence: "공식 근거 수집",
   article: "원고 작성",
   tone: "사람 말투 보정",
+  render: "원고 저장 (AI 호출 없음)",
   images: "이미지 생성",
 } as const;
 

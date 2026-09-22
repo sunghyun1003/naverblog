@@ -714,6 +714,8 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     try {
       if (imageRecovery) {
         await githubAutomation.dispatch("images", { run_id: id, force: "true" });
+      } else if (recovery.resumeFrom === "render" || recovery.failedStage === "package_render") {
+        await githubAutomation.dispatch("rewrite", { run_id: id, mode: "render_only" });
       } else if (recovery.resumeFrom === "tone") {
         await githubAutomation.dispatch("rewrite", { run_id: id, mode: "tone_resume" });
       } else {

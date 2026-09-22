@@ -2,6 +2,13 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
+test("브라우저 데이터 검사에서도 AI 없는 저장 복구 단계를 허용한다", async () => {
+  const client = await readFile(new URL("../src/api/client.ts", import.meta.url), "utf8");
+  assert.match(client, /\["evidence", "article", "tone", "render", "images"\]\.includes\(asString\(source\.recovery\.resumeFrom\)\)/);
+  const view = await readFile(new URL("../src/features/review/ReviewPage.tsx", import.meta.url), "utf8");
+  assert.match(view, /render: "원고 저장 \(AI 호출 없음\)"/);
+});
+
 test("원고 상세 화면은 최종 승인 체크박스를 다시 노출하지 않는다", async () => {
   const source = await readFile(new URL("../src/features/review/ReviewPage.tsx", import.meta.url), "utf8");
   assert.doesNotMatch(source, /최종 승인 확인/);

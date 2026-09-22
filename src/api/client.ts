@@ -232,7 +232,7 @@ function normalizeContentDetail(value: unknown): ApiContentDetail {
   })) : [];
   const recovery = isRecord(source.recovery)
     && typeof source.recovery.failedStage === "string"
-    && ["evidence", "article", "tone", "images"].includes(asString(source.recovery.resumeFrom))
+    && ["evidence", "article", "tone", "render", "images"].includes(asString(source.recovery.resumeFrom))
     ? {
         failedStage: asString(source.recovery.failedStage),
         lastCompletedStage: typeof source.recovery.lastCompletedStage === "string" ? source.recovery.lastCompletedStage : null,

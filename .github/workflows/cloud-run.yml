@@ -46,6 +46,9 @@ jobs:
       - name: 데이터베이스 마이그레이션·검증
         env:
           DATABASE_TEAM_ID: carrot-company
+          # Cross-region TCP handshakes can exceed Node 24's 250 ms per-address
+          # default even though the database is reachable. Keep the DB gate.
+          NODE_OPTIONS: --network-family-autoselection-attempt-timeout=2000
         run: |
           DIRECT_DATABASE_URL="$(gcloud secrets versions access latest --secret=dashboard-database-direct-url --project "${{ vars.GCP_PROJECT_ID }}")"
           DATABASE_URL="$DIRECT_DATABASE_URL"

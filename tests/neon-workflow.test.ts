@@ -21,6 +21,10 @@ test("Neon 마이그레이션과 Cloud Run 배포가 직렬화되고 배포 전�
   assert.match(deployment, /dashboard-database-direct-url/);
   assert.doesNotMatch(deployment, /latest --secret=dashboard-database-url/);
   assert.match(deployment, /DIRECT_DATABASE_URL/);
+  for (const workflow of [migration, deployment]) {
+    assert.match(workflow, /NODE_OPTIONS: --network-family-autoselection-attempt-timeout=2000/);
+    assert.doesNotMatch(workflow, /npm run db:(migrate|verify)\s*\|\|\s*true/);
+  }
   const migrationIndex = deployment.indexOf("npm run db:migrate");
   const verificationIndex = deployment.indexOf("npm run db:verify");
   const deploymentIndex = deployment.indexOf("gcloud run deploy");

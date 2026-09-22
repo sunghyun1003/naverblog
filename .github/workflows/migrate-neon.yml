@@ -38,6 +38,7 @@ jobs:
       - name: 데이터베이스 마이그레이션·검증
         env:
           DATABASE_TEAM_ID: carrot-company
+          NODE_OPTIONS: --network-family-autoselection-attempt-timeout=2000
         run: |
           DATABASE_URL="$(gcloud secrets versions access latest --secret=dashboard-database-direct-url --project "${{ vars.GCP_PROJECT_ID }}")"
           export DATABASE_URL

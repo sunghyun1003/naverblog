@@ -527,6 +527,7 @@ interface CollectedTrendSnapshot {
   queryCount?: number;
   requestCount?: number;
   itemCount?: number;
+  contentSelection?: { version?: number; evaluatedCount?: number; excludedCount?: number; retainedCount?: number; notice?: string };
   collectionStrategy?: {
     sorts?: string[];
     resultsPerQuery?: number;
@@ -554,6 +555,7 @@ interface CollectedTrendSnapshot {
     bloggerName?: string;
     postDate?: string;
     candidateScore?: number;
+    contentValue?: { score?: number; signals?: string[]; cautions?: string[] };
     matchedQueries?: string[];
     bestSimilarityRank?: number | null;
     bestRecentRank?: number | null;
@@ -1259,6 +1261,11 @@ export class GitHubAutomationService {
       bloggername: item.bloggerName ?? "NAVER 블로그",
       postdate: item.postDate ?? "",
       candidateScore: item.candidateScore ?? 0,
+      contentValue: item.contentValue && Number.isFinite(item.contentValue.score) ? {
+        score: Math.max(0, Math.min(100, item.contentValue.score!)),
+        signals: (item.contentValue.signals ?? []).slice(0, 6),
+        cautions: (item.contentValue.cautions ?? []).slice(0, 6),
+      } : null,
       matchedQueries: item.matchedQueries ?? [],
       bestSimilarityRank: item.bestSimilarityRank ?? null,
       bestRecentRank: item.bestRecentRank ?? null,
@@ -1273,6 +1280,7 @@ export class GitHubAutomationService {
       queryCount: snapshot.queryCount ?? 0,
       requestCount: snapshot.requestCount ?? 0,
       itemCount: snapshot.itemCount ?? items.length,
+      contentSelection: snapshot.contentSelection ?? null,
       source: snapshot.source ?? "NAVER_SEARCH_BLOG_API",
       collectionStrategy: snapshot.collectionStrategy ?? null,
       unavailableMetrics: snapshot.unavailableMetrics ?? null,

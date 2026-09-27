@@ -79,6 +79,24 @@ test("GitHub Actions 실행 상태와 생성 원고를 읽는다", async () => {
   assert.match(dispatches[3]?.body ?? "", /"run_id":"123"/);
 });
 
+test("트렌드 정보성 점수와 제외 건수를 전달하되 제외 원문은 브라우저에 보내지 않는다", async () => {
+  const snapshot = {
+    collectionDate: "2026-09-28", itemCount: 1,
+    contentSelection: { version: 1, evaluatedCount: 2, excludedCount: 1, retainedCount: 1 },
+    excludedItems: [{ title: "광고 원문", link: "https://example.com/ad" }],
+    items: [{ title: "청구 서류", link: "https://example.com/useful", candidateScore: 40,
+      contentValue: { score: 78, signals: ["절차·준비 서류"], cautions: [], metadataCompleteness: 100, promotionalFlags: [] } }],
+  };
+  const mockFetch = (async (input: string | URL | Request) => String(input).includes("data/latest.json")
+    ? file(snapshot) : json({ message: "Unexpected request" }, 500)) as typeof fetch;
+  const service = new GitHubAutomationService({ owner: "owner", repository: "repo", branch: "main", token: "token" }, mockFetch);
+  const trends = await service.getTrends();
+  assert.deepEqual(trends.items[0]?.contentValue, { score: 78, signals: ["절차·준비 서류"], cautions: [] });
+  assert.equal(trends.items[0]?.candidateScore, 40);
+  assert.equal(trends.contentSelection?.excludedCount, 1);
+  assert.equal("excludedItems" in trends, false);
+});
+
 test("1MB를 넘는 트렌드 스냅샷은 Git Blob API로 읽는다", async () => {
   const latest = {
     collectionDate: "2026-08-31",
@@ -99,6 +117,8 @@ test("1MB를 넘는 트렌드 스냅샷은 Git Blob API로 읽는다", async () 
   const trends = await service.getTrends();
   assert.equal(trends.collectionDate, "2026-08-31");
   assert.equal(trends.items[0]?.title, "자동차보험");
+  assert.equal(trends.items[0]?.contentValue, null, "이전 스냅샷은 점수를 지어내지 않는다");
+  assert.equal(trends.contentSelection, null);
 });
 
 test("원고 본문 전에 실패한 체크포인트도 대시보드 원고로 읽는다", async () => {

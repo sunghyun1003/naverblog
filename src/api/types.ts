@@ -288,6 +288,7 @@ export interface ApiTrendItem {
   bloggername: string;
   postdate: string;
   candidateScore: number;
+  contentValue?: { score: number; signals: string[]; cautions: string[] } | null;
   matchedQueries: string[];
   bestSimilarityRank: number | null;
   bestRecentRank: number | null;
@@ -321,6 +322,7 @@ export interface ApiTrendSnapshot {
   requestCount?: number;
   itemCount: number;
   source: string;
+  contentSelection?: { version?: number; evaluatedCount?: number; excludedCount?: number; retainedCount?: number; notice?: string } | null;
   collectionStrategy?: {
     sorts?: string[];
     resultsPerQuery?: number;

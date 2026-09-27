@@ -76,6 +76,7 @@ function normalizeTrendItem(value: unknown, index: number): ApiTrendItem | null 
   if (!isRecord(value)) return null;
   const searchTrend = isRecord(value.bestSearchTrend) ? value.bestSearchTrend : null;
   const breakdown = isRecord(value.scoreBreakdown) ? value.scoreBreakdown : null;
+  const information = isRecord(value.contentValue) ? value.contentValue : null;
   return {
     title: asString(value.title, "제목 없음"),
     link: asString(value.link, `#trend-${index}`),
@@ -83,6 +84,11 @@ function normalizeTrendItem(value: unknown, index: number): ApiTrendItem | null 
     bloggername: asString(value.bloggername),
     postdate: asString(value.postdate),
     candidateScore: asNumber(value.candidateScore),
+    contentValue: information && typeof information.score === "number" && Number.isFinite(information.score) ? {
+      score: Math.max(0, Math.min(100, information.score)),
+      signals: asStringArray(information.signals).slice(0, 6),
+      cautions: asStringArray(information.cautions).slice(0, 6),
+    } : null,
     matchedQueries: asStringArray(value.matchedQueries),
     bestSimilarityRank: typeof value.bestSimilarityRank === "number" ? value.bestSimilarityRank : null,
     bestRecentRank: typeof value.bestRecentRank === "number" ? value.bestRecentRank : null,
@@ -506,6 +512,13 @@ export async function getTrends(signal?: AbortSignal, refresh = false): Promise<
     collectionStrategy: isRecord(payload.collectionStrategy) ? payload.collectionStrategy as ApiTrendSnapshot["collectionStrategy"] : null,
     unavailableMetrics: isRecord(payload.unavailableMetrics) ? payload.unavailableMetrics as Record<string, string> : null,
     searchTrend: isRecord(payload.searchTrend) ? payload.searchTrend as ApiTrendSnapshot["searchTrend"] : null,
+    contentSelection: isRecord(payload.contentSelection) ? {
+      version: asNumber(payload.contentSelection.version),
+      evaluatedCount: asNumber(payload.contentSelection.evaluatedCount),
+      excludedCount: asNumber(payload.contentSelection.excludedCount),
+      retainedCount: asNumber(payload.contentSelection.retainedCount),
+      notice: asString(payload.contentSelection.notice),
+    } : null,
     items,
   });
 }

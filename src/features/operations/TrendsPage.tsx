@@ -105,19 +105,21 @@ export function TrendsPage() {
             <div><small>검색어</small><strong>{snapshot.queryCount}개</strong></div>
             <div><small>수집 결과</small><strong>{snapshot.itemCount}개</strong></div>
           </section>
+          {snapshot.contentSelection?.version ? <p className="trend-score-breakdown">정보성 우선 · 퀴즈·광고 등 {snapshot.contentSelection.excludedCount ?? 0}건 제외. 제목·검색 요약 기반 선별이며, 본문 품질이나 사실 확인 점수가 아닙니다.</p> : null}
           <div className="operations-toolbar"><label className="search-field"><Search size={18} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="제목과 내용으로 검색" /></label></div>
           <section className="trend-list" aria-label="수집 콘텐츠">
             {items.map((item) => {
               const trendLabel = searchTrendLabel(item);
               const breakdownLabel = scoreBreakdownLabel(item);
               return <a key={item.link} href={item.link} target="_blank" rel="noreferrer">
-                <div><strong>{item.title}</strong><p>{item.description}</p><small>{item.bloggername} · {item.postdate} · {item.matchedQueries.join(", ")}</small>{breakdownLabel ? <small className="trend-score-breakdown">{breakdownLabel}</small> : null}</div>
-                <span className="trend-signals" title="검색 결과에서 확인된 노출 위치입니다.">
+                <div><strong>{item.title}</strong><p>{item.description}</p><small>{item.bloggername} · {item.postdate} · {item.matchedQueries.join(", ")}</small>{item.contentValue?.signals.length ? <small className="trend-score-breakdown">정보성 신호: {item.contentValue.signals.join(" · ")}</small> : null}{item.contentValue?.cautions.length ? <small className="trend-score-breakdown">참고: {item.contentValue.cautions.join(" · ")}</small> : null}{breakdownLabel ? <small className="trend-score-breakdown">검색 신호: {breakdownLabel}</small> : null}</div>
+                <span className="trend-signals" title="정보성은 검색 요약의 설명 신호이며, 검색 신호는 노출·재등장 점수입니다. 본문 검증이나 조회수가 아닙니다.">
                   <small>{item.bestSimilarityRank ? `정확도 ${item.bestSimilarityRank}위` : "정확도 순위 없음"}</small>
                   {item.bestRecentRank ? <small>최신 {item.bestRecentRank}위</small> : null}
                   <small>4주간 {item.observedDays ?? 1}일 포착</small>
                   {trendLabel ? <small className={`trend-signal--${item.bestSearchTrend?.direction}`}>{trendLabel}</small> : null}
-                  <b>선별 {Math.round(item.candidateScore)}</b>
+                  {item.contentValue ? <b>정보성 {Math.round(item.contentValue.score)}</b> : null}
+                  <small>검색 신호 {Math.round(item.candidateScore)}</small>
                   <ExternalLink size={16} />
                 </span>
               </a>;

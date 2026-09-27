@@ -240,7 +240,7 @@ export interface GeneratedAdvertisingQuality {
   status: "warning" | "failed";
   score: number;
   automatedCheckPassed: boolean;
-  humanReviewRequired: true;
+  humanReviewRequired: boolean;
   summary: string;
   risks: GeneratedAdvertisingQualityRisk[];
   notice: string;

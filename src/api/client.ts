@@ -309,6 +309,31 @@ export function getSession(signal?: AbortSignal): Promise<{ user: ApiUser }> {
   return request("/api/auth/session", { signal });
 }
 
+export interface NaverWriterJob {
+  id: string; contentId: string; title: string; blogId: string;
+  status: "queued" | "running" | "needs_check" | "saved" | "cancelled";
+  message: string; updatedAt: number;
+}
+export interface NaverWriterStatus {
+  connected: boolean; online: boolean; blogId: string | null; jobs: NaverWriterJob[];
+  blockingJob?: NaverWriterJob | null;
+}
+export function getNaverWriter(contentId: string, signal?: AbortSignal): Promise<NaverWriterStatus> {
+  return requestNetwork(`/api/local-writer?contentId=${encodeURIComponent(contentId)}`, { signal });
+}
+export function pairNaverWriter(blogId: string): Promise<{ code: string; expiresAt: number }> {
+  return requestNetwork("/api/local-writer/pairing", { method: "POST", body: JSON.stringify({ blogId }) });
+}
+export function sendNaverDraft(contentId: string, versionId: string): Promise<NaverWriterJob> {
+  return requestNetwork(`/api/contents/${encodeURIComponent(contentId)}/naver-draft`, { method: "POST", body: JSON.stringify({ versionId }) });
+}
+export function resolveNaverDraft(jobId: string, saved: boolean): Promise<NaverWriterJob> {
+  return requestNetwork("/api/local-writer/resolve", { method: "POST", body: JSON.stringify({ jobId, saved }) });
+}
+export function revokeNaverWriter(): Promise<unknown> {
+  return requestNetwork("/api/local-writer/revoke", { method: "POST" });
+}
+
 export function login(username: string, password: string): Promise<{ user: ApiUser }> {
   return request("/api/auth/login", {
     method: "POST",

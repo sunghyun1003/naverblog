@@ -31,6 +31,7 @@ import { RejectDialog } from "./RejectDialog";
 import { EditContentDialog } from "./EditContentDialog";
 import { EvidenceReviewPanel, evidenceReviewFrom } from "./EvidenceReviewPanel";
 import { useContentDetail } from "./useContentDetail";
+import { NaverDraftButton } from "./NaverDraftButton";
 
 type ReviewTab = "draft" | "sources" | "images" | "history";
 
@@ -555,6 +556,8 @@ export function ReviewPage() {
           </div>
         </div>
         <div className="review-header__actions">
+          <NaverDraftButton key={detail.content.id} contentId={detail.content.id} versionId={latestVersion?.id ?? ""}
+            disabled={pipelineBusy || !["approved", "review_ready", "scheduled", "published", "measured"].includes(detail.content.state) || !latestVersion} />
           {generationRecovery ? (
             <Button variant="brand" icon={<RefreshCw size={17} />} disabled={recoveryBusy || pipelineBusy} onClick={() => void retryFailedStage()}>
               {recoveryBusy ? "재작업 요청 중..." : `${recoveryStageLabel[generationRecovery.resumeFrom]}부터 재작업`}

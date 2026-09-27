@@ -28,6 +28,17 @@ function upsertById<T extends { id: string }>(map: Map<string, T[]>, key: string
 }
 
 export class InMemoryAutomationRepository implements AutomationRepository {
+  private localWriter: { revision: number; value: unknown } | null = null;
+
+  async getLocalWriterState<T>(): Promise<{ revision: number; value: T } | null> {
+    return this.localWriter ? clone(this.localWriter) as { revision: number; value: T } : null;
+  }
+
+  async compareLocalWriterState(revision: number, value: unknown): Promise<boolean> {
+    if ((this.localWriter?.revision ?? 0) !== revision) return false;
+    this.localWriter = { revision: revision + 1, value: clone(value) };
+    return true;
+  }
   private readonly contents = new Map<string, ContentRecord>();
   private readonly contentKeys = new Map<string, string>();
   private readonly trends = new Map<string, TrendSignal>();

@@ -8,7 +8,7 @@ if (!connectionString) throw new Error("DATABASE_URL이 필요합니다.");
 const pool = new Pool({ connectionString: securePostgresConnectionString(connectionString), max: 1, connectionTimeoutMillis: 10_000 });
 
 try {
-  const requiredTables = ["teams", "users", "contents", "content_versions", "automation_jobs", "audit_logs", "dashboard_snapshots"];
+  const requiredTables = ["teams", "users", "contents", "content_versions", "automation_jobs", "audit_logs", "dashboard_snapshots", "local_writer_state"];
   const tables = await pool.query<{ table_name: string }>(
     `SELECT table_name FROM information_schema.tables
      WHERE table_schema='public' AND table_name = ANY($1::text[])`,
@@ -52,8 +52,9 @@ try {
   if (!migrations.rows.some((row) => row.filename === "002_editorial_quality.sql")
     || !migrations.rows.some((row) => row.filename === "003_native_korean_quality.sql")
     || !migrations.rows.some((row) => row.filename === "004_deleted_content_state.sql")
-    || !migrations.rows.some((row) => row.filename === "005_dashboard_snapshots.sql")) {
-    throw new Error("최신 품질·소프트 삭제 마이그레이션 적용 기록이 없습니다.");
+    || !migrations.rows.some((row) => row.filename === "005_dashboard_snapshots.sql")
+    || !migrations.rows.some((row) => row.filename === "006_local_writer.sql")) {
+    throw new Error("최신 품질·소프트 삭제·PC 도우미 마이그레이션 적용 기록이 없습니다.");
   }
 
   const counts = await pool.query<{

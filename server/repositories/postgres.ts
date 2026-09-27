@@ -71,6 +71,22 @@ function jobStepFrom(row: QueryResultRow): JobStep {
 export class PostgresAutomationRepository implements AutomationRepository {
   readonly pool: Pool;
 
+  async getLocalWriterState<T>(): Promise<{ revision: number; value: T } | null> {
+    const result = await this.pool.query("SELECT revision,value FROM local_writer_state WHERE team_id=$1", [this.teamId]);
+    return result.rows[0] as { revision: number; value: T } ?? null;
+  }
+
+  async compareLocalWriterState(revision: number, value: unknown): Promise<boolean> {
+    if (revision === 0) {
+      const result = await this.pool.query(`INSERT INTO local_writer_state(team_id,revision,value)
+        VALUES($1,1,$2::jsonb) ON CONFLICT DO NOTHING`, [this.teamId, JSON.stringify(value)]);
+      return result.rowCount === 1;
+    }
+    const updated = await this.pool.query(`UPDATE local_writer_state SET revision=revision+1,value=$3::jsonb
+      WHERE team_id=$1 AND revision=$2`, [this.teamId, revision, JSON.stringify(value)]);
+    return updated.rowCount === 1;
+  }
+
   constructor(
     private readonly teamId: string,
     pool: Pool,

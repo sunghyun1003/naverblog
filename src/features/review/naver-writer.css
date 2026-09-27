@@ -1,0 +1,13 @@
+.naver-writer { display: grid; gap: 16px; min-width: 0; }
+.modal:has(.naver-writer) .modal__header h2 { word-break: keep-all; }
+.naver-writer p { margin: 0; line-height: 1.6; overflow-wrap: anywhere; }
+.naver-writer code { overflow-wrap: anywhere; }
+.naver-writer small { color: var(--text-secondary, #646b75); line-height: 1.6; }
+.naver-writer input, .naver-writer textarea { width: 100%; min-width: 0; box-sizing: border-box; }
+.naver-writer ol { margin: 0; padding-left: 22px; line-height: 1.9; }
+.naver-writer__error { color: #b42318; }
+.naver-writer__status { padding: 16px; border: 1px solid #e3e5e7; border-radius: 12px; display: grid; gap: 12px; }
+.naver-writer__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+@media (max-width: 600px) {
+  .naver-writer__actions > button { flex: 1 1 100%; white-space: normal; height: auto; min-height: 44px; }
+}

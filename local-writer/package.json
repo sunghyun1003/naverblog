@@ -1,0 +1,8 @@
+{
+  "name": "carrot-blog-local-writer",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": { "test": "node --test test/*.test.mjs" },
+  "dependencies": { "marked": "18.0.14", "playwright": "1.63.0" }
+}

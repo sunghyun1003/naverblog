@@ -7,3 +7,4 @@ dist
 dist-server
 npm-debug.log
 docs/design
+local-writer

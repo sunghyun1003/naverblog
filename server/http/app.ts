@@ -15,6 +15,8 @@ import { DashboardSync } from "../services/dashboard-sync.js";
 import type { GitHubSyncIdentity } from "../services/github-oidc.js";
 import type { ContentDetail } from "../domain/types.js";
 import { appliedImageIds, validImageSelection } from "../services/image-usage.js";
+import { LocalWriter } from "../services/local-writer.js";
+import { isLocalWriterWorkerRequest, registerLocalWriterRoutes } from "./local-writer-routes.js";
 
 const createContentSchema = z.object({
   title: z.string().trim().min(5).max(120),
@@ -370,6 +372,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     if (request.method === "OPTIONS") return reply.status(204).send();
     if (request.url.startsWith("/api/")) reply.header("Cache-Control", "private, no-store");
     if (request.url === "/api/internal/sync" && request.method === "POST") return;
+    if (isLocalWriterWorkerRequest(request.method, request.url)) return;
     if (!auth || !request.url.startsWith("/api/")) return;
     if (request.url.startsWith("/api/auth/login")) return;
     const session = auth.verifyCookie(request.headers.cookie);
@@ -377,6 +380,20 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     if (request.method !== "GET" && request.headers["x-requested-with"] !== "dashboard") {
       return reply.status(403).send({ error: { code: "INVALID_REQUEST_ORIGIN", message: "허용되지 않은 요청입니다.", details: null } });
     }
+  });
+
+  registerLocalWriterRoutes(app, {
+    writer: new LocalWriter(system.repository),
+    detail: async id => {
+      if (githubAutomation) return getGitHubDetail(id, true);
+      const detail = await system.repository.getContentDetail(id);
+      if (!detail) throw new DomainError("CONTENT_NOT_FOUND", "원고를 찾을 수 없습니다.", 404);
+      return detail;
+    },
+    image: async (contentId, assetId) => {
+      if (!githubAutomation) throw new DomainError("IMAGE_NOT_FOUND", "이미지를 찾을 수 없습니다.", 404);
+      return githubAutomation.getDraftImage(contentId, assetId);
+    },
   });
 
   app.post("/api/internal/sync", async (request, reply) => {

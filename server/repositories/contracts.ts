@@ -13,6 +13,8 @@ import type {
 } from "../domain/types.js";
 
 export interface AutomationRepository {
+  getLocalWriterState<T>(): Promise<{ revision: number; value: T } | null>;
+  compareLocalWriterState(revision: number, value: unknown): Promise<boolean>;
   createContent(content: ContentRecord): Promise<ContentRecord>;
   updateContent(content: ContentRecord): Promise<ContentRecord>;
   getContent(id: string): Promise<ContentRecord | null>;

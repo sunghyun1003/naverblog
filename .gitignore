@@ -11,3 +11,4 @@ Thumbs.db
 playwright-report/
 test-results/
 automation-private/
+scripts/__pycache__/

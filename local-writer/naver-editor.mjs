@@ -1,6 +1,6 @@
 // Conservative UI adapter. No private Naver API, cookie extraction, stealth,
 // CAPTCHA handling or publication operation. Editor changes fail closed.
-import { escapeHtml, assertDocumentOrder } from "./document.mjs";
+import { escapeHtml, assertDocumentOrder, generatedImageCaption } from "./document.mjs";
 
 const normal = value => value.replace(/\s+/g, "").normalize("NFC");
 const writeUrl = blogId => `https://blog.naver.com/PostWriteForm.naver?blogId=${encodeURIComponent(blogId)}`;
@@ -143,7 +143,8 @@ export async function writeNaverDraft(context, job, plan, images, report) {
     const lastIsText = await container.locator(".se-component").last().evaluate(el => el.classList.contains("se-text"));
     if (!lastIsText) throw new Error("이미지 뒤 입력 위치를 확인하지 못했습니다. 열린 편집기에 원고가 남아 있습니다.");
     needsBodyFocus = true;
-    if (item.asset.altText) await paste(`<p>${escapeHtml(item.asset.altText)}</p>`);
+    // Included in expectedOrder, so read-back verifies the disclosure persisted.
+    await paste(`<p>${escapeHtml(generatedImageCaption(item.asset.altText))}</p>`);
   }
   if (normal(await title.innerText()) !== normal(job.payload.title)) throw new Error("제목이 원본과 일치하지 않습니다.");
   const actual = normal(await authorText(container));

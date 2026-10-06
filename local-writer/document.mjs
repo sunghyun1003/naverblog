@@ -2,6 +2,13 @@ import { createHash } from "node:crypto";
 import { Marked } from "marked";
 
 export const escapeHtml = value => String(value).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+// Keep this local: the Windows helper must also disclose old queued payloads.
+export function generatedImageCaption(altText = "") {
+  const disclosure = "AI로 생성한 이미지입니다.";
+  const description = String(altText).trim();
+  return description.includes(disclosure) ? description
+    : [description, disclosure].filter(Boolean).join(" · ");
+}
 export function compactOrder(items) {
   const result = [];
   for (const item of items) {
@@ -78,7 +85,7 @@ export function transferPlan(payload) {
 
 export function previewHtml(payload, plan) {
   const body = plan.map(item => item.kind === "html" ? item.html
-    : `<figure><img src="${escapeHtml(item.asset.id)}.jpg" alt="${escapeHtml(item.asset.altText)}"><figcaption>${escapeHtml(item.asset.altText)}</figcaption></figure>`).join("\n");
+    : `<figure><img src="${escapeHtml(item.asset.id)}.jpg" alt="${escapeHtml(item.asset.altText)}"><figcaption>${escapeHtml(generatedImageCaption(item.asset.altText))}</figcaption></figure>`).join("\n");
   return `<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self' file:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
   <title>${escapeHtml(payload.title)}</title><style>body{font:17px/1.9 system-ui,sans-serif;max-width:760px;margin:32px auto;padding:0 20px;color:#20242a}img{max-width:100%;height:auto}figure{margin:24px 0}figcaption{font-size:13px;color:#69727b}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:8px}pre{white-space:pre-wrap}a{overflow-wrap:anywhere}</style>

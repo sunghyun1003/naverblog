@@ -21,7 +21,7 @@ import {
 import { Fragment, useEffect, useState, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { contentImageUrl, generateContentImages, getContentCopyAssets, selectContentImages } from "../../api/client";
-import { markdownBlocks, renderableImages } from "./imageUsage";
+import { generatedImageCaption, markdownBlocks, renderableImages } from "./imageUsage";
 import type { ApiContent, ApiContentVersion, ApiGeneratedImagePackage } from "../../api/types";
 import { Button } from "../../components/Button";
 import { PageLoadingState } from "../../components/PageLoadingState";
@@ -849,7 +849,7 @@ function ImageAssetsView({
                     );
                   })()}
                   <div className="image-asset__caption-heading"><strong>{asset.role === "hero" ? "대표 이미지" : `본문 ${asset.afterSection}절 뒤`}</strong><span>AI 실사·일러스트</span></div>
-                  <p>{asset.altText}</p>
+                  <p>{generatedImageCaption(asset.altText)}</p>
                   <Button size="small" variant={readyPackage?.assets?.some(item => item.id === asset.id) ? "outline" : "brand"}
                     disabled={pending || busy || !packageState?.technicalQualityPassed || !packageState.manifestKey || contentStatus === "scheduled" || contentStatus === "published" || contentStatus === "deleted"}
                     onClick={() => onSelect(asset.id)}>
@@ -950,7 +950,7 @@ function renderGeneratedBlocksWithImages(body: string, contentId: string, imageP
       output.push(
         <figure className="article-inline-image" key={`image-${asset.id}-${index}`}>
           <img src={contentImageUrl(contentId, asset.id, usableImagePackage?.generatedAt)} alt={asset.altText} loading="lazy" />
-          <figcaption>{asset.altText}</figcaption>
+          <figcaption>{generatedImageCaption(asset.altText)}</figcaption>
         </figure>,
       );
     }
@@ -974,7 +974,7 @@ function renderGeneratedBlocksWithImages(body: string, contentId: string, imageP
         output.push(
           <figure className="article-inline-image article-inline-image--hero" key={`image-${hero.id}`}>
             <img src={contentImageUrl(contentId, hero.id, usableImagePackage?.generatedAt)} alt={hero.altText} />
-            <figcaption>{hero.altText}</figcaption>
+            <figcaption>{generatedImageCaption(hero.altText)}</figcaption>
           </figure>,
         );
       }
@@ -1067,6 +1067,9 @@ function decorateNaverCopyHtml(
       image.src = imageUrls[asset.id] ?? contentImageUrl(contentId, asset.id, version);
       image.alt = asset.altText;
       figure.append(image);
+      const caption = documentCopy.createElement("figcaption");
+      caption.textContent = generatedImageCaption(asset.altText);
+      figure.append(caption);
       if (asset.role === "hero") (article.querySelector("h1") ?? article.firstElementChild)?.after(figure);
       else (headings[Math.max(0, asset.afterSection - 1)] ?? article.lastElementChild)?.after(figure);
     }
@@ -1080,6 +1083,7 @@ function decorateNaverCopyHtml(
   article.querySelectorAll("li").forEach((element) => element.setAttribute("style", "margin:0 0 10px;line-height:1.8;word-break:keep-all;"));
   article.querySelectorAll("blockquote").forEach((element) => element.setAttribute("style", "margin:24px 0;padding:18px 20px;border-left:4px solid #ff6f0f;background:#fff6f0;"));
   article.querySelectorAll("figure").forEach((element) => element.setAttribute("style", "margin:30px 0 34px;text-align:center;"));
+  article.querySelectorAll("figcaption").forEach((element) => element.setAttribute("style", "margin:8px 0 0;font-size:13px;line-height:1.6;color:#5f6368;word-break:keep-all;"));
   article.querySelectorAll("img").forEach((element) => element.setAttribute("style", "display:block;width:100%;max-width:760px;height:auto;margin:0 auto;border:0;"));
   return article.outerHTML;
 }

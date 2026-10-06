@@ -4,12 +4,17 @@ import test from "node:test";
 import { GitHubAutomationService, type AutomationDraftDetail, type DashboardDraftState, type GeneratedImageManifest } from "../server/services/github-automation.js";
 import { appliedImageIds, imageManifestKey, imageUsageMetadata, imageReviewAccepted } from "../server/services/image-usage.js";
 import { draftToDetail } from "../server/services/github-content-mapper.js";
-import { markdownBlocks, renderableImages } from "../src/features/review/imageUsage.js";
+import { generatedImageCaption, markdownBlocks, renderableImages } from "../src/features/review/imageUsage.js";
 import { buildApp } from "../server/http/app.js";
 import { SessionAuthService } from "../server/services/session-auth.js";
 
 const now = "2026-09-14T01:00:00.000Z";
 const ids = ["hero", "visual-01", "visual-02"];
+test("기존 이미지에도 설명과 AI 주석을 붙이고 중복 표기하지 않는다", () => {
+  assert.equal(generatedImageCaption("보험 서류"), "보험 서류 · AI로 생성한 이미지입니다.");
+  assert.equal(generatedImageCaption(" "), "AI로 생성한 이미지입니다.");
+  assert.equal(generatedImageCaption(generatedImageCaption("대표")), generatedImageCaption("대표"));
+});
 test("Windows 줄바꿈에서도 본문 구역과 이미지 삽입 위치를 분리한다", () => {
   assert.deepEqual(markdownBlocks("# 제목\r\n\r\n본문\r\n\r\n## 구역\r\n\r\n내용"), markdownBlocks("# 제목\n\n본문\n\n## 구역\n\n내용"));
 });

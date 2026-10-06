@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createHash } from "node:crypto";
-import { transferPlan, previewHtml, assertDocumentOrder } from "../document.mjs";
+import { transferPlan, previewHtml, assertDocumentOrder, generatedImageCaption } from "../document.mjs";
 
 const payload = (overrides = {}) => {
   const value = { schemaVersion: 1, contentId: "123", versionId: "v2", title: "테스트 원고", body: "# 테스트 원고\n\n처음 문단\n\n## 3줄 요약\n\n- 하나\n- 둘\n- 셋\n\n## 주요 내용\n\n**중요한 설명**\n\n## FAQ\n\n### 질문은?\n\n답변입니다.\n\n## 출처\n\n[공식 근거](https://example.com)\n\n> 개별 약관을 확인해주세요.",
@@ -18,6 +18,16 @@ test("제목 중복 없이 원문·3줄 요약·FAQ·링크·안내문과 이미
   assert.equal((html.match(/<h1>/g) ?? []).length, 1);
   assert.equal((html.match(/<li>/g) ?? []).length, 3);
   for (const text of ["FAQ", "답변입니다.", "https://example.com", "개별 약관"]) assert.ok(html.includes(text));
+  assert.equal((html.match(/AI로 생성한 이미지입니다\./g) ?? []).length, value.assets.length);
+});
+
+test("오래된 전송·빈 설명에도 AI 생성 표기를 포함하고 설명 HTML은 이스케이프한다", () => {
+  assert.equal(generatedImageCaption(), "AI로 생성한 이미지입니다.");
+  assert.equal(generatedImageCaption(generatedImageCaption("대표")), generatedImageCaption("대표"));
+  const value = payload({ assets: [{ ...payload().assets[0], altText: "<script>설명</script>" }] });
+  const html = previewHtml(value, transferPlan(value));
+  assert.match(html, /<figcaption>&lt;script&gt;설명&lt;\/script&gt; · AI로 생성한 이미지입니다\.<\/figcaption>/);
+  assert.doesNotMatch(html, /<script>/);
 });
 test("일치하지 않는 이미지 위치를 조용히 버리지 않는다", () => {
   const value = payload(); value.assets[1].afterSection = 999;

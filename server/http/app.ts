@@ -367,6 +367,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   app.addHook("onRequest", async (request, reply) => {
     reply.header("Access-Control-Allow-Origin", origin);
     reply.header("Access-Control-Allow-Credentials", "true");
+    reply.header("Access-Control-Expose-Headers", "Content-Disposition, X-Word-Image-Count, X-Word-Excluded-Image-Count");
     reply.header("Access-Control-Allow-Headers", "Content-Type, X-User-Id, X-User-Roles, X-Idempotency-Key, X-Requested-With");
     reply.header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
     if (request.method === "OPTIONS") return reply.status(204).send();
@@ -554,6 +555,24 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     const query = refreshQuerySchema.parse(request.query);
     if (githubAutomation) return getGitHubDetail(id, query.refresh === "true");
     return system.contentService.detail(id);
+  });
+
+  app.get("/api/contents/:id/word", async (request, reply) => {
+    const { id } = idParamsSchema.parse(request.params);
+    const expected = z.object({ versionId: z.string().min(1), updatedAt: z.string().min(1) }).parse(request.query);
+    const { exportContentWord, WORD_CONTENT_TYPE } = await import("../services/word-export.js");
+    // Do not export a stale mirror when GitHub is unavailable. A compliance copy
+    // must match the version the operator is looking at, including image selection.
+    const detail = githubAutomation ? draftToDetail(await githubAutomation.getDraft(id)) : await system.contentService.detail(id);
+    const result = await exportContentWord(detail, expected, async (contentId, assetId) => {
+      if (!githubAutomation) throw new DomainError("IMAGE_NOT_FOUND", "이미지 파일을 찾을 수 없습니다.", 404);
+      return githubAutomation.getDraftImage(contentId, assetId);
+    });
+    return reply.type(WORD_CONTENT_TYPE)
+      .header("Content-Disposition", `attachment; filename="blog-manuscript.docx"; filename*=UTF-8''${encodeURIComponent(result.filename).replace(/['()*]/g, char => `%${char.charCodeAt(0).toString(16).toUpperCase()}`)}`)
+      .header("X-Word-Image-Count", result.imageCount)
+      .header("X-Word-Excluded-Image-Count", result.excludedImageCount)
+      .send(result.body);
   });
   app.patch("/api/contents/:id", async (request) => {
     const { id } = idParamsSchema.parse(request.params);

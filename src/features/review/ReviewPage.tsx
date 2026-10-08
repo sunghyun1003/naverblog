@@ -17,10 +17,11 @@ import {
   Trash2,
   UserRound,
   Copy,
+  Download,
 } from "lucide-react";
 import { Fragment, useEffect, useState, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { contentImageUrl, generateContentImages, getContentCopyAssets, selectContentImages } from "../../api/client";
+import { contentImageUrl, generateContentImages, getContentCopyAssets, getContentWord, selectContentImages } from "../../api/client";
 import { generatedImageCaption, markdownBlocks, renderableImages } from "./imageUsage";
 import type { ApiContent, ApiContentVersion, ApiGeneratedImagePackage } from "../../api/types";
 import { Button } from "../../components/Button";
@@ -162,6 +163,7 @@ export function ReviewPage() {
   const [imageBusy, setImageBusy] = useState(false);
   const [imageRequestStartedAt, setImageRequestStartedAt] = useState<number | null>(null);
   const [copyBusy, setCopyBusy] = useState(false);
+  const [wordBusy, setWordBusy] = useState(false);
   const [toast, setToast] = useState("");
   useEffect(() => {
     if (detail?.content.rewriteStatus === "queued") setRewritePending(true);
@@ -382,6 +384,26 @@ export function ReviewPage() {
   const copyPackage = typeof latestVersion?.metadata.copyPackage === "string" ? latestVersion.metadata.copyPackage : latestVersion?.body ?? "";
   const storedCopyHtml = detail.automation?.manualEdit ? "" : typeof latestVersion?.metadata.copyPackageHtml === "string" ? latestVersion.metadata.copyPackageHtml : "";
   const hasCopyContent = Boolean(storedCopyHtml.trim() || latestVersion?.body?.trim());
+  const downloadWord = async () => {
+    if (!latestVersion || wordBusy) return;
+    setWordBusy(true);
+    try {
+      const result = await getContentWord(detail.content.id, latestVersion.id, detail.content.updatedAt);
+      const url = URL.createObjectURL(result.blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = result.filename;
+      document.body.append(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      setToast(`Word 파일을 내려받았습니다. ${result.imageCount ? `본문 적용 이미지 ${result.imageCount}장 포함.` : "현재 본문에 적용된 이미지가 없어 글만 포함됐습니다."}${result.excludedImageCount ? " 본문에서 제외된 이미지는 포함하지 않았습니다." : ""}`);
+    } catch (error) {
+      setToast(error instanceof Error && !["TimeoutError", "AbortError"].includes(error.name) ? error.message : "Word 파일 준비 시간이 초과됐습니다. 잠시 후 다시 시도해주세요.");
+    } finally {
+      setWordBusy(false);
+    }
+  };
   const prepareCopyHtml = async () => {
     const response = await getContentCopyAssets(detail.content.id);
     const imageUrls = Object.fromEntries(response.items.map((item) => [item.assetId, item.url]));
@@ -565,6 +587,11 @@ export function ReviewPage() {
           ) : null}
           <Button icon={<Pencil size={17} />} disabled={status === "deleted" || connectionStatus !== "connected" || staleDetail || editBusy || deleteBusy} onClick={() => setEditOpen(true)}>직접 수정</Button>
           <Button variant="danger" icon={<Trash2 size={17} />} disabled={status === "deleted" || connectionStatus !== "connected" || staleDetail || editBusy || deleteBusy} onClick={() => void remove()}>삭제</Button>
+          <Button icon={<Download size={17} />} title="저장된 제목·본문·적용 이미지와 AI 이미지 주석을 Word 파일로 다운로드"
+            disabled={!latestVersion?.body.trim() || wordBusy || pipelineBusy || imageGenerationQueued || staleDetail || status === "deleted" || connectionStatus !== "connected"}
+            onClick={() => void downloadWord()}>
+            {wordBusy ? "Word 준비 중..." : "Word 다운로드"}
+          </Button>
           <Button icon={<Code2 size={17} />} disabled={!hasCopyContent || copyBusy} onClick={() => void copySource()}>
             HTML 소스 복사
           </Button>

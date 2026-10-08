@@ -888,7 +888,9 @@ select:focus-visible,
   min-height: 76px;
   border-bottom: 1px solid var(--color-border);
   background: #fff;
-  padding: 0 28px;
+  padding: 12px 28px;
+  flex-wrap: wrap;
+  row-gap: 12px;
 }
 
 .review-header__title h1 {
@@ -901,6 +903,9 @@ select:focus-visible,
 
 .review-header__actions {
   gap: 8px;
+  max-width: 100%;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
 }
 
 .review-workspace {

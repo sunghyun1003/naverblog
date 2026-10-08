@@ -463,6 +463,25 @@ export function getContentCopyAssets(contentId: string): Promise<{ expiresAt: st
   return request(`/api/contents/${encodeURIComponent(contentId)}/copy-assets`);
 }
 
+export async function getContentWord(contentId: string, versionId: string, updatedAt: string) {
+  const query = new URLSearchParams({ versionId, updatedAt });
+  // Binary downloads deliberately bypass the JSON response cache.
+  const response = await fetch(`${apiBaseUrl}/api/contents/${encodeURIComponent(contentId)}/word?${query}`, {
+    credentials: "include", cache: "no-store", signal: AbortSignal.timeout(90_000),
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null) as { error?: { message?: string; code?: string } } | null;
+    throw new ApiError(payload?.error?.message ?? "Word 파일을 만들지 못했습니다. 잠시 후 다시 시도해주세요.", response.status, payload?.error?.code ?? "WORD_EXPORT_FAILED");
+  }
+  if (!response.headers.get("content-type")?.includes("application/vnd.openxmlformats-officedocument.wordprocessingml.document")) {
+    throw new Error("Word 파일이 아닌 응답을 받았습니다. 다시 로그인한 뒤 시도해주세요.");
+  }
+  const encodedName = response.headers.get("content-disposition")?.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+  return { blob: await response.blob(), filename: encodedName ? decodeURIComponent(encodedName) : "블로그 원고.docx",
+    imageCount: Number(response.headers.get("x-word-image-count") ?? 0),
+    excludedImageCount: Number(response.headers.get("x-word-excluded-image-count") ?? 0) };
+}
+
 export function collectTrends(): Promise<{ accepted: boolean }> {
   return request("/api/automation/collect", { method: "POST" });
 }

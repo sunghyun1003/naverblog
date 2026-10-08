@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 import { Fragment, useEffect, useState, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { contentImageUrl, generateContentImages, getContentCopyAssets, getContentWord, selectContentImages } from "../../api/client";
+import { ApiError, contentImageUrl, generateContentImages, getContentCopyAssets, getContentWord, selectContentImages } from "../../api/client";
 import { generatedImageCaption, markdownBlocks, renderableImages } from "./imageUsage";
 import type { ApiContent, ApiContentVersion, ApiGeneratedImagePackage } from "../../api/types";
 import { Button } from "../../components/Button";
@@ -384,6 +384,14 @@ export function ReviewPage() {
   const copyPackage = typeof latestVersion?.metadata.copyPackage === "string" ? latestVersion.metadata.copyPackage : latestVersion?.body ?? "";
   const storedCopyHtml = detail.automation?.manualEdit ? "" : typeof latestVersion?.metadata.copyPackageHtml === "string" ? latestVersion.metadata.copyPackageHtml : "";
   const hasCopyContent = Boolean(storedCopyHtml.trim() || latestVersion?.body?.trim());
+  // Cache age is not an export failure. The Word endpoint reads the source and
+  // checks this version + image hashes on every click, without exporting a stale fallback.
+  const wordUnavailableReason = wordBusy ? "Word 파일을 준비하고 있습니다."
+    : !latestVersion?.body.trim() ? "저장된 원고 본문이 없습니다."
+      : status === "deleted" ? "삭제된 원고는 내려받을 수 없습니다."
+        : pipelineBusy || imageGenerationQueued ? "원고 또는 이미지 작업이 끝난 뒤 내려받아주세요."
+          : connectionStatus !== "connected" ? "서버 연결을 확인해주세요."
+            : "";
   const downloadWord = async () => {
     if (!latestVersion || wordBusy) return;
     setWordBusy(true);
@@ -399,6 +407,17 @@ export function ReviewPage() {
       window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
       setToast(`Word 파일을 내려받았습니다. ${result.imageCount ? `본문 적용 이미지 ${result.imageCount}장 포함.` : "현재 본문에 적용된 이미지가 없어 글만 포함됐습니다."}${result.excludedImageCount ? " 본문에서 제외된 이미지는 포함하지 않았습니다." : ""}`);
     } catch (error) {
+      if (error instanceof ApiError && error.code === "WORD_EXPORT_STALE") {
+        try {
+          const current = await refresh(true);
+          setToast(current.freshness?.stale
+            ? "최신 원고를 확인하지 못했습니다. 잠시 후 Word 다운로드를 다시 눌러주세요."
+            : "원고가 변경되어 최신 내용을 화면에 불러왔습니다. 확인 후 Word 다운로드를 다시 눌러주세요.");
+        } catch {
+          setToast("최신 원고를 불러오지 못했습니다. 잠시 후 Word 다운로드를 다시 눌러주세요.");
+        }
+        return;
+      }
       setToast(error instanceof Error && !["TimeoutError", "AbortError"].includes(error.name) ? error.message : "Word 파일 준비 시간이 초과됐습니다. 잠시 후 다시 시도해주세요.");
     } finally {
       setWordBusy(false);
@@ -587,8 +606,8 @@ export function ReviewPage() {
           ) : null}
           <Button icon={<Pencil size={17} />} disabled={status === "deleted" || connectionStatus !== "connected" || staleDetail || editBusy || deleteBusy} onClick={() => setEditOpen(true)}>직접 수정</Button>
           <Button variant="danger" icon={<Trash2 size={17} />} disabled={status === "deleted" || connectionStatus !== "connected" || staleDetail || editBusy || deleteBusy} onClick={() => void remove()}>삭제</Button>
-          <Button icon={<Download size={17} />} title="저장된 제목·본문·적용 이미지와 AI 이미지 주석을 Word 파일로 다운로드"
-            disabled={!latestVersion?.body.trim() || wordBusy || pipelineBusy || imageGenerationQueued || staleDetail || status === "deleted" || connectionStatus !== "connected"}
+          <Button icon={<Download size={17} />} title={wordUnavailableReason || "저장된 제목·본문·적용 이미지와 AI 이미지 주석을 Word 파일로 다운로드"}
+            disabled={Boolean(wordUnavailableReason)}
             onClick={() => void downloadWord()}>
             {wordBusy ? "Word 준비 중..." : "Word 다운로드"}
           </Button>

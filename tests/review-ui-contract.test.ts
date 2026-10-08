@@ -17,6 +17,20 @@ test("원고 상세 화면은 최종 승인 체크박스를 다시 노출하지 
   assert.doesNotMatch(source, /approveApi/);
 });
 
+test("Word 다운로드는 캐시 나이로 막지 않고 실제 버전 변경 때만 화면을 갱신한다", async () => {
+  const source = await readFile(new URL("../src/features/review/ReviewPage.tsx", import.meta.url), "utf8");
+  const policy = source.slice(source.indexOf("const wordUnavailableReason ="), source.indexOf("const downloadWord ="));
+  assert.ok(policy.includes("wordBusy"));
+  assert.match(policy, /latestVersion\?\.body\.trim\(\)/);
+  assert.match(policy, /pipelineBusy \|\| imageGenerationQueued/);
+  assert.match(policy, /status === "deleted"/);
+  assert.doesNotMatch(policy, /staleDetail|freshness|asOf/);
+  assert.match(source, /disabled=\{Boolean\(wordUnavailableReason\)\}/);
+  assert.match(source, /error\.code === "WORD_EXPORT_STALE"/);
+  assert.match(source, /const current = await refresh\(true\)/);
+  assert.match(source, /확인 후 Word 다운로드를 다시 눌러주세요/);
+});
+
 test("모바일 원고 상세 헤더는 버튼을 가로 스크롤로 숨기지 않는다", async () => {
   const source = await readFile(new URL("../src/styles/product-theme.css", import.meta.url), "utf8");
   const mobileBlockStart = source.lastIndexOf("@media (max-width: 767px)", source.indexOf("/*\n * Shared page frame"));

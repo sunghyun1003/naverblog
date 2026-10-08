@@ -45,6 +45,39 @@ test("all persisted page reads return without contacting a blocked GitHub server
   await app.close();
 });
 
+test("오래된 화면 캐시는 Word 다운로드를 막지 않고 원본 재확인·변경·장애 차단은 유지한다", async context => {
+  const repository = new SnapshotRepository();
+  const current = draft();
+  const detail = draftToDetail(current);
+  repository.snapshots.set(`detail:${current.runId}`, { value: detail, syncedAt: "2020-01-01T00:00:00Z" });
+  let reads = 0;
+  let unavailable = false;
+  const github = { getDraft: async () => {
+    reads++;
+    if (unavailable) throw new Error("Upstream unavailable");
+    return current;
+  } } as unknown as GitHubAutomationService;
+  const app = buildApp({ system: createAutomationSystem({ repository }), databaseProvider: "postgres", githubAutomation: github });
+  context.after(() => app.close());
+  const cached = await app.inject(`/api/contents/${current.runId}`);
+  assert.equal(cached.json().freshness.stale, true);
+  assert.equal(reads, 0, "normal page load still uses its fast snapshot");
+  const params = new URLSearchParams({ versionId: detail.versions.at(-1)!.id, updatedAt: detail.content.updatedAt });
+  const url = `/api/contents/${current.runId}/word?${params}`;
+  const response = await app.inject(url);
+  assert.equal(response.statusCode, 200);
+  assert.match(String(response.headers["content-type"]), /wordprocessingml.document/);
+  assert.equal(reads, 1, "download checks the source rather than the aged snapshot");
+  current.updatedAt = "2026-10-08T00:00:00Z";
+  const changed = await app.inject(url);
+  assert.equal(changed.statusCode, 409);
+  assert.equal(changed.json().error.code, "WORD_EXPORT_STALE");
+  unavailable = true;
+  const failed = await app.inject(url);
+  assert.equal(failed.statusCode, 500);
+  assert.doesNotMatch(String(failed.headers["content-type"]), /wordprocessingml/);
+});
+
 test("home trend summary stays small without truncating search data and refreshes the shared source", async (context) => {
   const repository = new SnapshotRepository();
   const items = Array.from({ length: 739 }, (_, i) => ({ title: `트렌드 ${i}`, description: "원본 검색 자료 ".repeat(50), link: `https://example.test/${i}` }));

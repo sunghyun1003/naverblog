@@ -49,3 +49,18 @@ test("이미지 수뿐 아니라 본문의 앞뒤 순서와 텍스트 유실까�
   assert.throws(() => assertDocumentOrder(expected, [image, text("문단 하나"), image, text("요약과 FAQ출처")]), /이미지 위치/);
   assert.throws(() => assertDocumentOrder(expected, [image, text("문단 하나"), image, text("출처")]), /문장/);
 });
+
+test("필수 안내 이미지는 출처까지 모두 끝난 뒤 삽입하고 AI 표기 없이 심의필로 끝난다", () => {
+  const approvalNumber = "확인필-제2026-자동차CM사업부-블로그12345E-전사(26.10.12~27.10.11)";
+  const footer = { id: "compliance-notice", role: "footer", afterSection: 0, altText: "가입 시 알아두실 사항", sha256: "c".repeat(64) };
+  const value = payload({ schemaVersion: 2, approvalNumber, assets: [...payload().assets, footer] });
+  const plan = transferPlan(value);
+  assert.deepEqual(plan.at(-2), { kind: "image", asset: footer });
+  assert.equal(plan.at(-1).html, `<p>${approvalNumber}</p>`);
+  const html = previewHtml(value, plan);
+  assert.equal((html.match(/AI로 생성한 이미지입니다\./g) ?? []).length, 2);
+  assert.ok(html.indexOf("compliance-notice.jpg") > html.indexOf("개별 약관을 확인해주세요"));
+  assert.ok(html.indexOf(approvalNumber) > html.indexOf("compliance-notice.jpg"));
+  assert.throws(() => transferPlan(payload({ schemaVersion: 2, approvalNumber })), /필수 안내/);
+  assert.throws(() => transferPlan(payload({ schemaVersion: 2, assets: [...payload().assets, footer] })), /필수 안내/);
+});

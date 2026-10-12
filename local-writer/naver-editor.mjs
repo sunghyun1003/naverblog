@@ -144,7 +144,7 @@ export async function writeNaverDraft(context, job, plan, images, report) {
     if (!lastIsText) throw new Error("이미지 뒤 입력 위치를 확인하지 못했습니다. 열린 편집기에 원고가 남아 있습니다.");
     needsBodyFocus = true;
     // Included in expectedOrder, so read-back verifies the disclosure persisted.
-    await paste(`<p>${escapeHtml(generatedImageCaption(item.asset.altText))}</p>`);
+    if (item.asset.role !== "footer") await paste(`<p>${escapeHtml(generatedImageCaption(item.asset.altText))}</p>`);
   }
   if (normal(await title.innerText()) !== normal(job.payload.title)) throw new Error("제목이 원본과 일치하지 않습니다.");
   const actual = normal(await authorText(container));

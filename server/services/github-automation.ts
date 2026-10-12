@@ -43,6 +43,7 @@ export interface DashboardDecisionEvent {
 }
 
 export interface DashboardDraftState {
+  approvalNumber?: string;
   imageSelection?: ImageSelection | null;
   textQualityPassed?: boolean;
   schemaVersion: 1;
@@ -1053,7 +1054,7 @@ export class GitHubAutomationService {
 
   async editDraft(
     runId: string,
-    input: { title: string; body: string; reason?: string | null },
+    input: { title: string; body: string; reason?: string | null; approvalNumber?: string | undefined },
     actor: string,
     currentState?: DashboardDraftState,
   ): Promise<DashboardDraftState> {
@@ -1074,6 +1075,7 @@ export class GitHubAutomationService {
     const now = new Date().toISOString();
     const baseRevision = previousState.revision ?? draft?.revision ?? 1;
     return this.updateState(runId, {
+      ...(input.approvalNumber !== undefined ? { approvalNumber: input.approvalNumber.trim() } : {}),
       reviewStatus: "pending",
       autoApproved: false,
       publicationStatus: "none",

@@ -21,6 +21,7 @@ export interface ApprovalChecks {
 }
 
 export interface EditContentInput {
+  approvalNumber?: string | undefined;
   title: string;
   body: string;
   reason?: string | null;
@@ -145,7 +146,7 @@ export class ContentService {
       createdBy: actor.id,
       createdAt: now,
       parentVersionId: previous.id,
-      metadata: { reason: input.reason?.trim() || null, editedManually: true },
+      metadata: { approvalNumber: input.approvalNumber ?? previous.metadata.approvalNumber, reason: input.reason?.trim() || null, editedManually: true },
     });
     const updated = await this.changeState(
       { ...content, title, state: "review_ready", rewriteStatus: null },

@@ -17,6 +17,7 @@ import type { ContentDetail } from "../domain/types.js";
 import { appliedImageIds, validImageSelection } from "../services/image-usage.js";
 import { LocalWriter } from "../services/local-writer.js";
 import { isLocalWriterWorkerRequest, registerLocalWriterRoutes } from "./local-writer-routes.js";
+import { validApprovalNumber } from "../../shared/compliance-footer.js";
 
 const createContentSchema = z.object({
   title: z.string().trim().min(5).max(120),
@@ -35,6 +36,7 @@ const rejectionSchema = z.object({
     .max(1000, "반려 사유는 1,000자 이하로 입력해주세요."),
 });
 const editContentSchema = z.object({
+  approvalNumber: z.string().trim().refine(validApprovalNumber, "심의필 문구는 1~200자의 한 줄 텍스트로 입력해주세요.").optional(),
   title: z.string().trim().min(5, "제목은 5자 이상 입력해주세요.").max(120),
   body: z.string().trim().min(20, "원고는 20자 이상 입력해주세요.").max(100_000),
   reason: z.string().trim().max(1000).nullable().default(null),

@@ -7,6 +7,7 @@ import type { ContentDetail } from "../server/domain/types.js";
 import { buildApp } from "../server/http/app.js";
 import { SessionAuthService } from "../server/services/session-auth.js";
 import { testSystem } from "./helpers.js";
+import { COMPLIANCE_IMAGE_SHA256, DEFAULT_APPROVAL_NUMBER } from "../shared/compliance-footer.js";
 
 const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLttAAAAABJRU5ErkJggg==", "base64");
 const sha256 = createHash("sha256").update(png).digest("hex");
@@ -82,15 +83,19 @@ test("Word는 최신 원고 전체를 편집 가능한 한글 본문·표·목�
 test("적용 이미지는 외부 링크 없이 파일에 내장하고 주석과 배치 순서를 유지한다", async () => {
   const { result, zip, xml } = await unpack();
   assert.equal(result.imageCount, 3);
-  assert.equal(xml.match(/<w:drawing>/g)?.length, 3);
+  assert.equal(xml.match(/<w:drawing>/g)?.length, 4);
   assert.equal(xml.match(/<w:t[^>]*>[^<]*AI로 생성한 이미지입니다./g)?.length, 3);
   assert.ok(xml.indexOf("대표 이미지 · AI") < xml.indexOf("핵심 포인트"));
   assert.ok(xml.indexOf("비교 이미지 · AI") > xml.indexOf("세 번째 요약"));
   assert.ok(xml.indexOf("비교 이미지 · AI") < xml.indexOf(">비교표<"));
   assert.ok(xml.indexOf("추가 이미지 · AI") > xml.indexOf("마지막 안내 문구"));
   const embedded = Object.values(zip.files).filter(file => file.name.startsWith("word/media/") && !file.dir);
-  assert.equal(embedded.length, 1); // Identical binary fixtures are deduplicated by docx.
-  assert.deepEqual(await embedded[0]!.async("nodebuffer"), png);
+  assert.equal(embedded.length, 2); // Repeated generated fixtures + original disclosure JPEG.
+  const hashes = await Promise.all(embedded.map(async file => createHash("sha256").update(await file.async("nodebuffer")).digest("hex")));
+  assert.deepEqual(new Set(hashes), new Set([sha256, COMPLIANCE_IMAGE_SHA256]));
+  assert.ok(xml.lastIndexOf("<w:drawing>") > xml.indexOf("추가 이미지 · AI"));
+  assert.ok(xml.indexOf(DEFAULT_APPROVAL_NUMBER) > xml.lastIndexOf("<w:drawing>"));
+  assert.equal(xml.split(DEFAULT_APPROVAL_NUMBER).length - 1, 1);
   assert.doesNotMatch(await zip.file("word/_rels/document.xml.rels")!.async("string"), /Type="[^"]*\/image"[^>]*TargetMode="External"/);
 });
 test("사용자가 채택한 반려 이미지는 포함하고 본문에서 제외한 이미지는 넣지 않는다", async () => {
@@ -107,6 +112,19 @@ test("이미지 없는 미완성 저장 원고도 내보내되 제목과 마지�
   const { result, xml } = await unpack(detail);
   assert.equal(result.imageCount, 0);
   assert.match(xml, /마지막 안내 문구입니다/);
+  assert.equal(xml.match(/<w:drawing>/g)?.length, 1);
+  assert.ok(xml.indexOf(DEFAULT_APPROVAL_NUMBER) > xml.indexOf("마지막 안내 문구입니다"));
+  assert.doesNotMatch(xml, /AI로 생성한 이미지입니다/);
+});
+
+test("원고별 심의필 수정값을 기본 양식 대신 마지막에 정확히 한번 포함한다", async () => {
+  const detail = fixture();
+  const custom = DEFAULT_APPROVAL_NUMBER.replace("00000E", "12345E").replace("26.00.00~27.00.00", "26.10.12~27.10.11");
+  detail.versions.at(-1)!.metadata.approvalNumber = custom;
+  const { xml } = await unpack(detail);
+  assert.equal(xml.split(custom).length - 1, 1);
+  assert.ok(!xml.includes(DEFAULT_APPROVAL_NUMBER));
+  assert.ok(xml.indexOf(custom) > xml.lastIndexOf("<w:drawing>"));
 });
 test("긴 원고·명시적 줄바꿈·다단계 목록·긴 표·특수문자 파일명을 잘라내지 않는다", async () => {
   const detail = fixture();

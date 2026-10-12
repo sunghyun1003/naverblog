@@ -2,15 +2,17 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { ContentDetail } from "../domain/types.js";
 import { DomainError } from "../domain/errors.js";
+import { approvalNumber, COMPLIANCE_IMAGE_ID, COMPLIANCE_IMAGE_SHA256, COMPLIANCE_IMAGE_ALT } from "../../shared/compliance-footer.js";
 
 const assetSchema = z.object({
   id: z.string().regex(/^[a-z0-9-]+$/), role: z.enum(["hero", "inline"]),
   afterSection: z.number().int().nonnegative(), altText: z.string(),
   sha256: z.string().regex(/^[a-f0-9]{64}$/),
 });
-export type TransferAsset = z.infer<typeof assetSchema>;
+export type TransferAsset = Omit<z.infer<typeof assetSchema>, "role"> & { role: "hero" | "inline" | "footer" };
 export interface NaverTransfer {
-  schemaVersion: 1;
+  schemaVersion: 2;
+  approvalNumber: string;
   contentId: string;
   versionId: string;
   title: string;
@@ -42,6 +44,9 @@ export function naverTransfer(detail: ContentDetail): NaverTransfer {
   const title = version.title;
   const body = version.body;
   if (!title.trim() || body.trim().length < 20 || body.length > 100_000) throw new DomainError("DRAFT_EMPTY", "원고 본문을 확인해주세요.", 409);
-  const payload = { schemaVersion: 1 as const, contentId: detail.content.id, versionId: version.id, title, body, assets };
+  const footer: TransferAsset = { id: COMPLIANCE_IMAGE_ID, role: "footer", afterSection: 0, altText: COMPLIANCE_IMAGE_ALT, sha256: COMPLIANCE_IMAGE_SHA256 };
+  // V2 fails safely on an older PC helper instead of silently missing the footer.
+  const payload = { schemaVersion: 2 as const, contentId: detail.content.id, versionId: version.id, title, body,
+    assets: [...assets, footer], approvalNumber: approvalNumber(version.metadata.approvalNumber) };
   return { ...payload, fingerprint: createHash("sha256").update(JSON.stringify(payload)).digest("hex") };
 }

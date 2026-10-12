@@ -201,6 +201,24 @@
   margin-bottom: var(--space-10);
 }
 
+.article-draft .article-compliance-footer {
+  margin-top: 40px;
+  min-width: 0;
+}
+.article-compliance-footer > img {
+  display: block;
+  width: 100%;
+  height: auto;
+  object-fit: contain;
+}
+.article-draft .article-compliance-footer > p {
+  margin: 12px 0 0;
+  font-size: 13px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
 .article-draft h2 {
   margin-bottom: var(--space-4);
   font-size: 24px;

@@ -287,12 +287,20 @@ test("원고 직접 수정은 수동 버전으로 저장하고 삭제하면 모�
       title: "자동차보험 보험료 비교 방법",
       body: "자동차보험 보험료를 비교할 때는 보장 범위와 특약 포함 여부를 먼저 확인해요.",
       reason: "보험료와 보장 범위를 구체적으로 표현",
+      approvalNumber: "확인필-제2026-자동차CM사업부-블로그12345E-전사(26.10.12~27.10.11)",
     },
   });
   assert.equal(edited.statusCode, 200);
   assert.equal(edited.json<{ state: string }>().state, "review_ready");
   const editedDetail = await app.inject({ method: "GET", url: `/api/contents/${content.id}` });
   assert.equal(editedDetail.json<{ versions: Array<{ stage: string; title: string }> }>().versions.at(-1)?.stage, "manual");
+  const approvalNumber = editedDetail.json().versions.at(-1).metadata.approvalNumber;
+  assert.equal(approvalNumber, "확인필-제2026-자동차CM사업부-블로그12345E-전사(26.10.12~27.10.11)");
+  const laterEdit = { title: "자동차보험 보험료 비교 방법", body: "다시 수정한 원고 본문입니다. 기존 심의필 번호는 변경하지 않습니다." };
+  const invalid = await app.inject({ method: "PATCH", url: `/api/contents/${content.id}`, headers: actorHeaders, payload: { ...laterEdit, approvalNumber: "<script>unsafe</script>" } });
+  assert.equal(invalid.statusCode, 400);
+  assert.equal((await app.inject({ method: "PATCH", url: `/api/contents/${content.id}`, headers: actorHeaders, payload: laterEdit })).statusCode, 200);
+  assert.equal((await system.contentService.detail(content.id)).versions.at(-1)?.metadata.approvalNumber, approvalNumber);
 
   const deleted = await app.inject({ method: "DELETE", url: `/api/contents/${content.id}`, headers: actorHeaders });
   assert.equal(deleted.statusCode, 200);

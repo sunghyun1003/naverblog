@@ -415,7 +415,7 @@ export function retryFailedGeneration(contentId: string): Promise<ApiContent> {
 
 export function editContent(
   contentId: string,
-  input: { title: string; body: string; reason?: string | null },
+  input: { title: string; body: string; reason?: string | null; approvalNumber?: string },
 ): Promise<ApiContent> {
   return request(`/api/contents/${encodeURIComponent(contentId)}`, {
     method: "PATCH",

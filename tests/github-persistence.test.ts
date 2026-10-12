@@ -198,11 +198,13 @@ test("자동 완성 원고를 직접 수정하면 다시 검토 대기 상태가
     createdBy: "carrot",
     baseRevision: 1,
   };
+  input.state.approvalNumber = "확인필-제2026-자동차CM사업부-블로그12345E-전사(26.10.12~27.10.11)";
 
   const detail = draftToDetail(input);
   assert.equal(detail.content.state, "review_ready");
   assert.equal(detail.automation?.autoApproved, false);
   assert.equal(detail.automation?.manualEdit, true);
+  assert.equal(detail.versions.at(-1)?.metadata.approvalNumber, input.state.approvalNumber);
 });
 
 test("승인 기록이 있어도 이미지 패키지가 실패한 원고는 완성으로 표시하지 않는다", () => {

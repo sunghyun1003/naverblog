@@ -5,6 +5,7 @@ import { DomainError } from "../domain/errors.js";
 import type { ContentDetail } from "../domain/types.js";
 import { LocalWriter } from "../services/local-writer.js";
 import { naverTransfer } from "../services/naver-transfer.js";
+import { loadComplianceImage } from "../services/compliance-footer.js";
 
 const codeSchema = z.string().regex(/^[a-f0-9]{64}$/);
 const jobSchema = z.object({ jobId: codeSchema });
@@ -61,7 +62,7 @@ export function registerLocalWriterRoutes(app: FastifyInstance, options: {
   app.post("/api/local-writer/worker/asset", async (request, reply) => {
     const body = jobSchema.extend({ lease: codeSchema, assetId: z.string().regex(/^[a-z0-9-]+$/) }).parse(request.body);
     const { contentId, asset } = await writer.asset(token(request), body.jobId, body.lease, body.assetId);
-    const image = await options.image(contentId, asset.id);
+    const image = asset.role === "footer" ? await loadComplianceImage() : await options.image(contentId, asset.id);
     if (createHash("sha256").update(image.body).digest("hex") !== asset.sha256) {
       throw new DomainError("IMAGE_CHANGED", "전송 요청 이후 이미지가 변경되었습니다. 원고를 새로고침해주세요.", 409);
     }

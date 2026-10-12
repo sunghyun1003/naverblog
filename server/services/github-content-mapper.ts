@@ -367,6 +367,7 @@ export function draftToDetail(draft: AutomationDraftDetail): ContentDetail {
         toneAttempts: draft.toneAttempts ?? null,
         visualPlan: draft.article.article?.visualPlan ?? [],
         imagePackage: imagePackage(draft),
+        approvalNumber: draft.state.approvalNumber,
         editorialQuality: draft.editorialQuality ?? null,
         nativeKoreanQuality: nativeKoreanQuality ?? null,
         evidenceReview: draft.evidencePackage ?? null,

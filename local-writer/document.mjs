@@ -36,11 +36,14 @@ markdown.use({ renderer: {
 } });
 
 export function validateTransfer(payload) {
-  if (payload?.schemaVersion !== 1 || typeof payload.title !== "string" || typeof payload.body !== "string"
-    || !Array.isArray(payload.assets) || !payload.assets.length || payload.assets.length > 3) throw new Error("원고 전송 형식이 올바르지 않습니다.");
+  if (![1, 2].includes(payload?.schemaVersion) || typeof payload.title !== "string" || typeof payload.body !== "string"
+    || !Array.isArray(payload.assets) || !payload.assets.length || payload.assets.length > (payload.schemaVersion === 2 ? 4 : 3)) throw new Error("원고 전송 형식이 올바르지 않습니다. PC 도우미를 업데이트해주세요.");
+  if (payload.schemaVersion === 2 && (payload.assets.filter(a => a.role === "footer").length !== 1
+    || typeof payload.approvalNumber !== "string" || !payload.approvalNumber.trim() || payload.approvalNumber.length > 200
+    || /[<>\u0000-\u001f\u007f]/u.test(payload.approvalNumber))) throw new Error("필수 안내 이미지와 심의필 정보가 필요합니다.");
   for (const asset of payload.assets) {
     if (!/^[a-z0-9-]+$/.test(asset.id) || !/^[a-f0-9]{64}$/.test(asset.sha256)
-      || !["hero", "inline"].includes(asset.role) || !Number.isInteger(asset.afterSection)) throw new Error("이미지 정보가 올바르지 않습니다.");
+      || !(payload.schemaVersion === 2 ? ["hero", "inline", "footer"] : ["hero", "inline"]).includes(asset.role) || !Number.isInteger(asset.afterSection)) throw new Error("이미지 정보가 올바르지 않습니다.");
   }
   const { fingerprint, ...data } = payload;
   if (createHash("sha256").update(JSON.stringify(data)).digest("hex") !== fingerprint) throw new Error("원고 전송 중 내용이 변경되었습니다.");
@@ -79,13 +82,17 @@ export function transferPlan(payload) {
     pending.push(block);
   }
   flush(); addImages("inline", section);
+  if (payload.schemaVersion === 2) {
+    addImages("footer", 0);
+    plan.push({ kind: "html", html: `<p>${escapeHtml(payload.approvalNumber)}</p>` });
+  }
   if (emitted.size !== payload.assets.length) throw new Error("본문 절과 이미지 위치가 맞지 않습니다. 원고의 이미지 위치를 확인해주세요.");
   return plan;
 }
 
 export function previewHtml(payload, plan) {
   const body = plan.map(item => item.kind === "html" ? item.html
-    : `<figure><img src="${escapeHtml(item.asset.id)}.jpg" alt="${escapeHtml(item.asset.altText)}"><figcaption>${escapeHtml(generatedImageCaption(item.asset.altText))}</figcaption></figure>`).join("\n");
+    : `<figure><img src="${escapeHtml(item.asset.id)}.jpg" alt="${escapeHtml(item.asset.altText)}">${item.asset.role === "footer" ? "" : `<figcaption>${escapeHtml(generatedImageCaption(item.asset.altText))}</figcaption>`}</figure>`).join("\n");
   return `<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self' file:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
   <title>${escapeHtml(payload.title)}</title><style>body{font:17px/1.9 system-ui,sans-serif;max-width:760px;margin:32px auto;padding:0 20px;color:#20242a}img{max-width:100%;height:auto}figure{margin:24px 0}figcaption{font-size:13px;color:#69727b}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:8px}pre{white-space:pre-wrap}a{overflow-wrap:anywhere}</style>

@@ -9,6 +9,8 @@ import { Lexer, type MarkedToken, type Token } from "marked";
 import { z } from "zod";
 import { DomainError } from "../domain/errors.js";
 import type { ContentDetail } from "../domain/types.js";
+import { loadComplianceImage } from "./compliance-footer.js";
+import { approvalNumber, COMPLIANCE_IMAGE_ALT, COMPLIANCE_IMAGE_ID } from "../../shared/compliance-footer.js";
 
 export const WORD_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const disclosure = "AI로 생성한 이미지입니다.";
@@ -188,6 +190,17 @@ export async function exportContentWord(
   }
   // Missing/renamed sections must never silently drop an applied image.
   addImages(() => true);
+  // Always last, even for old/incomplete drafts and orphan generated images.
+  // Embed the original bytes, not a URL. Do not attach an AI image caption.
+  const notice = await loadComplianceImage();
+  const noticeSize = imageSize(notice.body);
+  const noticeScale = Math.min(624 / noticeSize.width!, 720 / noticeSize.height!, 1);
+  children.push(new Paragraph({ alignment: AlignmentType.CENTER, keepNext: true, spacing: { before: 280, after: 120 }, children: [new ImageRun({
+    type: "jpg", data: notice.body,
+    transformation: { width: Math.round(noticeSize.width! * noticeScale), height: Math.round(noticeSize.height! * noticeScale) },
+    altText: { name: COMPLIANCE_IMAGE_ID, title: COMPLIANCE_IMAGE_ALT, description: COMPLIANCE_IMAGE_ALT },
+  })] }));
+  children.push(new Paragraph({ children: [new TextRun({ text: approvalNumber(version.metadata.approvalNumber), size: 20 })], keepLines: true }));
   const font = { ascii: "Malgun Gothic", hAnsi: "Malgun Gothic", eastAsia: "맑은 고딕", cs: "Malgun Gothic" };
   const document = new Document({
     title: version.title, creator: "블로그 운영센터", description: `원고 ${detail.content.id} · 버전 ${version.id}`,

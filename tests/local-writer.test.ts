@@ -12,6 +12,7 @@ import type { Pool } from "pg";
 import { PostgresAutomationRepository } from "../server/repositories/postgres.js";
 import { registerLocalWriterRoutes } from "../server/http/local-writer-routes.js";
 import { DomainError } from "../server/domain/errors.js";
+import { COMPLIANCE_IMAGE_ID, COMPLIANCE_IMAGE_SHA256, DEFAULT_APPROVAL_NUMBER } from "../shared/compliance-footer.js";
 
 const example = () => ({
   content: { id: "123", state: "approved" },
@@ -37,10 +38,16 @@ test("전송 원고는 최신 본문·수동 적용 이미지·요약·FAQ를 �
   const transfer = naverTransfer(detail);
   assert.equal(transfer.body, detail.versions[0]!.body);
   assert.equal(transfer.title, "최신 수동 수정 원고");
-  assert.equal(transfer.assets.length, 2);
+  assert.equal(transfer.assets.length, 3);
+  assert.equal(transfer.schemaVersion, 2);
+  assert.equal(transfer.approvalNumber, DEFAULT_APPROVAL_NUMBER);
+  assert.equal(transfer.assets.at(-1)?.sha256, COMPLIANCE_IMAGE_SHA256);
   detail.versions[0]!.metadata.imagePackage = { ...(detail.versions[0]!.metadata.imagePackage as object), status: "failed", visualQualityPassed: false, appliedAssetIds: ["hero"] };
-  assert.deepEqual(naverTransfer(detail).assets.map(a => a.id), ["hero"]);
+  assert.deepEqual(naverTransfer(detail).assets.map(a => a.id), ["hero", COMPLIANCE_IMAGE_ID]);
   assert.notEqual(naverTransfer(detail).fingerprint, transfer.fingerprint);
+  const beforeNumberEdit = naverTransfer(detail).fingerprint;
+  detail.versions[0]!.metadata.approvalNumber = DEFAULT_APPROVAL_NUMBER.replace("00000E", "12345E");
+  assert.notEqual(naverTransfer(detail).fingerprint, beforeNumberEdit);
 });
 test("미완성 원고와 이미지 처리 중에는 전송하지 않는다", () => {
   const detail = example(); detail.content.state = "drafting";
@@ -168,6 +175,10 @@ test("HTTP 연결→요청→수신→이미지 검증→저장 보고가 원고
     const input = { jobId: job.id, lease: job.lease, assetId: "hero" };
     assert.equal((await post("/api/local-writer/worker/asset", { ...input, assetId: "not-selected" }, device.token)).statusCode, 404);
     assert.equal(imageReads, 0);
+    const notice = await post("/api/local-writer/worker/asset", { ...input, assetId: COMPLIANCE_IMAGE_ID }, device.token);
+    assert.equal(notice.statusCode, 200);
+    assert.equal(createHash("sha256").update(notice.rawPayload).digest("hex"), COMPLIANCE_IMAGE_SHA256);
+    assert.equal(imageReads, 0); // Static compliance image never calls GitHub.
     assert.equal((await post("/api/local-writer/worker/asset", input, device.token)).body, bytes.toString());
     changed = true;
     assert.equal((await post("/api/local-writer/worker/asset", input, device.token)).statusCode, 409);

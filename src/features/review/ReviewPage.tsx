@@ -30,9 +30,13 @@ import { StatusBadge } from "../../components/StatusBadge";
 import type { ContentStatus } from "../../types/content";
 import { RejectDialog } from "./RejectDialog";
 import { EditContentDialog } from "./EditContentDialog";
+import { approvalNumber, COMPLIANCE_IMAGE_ALT, COMPLIANCE_IMAGE_PATH, complianceFooterHtml } from "../../../shared/compliance-footer";
+
 import { EvidenceReviewPanel, evidenceReviewFrom } from "./EvidenceReviewPanel";
 import { useContentDetail } from "./useContentDetail";
 import { NaverDraftButton } from "./NaverDraftButton";
+
+const complianceImageSrc = `${import.meta.env.BASE_URL}${COMPLIANCE_IMAGE_PATH.slice(1)}`;
 
 type ReviewTab = "draft" | "sources" | "images" | "history";
 
@@ -381,7 +385,9 @@ export function ReviewPage() {
     : [];
   const visualPlan = visualPlanFrom(latestVersion);
   const nativeKoreanQuality = nativeKoreanQualityFrom(latestVersion);
-  const copyPackage = typeof latestVersion?.metadata.copyPackage === "string" ? latestVersion.metadata.copyPackage : latestVersion?.body ?? "";
+  const complianceNumber = approvalNumber(latestVersion?.metadata.approvalNumber);
+  const copyBody = typeof latestVersion?.metadata.copyPackage === "string" ? latestVersion.metadata.copyPackage : latestVersion?.body ?? "";
+  const copyPackage = copyBody.trim() ? `${copyBody.trim()}\n\n${complianceNumber}` : "";
   const storedCopyHtml = detail.automation?.manualEdit ? "" : typeof latestVersion?.metadata.copyPackageHtml === "string" ? latestVersion.metadata.copyPackageHtml : "";
   const hasCopyContent = Boolean(storedCopyHtml.trim() || latestVersion?.body?.trim());
   // Cache age is not an export failure. The Word endpoint reads the source and
@@ -405,7 +411,7 @@ export function ReviewPage() {
       anchor.click();
       anchor.remove();
       window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
-      setToast(`Word 파일을 내려받았습니다. ${result.imageCount ? `본문 적용 이미지 ${result.imageCount}장 포함.` : "현재 본문에 적용된 이미지가 없어 글만 포함됐습니다."}${result.excludedImageCount ? " 본문에서 제외된 이미지는 포함하지 않았습니다." : ""}`);
+      setToast(`Word 파일을 내려받았습니다. 필수 안내 이미지와 심의필을 포함했습니다.${result.imageCount ? ` 생성 이미지 ${result.imageCount}장도 포함했습니다.` : ""}${result.excludedImageCount ? " 본문에서 제외된 이미지는 포함하지 않았습니다." : ""}`);
     } catch (error) {
       if (error instanceof ApiError && error.code === "WORD_EXPORT_STALE") {
         try {
@@ -427,7 +433,7 @@ export function ReviewPage() {
     const response = await getContentCopyAssets(detail.content.id);
     const imageUrls = Object.fromEntries(response.items.map((item) => [item.assetId, item.url]));
     if (renderableImagePackage?.assets?.some(asset => !imageUrls[asset.id])) throw new Error("이미지 선택 또는 생성 결과가 변경됐습니다. 새로고침 후 다시 복사해주세요.");
-    return buildCopyHtml(storedCopyHtml, latestVersion?.title ?? detail.content.title, latestVersion?.body ?? "", detail.content.id, renderableImagePackage, imageUrls);
+    return buildCopyHtml(storedCopyHtml, latestVersion?.title ?? detail.content.title, latestVersion?.body ?? "", detail.content.id, renderableImagePackage, imageUrls, complianceNumber);
   };
   const copySource = async () => {
     setCopyBusy(true);
@@ -554,7 +560,7 @@ export function ReviewPage() {
     }
   };
 
-  const saveEdit = async (input: { title: string; body: string; reason: string | null }) => {
+  const saveEdit = async (input: { title: string; body: string; reason: string | null; approvalNumber: string }) => {
     setEditBusy(true);
     try {
       await editApi(input);
@@ -657,7 +663,7 @@ export function ReviewPage() {
             <button type="button" role="tab" aria-selected={tab === "history"} onClick={() => setTab("history")}>변경 이력</button>
           </div>
 
-          {tab === "draft" ? <ArticleDraft title={latestVersion?.title} body={latestVersion?.body} contentId={detail.content.id} imagePackage={renderableImagePackage} /> : null}
+          {tab === "draft" ? <ArticleDraft title={latestVersion?.title} body={latestVersion?.body} contentId={detail.content.id} imagePackage={renderableImagePackage} complianceNumber={complianceNumber} /> : null}
           {tab === "sources" ? <EvidenceReviewPanel evidence={evidenceReview} sources={detail.sources} claims={detail.claims} /> : null}
           {tab === "images" ? <ImageAssetsView contentId={detail.content.id} packageState={imagePackage} contentStatus={status} pending={imagePending || pipelineBusy} busy={imageBusy} onSelect={(assetId) => void selectImage(assetId)} onGenerate={(assetId, feedback) => void generateImages(assetId, feedback)} /> : null}
           {tab === "history" ? <HistoryView versions={detail.versions} /> : null}
@@ -815,6 +821,7 @@ export function ReviewPage() {
         busy={editBusy}
         initialTitle={latestVersion?.title ?? detail.content.title}
         initialBody={latestVersion?.body ?? ""}
+        initialApprovalNumber={complianceNumber}
         onClose={() => setEditOpen(false)}
         onSave={saveEdit}
       />
@@ -1067,6 +1074,7 @@ function buildCopyHtml(
   contentId: string,
   imagePackage: ApiGeneratedImagePackage | null,
   imageUrls: Record<string, string> = {},
+  complianceNumber?: string,
 ): string {
   const usableImagePackage = renderableImages(imagePackage);
   const assets = usableImagePackage?.assets ?? [];
@@ -1083,11 +1091,16 @@ function buildCopyHtml(
   // Stored HTML can still contain a previously rejected/deselected image.
   // Rebuild its images exclusively from the current server-approved selection.
   const withoutUnavailableImages = removeUnavailableImages(source);
-  return decorateNaverCopyHtml(withoutUnavailableImages, assets, imageUrls, contentId, usableImagePackage?.generatedAt);
+  const decorated = decorateNaverCopyHtml(withoutUnavailableImages, assets, imageUrls, contentId, usableImagePackage?.generatedAt);
+  const copy = new DOMParser().parseFromString(decorated, "text/html");
+  const article = copy.querySelector("article") ?? copy.body;
+  article.insertAdjacentHTML("beforeend", complianceFooterHtml(complianceNumber, new URL(complianceImageSrc, window.location.origin).href));
+  return article.outerHTML;
 }
 
 function removeUnavailableImages(html: string): string {
   const documentCopy = new DOMParser().parseFromString(html, "text/html");
+  documentCopy.querySelectorAll("[data-compliance-footer]").forEach(footer => footer.remove());
   documentCopy.querySelectorAll("img").forEach((image) => {
     const figure = image.closest("figure");
     if (figure) figure.remove();
@@ -1179,13 +1192,17 @@ async function copyRichContent(html: string, plainText: string, setToast: (messa
   }
 }
 
-function ArticleDraft({ title, body, contentId, imagePackage }: { title?: string; body?: string; contentId: string; imagePackage: ApiGeneratedImagePackage | null }) {
+function ArticleDraft({ title, body, contentId, imagePackage, complianceNumber }: { title?: string; body?: string; contentId: string; imagePackage: ApiGeneratedImagePackage | null; complianceNumber: string }) {
   if (!body?.trim()) return <div className="review-content-empty">저장된 원고 본문이 없습니다.</div>;
   return (
     <article className="article-draft article-draft--generated" aria-label={`${title ?? "생성된 원고"} 본문`}>
       {imagePackage
         ? renderGeneratedBlocksWithImages(body, contentId, imagePackage)
         : renderGeneratedBlocks(body)}
+      <section className="article-compliance-footer" aria-label="가입 안내 및 심의필" data-compliance-footer="true">
+        <img src={complianceImageSrc} alt={COMPLIANCE_IMAGE_ALT} width={1220} height={1280} loading="lazy" />
+        <p>{complianceNumber}</p>
+      </section>
     </article>
   );
 }

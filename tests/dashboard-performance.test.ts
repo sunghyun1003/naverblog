@@ -130,6 +130,26 @@ test("sync updates a changed saved draft once, and keeps previous snapshots on f
   assert.deepEqual(await sync.run(), { updated: 1, remaining: 0 });
 });
 
+test("외부에서 예약을 해제해도 백그라운드 동기화가 목록·상세·DB 예약을 함께 정리한다", async () => {
+  const repository = new SnapshotRepository();
+  const value = draft();
+  const detail = draftToDetail(value);
+  await repository.createContent({ ...detail.content, state: "scheduled", scheduledAt: "2026-09-18T05:38:00Z" });
+  await repository.savePublication({ id: "321:publication", contentId: "321", status: "scheduled", scheduledAt: "2026-09-18T05:38:00Z",
+    publishedAt: null, externalUrl: null, createdAt: value.generatedAt, updatedAt: value.generatedAt });
+  const github = {
+    draftRevisions: async () => ({ "321": "cancelled" }), getDraft: async () => value,
+    listWorkflowRuns: async () => [], listAutomationHistory: async () => [], getAutomationSettings: async () => ({}), getTrends: async () => ({}),
+  } as unknown as GitHubAutomationService;
+  const sync = new DashboardSync(repository, github);
+  await sync.run();
+  assert.equal((await repository.getContent("321"))?.scheduledAt, null);
+  assert.equal((await repository.getSnapshot<{ content: { scheduledAt: string | null } }>("detail:321"))?.value.content.scheduledAt, null);
+  assert.equal((await repository.listPublications("321"))[0]?.status, "prepared");
+  assert.equal((await repository.listPublications("321"))[0]?.scheduledAt, null);
+  assert.deepEqual(await sync.run(), { updated: 0, remaining: 0 });
+});
+
 test("metadata refreshes on each callback even when no draft changed", async () => {
   const repository = new SnapshotRepository();
   let collectionDate = "2026-09-12";

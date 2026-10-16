@@ -1,7 +1,7 @@
 import type { AutomationRepository } from "../repositories/contracts.js";
 import type { GitHubAutomationService } from "./github-automation.js";
 import { draftToDetail } from "./github-content-mapper.js";
-import { persistGitHubDraftSummaries } from "./github-persistence.js";
+import { clearStoredSchedule, persistGitHubDraftSummaries } from "./github-persistence.js";
 
 /** Called by a signed Actions callback, not on page navigation. Each call is bounded. */
 export class DashboardSync {
@@ -30,6 +30,9 @@ export class DashboardSync {
       const current = await repository.getContent(id);
       // A dashboard edit that occurred during the fetch must not be overwritten.
       if (current && Date.parse(current.updatedAt) > Date.parse(detail.content.updatedAt)) { saved[id] = revision; continue; }
+      if (current?.state === "scheduled" && draft.publicationStatus === "none") {
+        await clearStoredSchedule(repository, id, draft.state.updatedAt);
+      }
       await persistGitHubDraftSummaries(repository, [draft]);
       await repository.saveSnapshot(`detail:${id}`, detail);
       saved[id] = revision;

@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 import { Fragment, useEffect, useState, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ApiError, contentImageUrl, generateContentImages, getContentCopyAssets, getContentWord, selectContentImages } from "../../api/client";
+import { ApiError, cancelContentSchedule, contentImageUrl, generateContentImages, getContentCopyAssets, getContentWord, selectContentImages } from "../../api/client";
 import { generatedImageCaption, markdownBlocks, renderableImages } from "./imageUsage";
 import type { ApiContent, ApiContentVersion, ApiGeneratedImagePackage } from "../../api/types";
 import { Button } from "../../components/Button";
@@ -160,6 +160,7 @@ export function ReviewPage() {
   const [editOpen, setEditOpen] = useState(false);
   const [editBusy, setEditBusy] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
+  const [cancelScheduleBusy, setCancelScheduleBusy] = useState(false);
   const [rewritePending, setRewritePending] = useState(false);
   const [toneResumeBusy, setToneResumeBusy] = useState(false);
   const [recoveryBusy, setRecoveryBusy] = useState(false);
@@ -338,6 +339,7 @@ export function ReviewPage() {
   // A failed quality run is still actionable: the reviewer should be able to
   // reject it and trigger a rewrite instead of being trapped on this page.
   const canReject = (autoReady || status === "ready" || status === "drafting")
+    && !["scheduled", "published", "deleted"].includes(status)
     && connectionStatus === "connected"
     && !staleDetail
     && !pipelineBusy
@@ -566,7 +568,7 @@ export function ReviewPage() {
       await editApi(input);
       await refresh();
       setEditOpen(false);
-      setToast("수정본을 새 버전으로 저장했어요. 다시 작성 중 상태에서 처리합니다.");
+      setToast("수정본을 새 버전으로 저장했어요. 자동 재생성은 실행하지 않습니다.");
     } catch (error) {
       setToast(error instanceof Error ? error.message : "원고 수정에 실패했습니다.");
       throw error;
@@ -610,8 +612,18 @@ export function ReviewPage() {
               {recoveryBusy ? "재작업 요청 중..." : `${recoveryStageLabel[generationRecovery.resumeFrom]}부터 재작업`}
             </Button>
           ) : null}
-          <Button icon={<Pencil size={17} />} disabled={status === "deleted" || connectionStatus !== "connected" || staleDetail || editBusy || deleteBusy} onClick={() => setEditOpen(true)}>직접 수정</Button>
-          <Button variant="danger" icon={<Trash2 size={17} />} disabled={status === "deleted" || connectionStatus !== "connected" || staleDetail || editBusy || deleteBusy} onClick={() => void remove()}>삭제</Button>
+          {status === "scheduled" ? <Button disabled={cancelScheduleBusy || deleteBusy || connectionStatus !== "connected"} onClick={() => {
+            if (cancelScheduleBusy) return;
+            setCancelScheduleBusy(true);
+            void cancelContentSchedule(detail.content.id).then(async result => {
+              applyDetail({ ...detail, content: result.content });
+              setToast("예약을 해제했습니다. 원고와 이미지는 보존됩니다.");
+              if (result.mirrorSynced !== false) await refresh().catch(() => {});
+            }).catch((error: unknown) => setToast(error instanceof Error ? error.message : "예약 해제에 실패했습니다."))
+              .finally(() => setCancelScheduleBusy(false));
+          }}>{cancelScheduleBusy ? "해제 중..." : "예약 해제"}</Button> : null}
+          <Button icon={<Pencil size={17} />} title={status === "scheduled" ? "예약 해제 후 수정할 수 있습니다." : undefined} disabled={["scheduled", "published", "deleted"].includes(status) || connectionStatus !== "connected" || staleDetail || editBusy || deleteBusy || cancelScheduleBusy} onClick={() => setEditOpen(true)}>직접 수정</Button>
+          <Button variant="danger" icon={<Trash2 size={17} />} disabled={["published", "deleted"].includes(status) || connectionStatus !== "connected" || staleDetail || editBusy || deleteBusy || cancelScheduleBusy} onClick={() => void remove()}>삭제</Button>
           <Button icon={<Download size={17} />} title={wordUnavailableReason || "저장된 제목·본문·적용 이미지와 AI 이미지 주석을 Word 파일로 다운로드"}
             disabled={Boolean(wordUnavailableReason)}
             onClick={() => void downloadWord()}>

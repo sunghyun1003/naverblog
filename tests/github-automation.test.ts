@@ -477,7 +477,7 @@ test("동일 revision의 decision 동시 쓰기는 compare-and-set으로 하나�
   assert.ok(["approved", "rejected"].includes((stored?.state as { reviewStatus: string }).reviewStatus));
 });
 
-test("원고 영구 삭제는 GitHub 파일과 결정 파일을 한 커밋으로 제거한다", async () => {
+for (const publicationStatus of ["none", "scheduled"] as const) test(`${publicationStatus} 원고 영구 삭제는 GitHub 파일과 결정 파일을 한 커밋으로 제거한다`, async () => {
   const requests: Array<{ url: string; method: string; body: string }> = [];
   const mockFetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
@@ -503,7 +503,7 @@ test("원고 영구 삭제는 GitHub 파일과 결정 파일을 한 커밋으로
     schemaVersion: 1,
     runId: "123",
     reviewStatus: "pending",
-    publicationStatus: "none",
+    publicationStatus,
     checks: { sources: false, advertising: false },
     reason: null,
     approvedAt: null,

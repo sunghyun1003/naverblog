@@ -184,7 +184,7 @@ export function HomePage() {
           <section className="home-status-grid" aria-label="콘텐츠 운영 요약">
             <Link to="/contents?filter=drafting"><small>작성 중</small><strong>{workingCount}</strong><span>건</span></Link>
             <Link to="/contents?filter=ready"><small>완성</small><strong>{readyCount}</strong><span>건</span></Link>
-            <Link to="/contents?filter=scheduled"><small>예약 알림</small><strong>{scheduledCount}</strong><span>건</span></Link>
+            <Link to="/contents?filter=scheduled"><small>발행 예정</small><strong>{scheduledCount}</strong><span>건</span></Link>
             <Link to="/contents?filter=published"><small>발행 완료</small><strong>{publishedCount}</strong><span>건</span></Link>
           </section>
 
@@ -219,7 +219,7 @@ export function HomePage() {
               <header><h2>발행 준비</h2><Link className="home-text-link" to="/schedule">일정 보기 <ArrowRight size={15} /></Link></header>
               <div className="home-trend-summary home-publishing-summary">
                 <div><small>완성</small><strong>{readyCount}건</strong></div>
-                <div><small>예약 알림</small><strong>{scheduledCount}건</strong></div>
+                <div><small>발행 예정</small><strong>{scheduledCount}건</strong></div>
                 <div><small>발행 완료</small><strong>{publishedCount}건</strong></div>
               </div>
             </section>

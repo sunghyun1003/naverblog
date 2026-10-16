@@ -29,6 +29,6 @@ test("콘텐츠 목록은 내부 처리 단계를 운영자 상태로 노출하�
   const dashboard = await readFile(new URL("../src/features/dashboard/DashboardPage.tsx", import.meta.url), "utf8");
   assert.match(dashboard, /\{ key: "drafting", label: "작성 중" \}/);
   assert.match(dashboard, /\{ key: "ready", label: "완성" \}/);
-  assert.match(dashboard, /\{ key: "scheduled", label: "예약 알림" \}/);
+  assert.match(dashboard, /\{ key: "scheduled", label: "발행 예정" \}/);
   assert.doesNotMatch(dashboard, /\{ key: "(?:planning|review|approved|tone)"/);
 });

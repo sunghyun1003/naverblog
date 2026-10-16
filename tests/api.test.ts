@@ -881,6 +881,98 @@ test("수동 발행 완료는 네이버 URL 없이도 기록할 수 있다", asy
   assert.equal(updatedState.externalUrl, null);
 });
 
+
+test("오래된 미완성 예약 원고도 원문을 보존하여 예약 해제하고 반복 해제는 멱등적이다", async context => {
+  let draft = reviewDraft("33343501216");
+  draft.state.publicationStatus = draft.publicationStatus = "scheduled";
+  draft.state.scheduledAt = draft.scheduledAt = "2026-09-18T05:38:00.000Z";
+  draft.state.imageGenerationStatus = "queued";
+  const originalBody = draft.articleMarkdown;
+  let updates = 0;
+  const githubAutomation = {
+    getDraft: async () => draft,
+    updateState: async (_id: string, changes: Partial<DashboardDraftState>, actor: string, expected: DashboardDraftState) => {
+      assert.equal(expected, draft.state);
+      updates++;
+      const state = changedState(draft, changes, actor);
+      draft = { ...draft, state, publicationStatus: state.publicationStatus, scheduledAt: state.scheduledAt };
+      return state;
+    },
+  } as unknown as GitHubAutomationService;
+  const system = testSystem();
+  await persistGitHubDraftDetail(system.repository, draft);
+  const app = buildApp({ githubAutomation, system, databaseProvider: "postgres" });
+  context.after(() => app.close());
+  for (let i = 0; i < 2; i++) {
+    const result = await app.inject({ method: "DELETE", url: "/api/contents/33343501216/schedule" });
+    assert.equal(result.statusCode, 200, result.body);
+    assert.equal(result.json().content.scheduledAt, null);
+    assert.equal(result.json().content.state, "drafting");
+  }
+  assert.equal(updates, 1);
+  assert.equal(draft.articleMarkdown, originalBody);
+  assert.equal(draft.state.imageGenerationStatus, "queued");
+  const mirrored = await system.repository.getContentDetail(draft.runId);
+  assert.equal(mirrored?.content.scheduledAt, null);
+  assert.equal(mirrored?.publications.some(item => item.status === "scheduled"), false);
+});
+
+test("예약 원고의 단건·일괄 삭제 응답도 예약이 아닌 삭제 상태다", async context => {
+  const draft = completedDraft("610");
+  draft.publicationStatus = draft.state.publicationStatus = "scheduled";
+  draft.scheduledAt = draft.state.scheduledAt = "2026-09-18T05:38:00.000Z";
+  const githubAutomation = {
+    getDraft: async () => draft,
+    deleteDraftPermanently: async () => ({ deletedAt: "2026-10-17T00:00:00Z", deletedFiles: 5 }),
+  } as unknown as GitHubAutomationService;
+  const app = buildApp({ githubAutomation, databaseProvider: "memory" });
+  context.after(() => app.close());
+  const single = await app.inject({ method: "DELETE", url: "/api/contents/610" });
+  assert.equal(single.statusCode, 200);
+  assert.equal(single.json().state, "deleted");
+  assert.equal(single.json().scheduledAt, null);
+  const bulk = await app.inject({ method: "POST", url: "/api/contents/bulk-delete", payload: { ids: ["610"] } });
+  assert.equal(bulk.statusCode, 200);
+  assert.deepEqual(bulk.json().failures, []);
+  assert.equal(bulk.json().items[0].state, "deleted");
+  assert.equal(bulk.json().items[0].scheduledAt, null);
+});
+
+test("발행 완료와 삭제 상태는 예약 해제로 되돌리지 않는다", async context => {
+  const draft = completedDraft("608");
+  let writes = 0;
+  const githubAutomation = { getDraft: async () => draft, updateState: async () => { writes++; } } as unknown as GitHubAutomationService;
+  const app = buildApp({ githubAutomation, databaseProvider: "memory" });
+  context.after(() => app.close());
+  draft.publicationStatus = draft.state.publicationStatus = "published";
+  assert.equal((await app.inject({ method: "DELETE", url: "/api/contents/608/schedule" })).statusCode, 409);
+  draft.publicationStatus = draft.state.publicationStatus = "scheduled";
+  draft.deleted = true;
+  assert.equal((await app.inject({ method: "DELETE", url: "/api/contents/608/schedule" })).statusCode, 409);
+  assert.equal(writes, 0);
+});
+
+test("기존 예약은 시간 변경 가능하고 완성 원고는 예약과 URL 없이 수동 발행을 기록한다", async context => {
+  let draft = completedDraft("609");
+  draft.publicationStatus = draft.state.publicationStatus = "scheduled";
+  const githubAutomation = {
+    getDraft: async () => draft,
+    updateState: async (_id: string, changes: Partial<DashboardDraftState>, actor: string) => changedState(draft, changes, actor),
+  } as unknown as GitHubAutomationService;
+  const app = buildApp({ githubAutomation, databaseProvider: "memory" });
+  context.after(() => app.close());
+  const scheduled = await app.inject({ method: "POST", url: "/api/contents/609/schedule", payload: { scheduledAt: "2026-10-20T07:00:00+09:00" } });
+  assert.equal(scheduled.statusCode, 200);
+  assert.equal(scheduled.json().content.scheduledAt, "2026-10-20T07:00:00+09:00");
+  draft = completedDraft("609");
+  const published = await app.inject({ method: "POST", url: "/api/contents/609/publish", payload: {} });
+  assert.equal(published.statusCode, 200, published.body);
+  assert.equal(published.json().content.state, "published");
+  assert.equal(published.json().publication.externalUrl, null);
+  draft = reviewDraft("609");
+  assert.equal((await app.inject({ method: "POST", url: "/api/contents/609/publish", payload: {} })).statusCode, 409);
+});
+
 test("동일 GitHub 원고의 승인·반려 경합은 한 요청만 성공한다", async (context) => {
   const draft = reviewDraft("606", "동시 검수 원고");
   let claimed = false;

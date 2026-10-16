@@ -1,5 +1,4 @@
 import {
-  Bell,
   CalendarDays,
   FileText,
   Home,
@@ -34,7 +33,7 @@ const navigationGroups = [
       { label: "홈", path: "/home", icon: Home, exact: true },
       { label: "트렌드 수집", path: "/trends", icon: Sparkles },
       { label: "콘텐츠", path: "/contents", icon: FileText },
-      { label: "발행 일정", path: "/schedule", icon: CalendarDays },
+      { label: "발행 관리", path: "/schedule", icon: CalendarDays },
     ],
   },
   {
@@ -83,13 +82,13 @@ export function AppShell() {
             <button
               className="notification-button"
               type="button"
-              aria-label="알림"
+              aria-label="운영 바로가기"
+              title="운영 바로가기"
               aria-expanded={notificationsOpen}
               aria-controls="notification-popover"
               onClick={() => setNotificationsOpen((current) => !current)}
             >
-            <Bell size={21} />
-            <span aria-hidden="true" />
+            <ListChecks size={21} />
             </button>
             {notificationsOpen ? (
               <div className="notification-popover" id="notification-popover" role="dialog" aria-label="확인할 내용">

@@ -563,16 +563,20 @@ export async function getTrendSummary(signal?: AbortSignal, refresh = false): Pr
   });
 }
 
-export function scheduleContent(contentId: string, scheduledAt: string): Promise<{ mirrorSynced?: boolean }> {
+export function scheduleContent(contentId: string, scheduledAt: string): Promise<{ content: ApiContent; mirrorSynced?: boolean }> {
   return request(`/api/contents/${encodeURIComponent(contentId)}/schedule`, {
     method: "POST",
     body: JSON.stringify({ scheduledAt }),
   });
 }
 
-export function markContentPublished(contentId: string, externalUrl = ""): Promise<{ mirrorSynced?: boolean }> {
+export function markContentPublished(contentId: string, externalUrl = ""): Promise<{ content: ApiContent; mirrorSynced?: boolean }> {
   return request(`/api/contents/${encodeURIComponent(contentId)}/publish`, {
     method: "POST",
     body: JSON.stringify({ externalUrl }),
   });
+}
+
+export function cancelContentSchedule(contentId: string): Promise<{ content: ApiContent; mirrorSynced?: boolean }> {
+  return request(`/api/contents/${encodeURIComponent(contentId)}/schedule`, { method: "DELETE" });
 }

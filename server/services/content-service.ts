@@ -32,7 +32,7 @@ export class ContentService {
 
   constructor(
     private readonly repository: AutomationRepository,
-    private readonly adapters: AutomationAdapters,
+    adapters: AutomationAdapters,
     private readonly clock: Clock,
     private readonly id: IdFactory,
   ) {
@@ -161,39 +161,60 @@ export class ContentService {
   async delete(contentId: string, actor: Actor): Promise<ContentRecord> {
     requirePermission(actor, "content:edit");
     const content = await this.requireContent(contentId);
-    if (["scheduled", "published", "measured", "deleted"].includes(content.state)) {
-      throw new DomainError("CONTENT_NOT_DELETABLE", "예약·발행된 원고와 이미 삭제된 원고는 삭제할 수 없습니다.", 409);
+    if (["published", "measured", "deleted"].includes(content.state)) {
+      throw new DomainError("CONTENT_NOT_DELETABLE", "발행 완료된 원고와 이미 삭제된 원고는 삭제할 수 없습니다.", 409);
     }
     const deleted = await this.repository.deleteContentPermanently(contentId);
     if (!deleted) throw new DomainError("CONTENT_NOT_FOUND", "콘텐츠를 찾을 수 없습니다.", 404);
-    return { ...content, state: "deleted", updatedAt: this.clock() };
+    return { ...content, state: "deleted", scheduledAt: null, updatedAt: this.clock() };
   }
 
   async schedule(contentId: string, scheduledAt: string, actor: Actor): Promise<{ content: ContentRecord; publication: PublicationRecord }> {
     requirePermission(actor, "content:schedule");
     const content = await this.requireContent(contentId);
-    assertTransition(content.state, "scheduled");
-    const version = await this.latestVersion(contentId);
-    const prepared = await this.adapters.publisher.prepare(content, version);
+    if (content.state !== "scheduled") assertTransition(content.state, "scheduled");
+    await this.latestVersion(contentId);
+    const existing = (await this.repository.listPublications(contentId)).find(item => item.status === "scheduled" || item.status === "prepared");
     const publication = await this.repository.savePublication({
-      ...prepared,
+      id: existing?.id ?? this.id(), contentId, createdAt: existing?.createdAt ?? this.clock(),
       status: "scheduled",
       scheduledAt,
+      publishedAt: null, externalUrl: null,
       updatedAt: this.clock(),
     });
     const updated = await this.changeState({ ...content, scheduledAt }, "scheduled", actor.id, "content.scheduled", { scheduledAt });
     return { content: updated, publication };
   }
 
-  async publish(contentId: string, actor: Actor): Promise<{ content: ContentRecord; publication: PublicationRecord }> {
+  async cancelSchedule(contentId: string, actor: Actor): Promise<ContentRecord> {
+    requirePermission(actor, "content:schedule");
+    const content = await this.requireContent(contentId);
+    if (["published", "measured", "deleted"].includes(content.state)) {
+      throw new DomainError("CONTENT_NOT_UNSCHEDULABLE", "삭제되거나 발행 완료한 원고는 예약 해제할 수 없습니다.", 409);
+    }
+    for (const publication of await this.repository.listPublications(contentId)) {
+      if (publication.status === "scheduled") await this.repository.savePublication({
+        ...publication, status: "prepared", scheduledAt: null, updatedAt: this.clock(),
+      });
+    }
+    if (content.state !== "scheduled" && !content.scheduledAt) return content;
+    return this.changeState({ ...content, scheduledAt: null }, content.state === "scheduled" ? "review_ready" : content.state,
+      actor.id, "content.unscheduled");
+  }
+
+  async publish(contentId: string, actor: Actor, externalUrl: string | null = null): Promise<{ content: ContentRecord; publication: PublicationRecord }> {
     requirePermission(actor, "content:publish");
     const content = await this.requireContent(contentId);
     assertTransition(content.state, "published");
     const publications = await this.repository.listPublications(contentId);
     const pending = publications.find((publication) => publication.status === "scheduled" || publication.status === "prepared");
-    if (!pending) throw new DomainError("PUBLICATION_NOT_PREPARED", "예약되거나 준비된 발행 건이 없습니다.", 409);
-    const publication = await this.adapters.publisher.publish(pending);
-    await this.repository.savePublication(publication);
+    // This is a manual publication record, not a call to a publishing adapter.
+    const now = this.clock();
+    const publication = await this.repository.savePublication({
+      id: pending?.id ?? this.id(), contentId, status: "published",
+      scheduledAt: content.scheduledAt, publishedAt: now, externalUrl,
+      createdAt: pending?.createdAt ?? now, updatedAt: now,
+    });
     const updated = await this.changeState(
       { ...content, publishedAt: publication.publishedAt },
       "published",

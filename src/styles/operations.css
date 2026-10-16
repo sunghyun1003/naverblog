@@ -45,6 +45,12 @@
 .schedule-control label { min-width: 0; flex: 1; display: grid; gap: var(--space-2); }
 .schedule-control label span { color: var(--color-text-secondary); font-size: 12px; font-weight: 700; }
 .schedule-control input { height: 44px; border: 1px solid var(--color-border); border-radius: var(--radius-2); padding: 0 12px; }
+.schedule-list article, .schedule-list h2 { min-width: 0; overflow-wrap: anywhere; }
+.schedule-list h2 a { color: inherit; text-decoration: none; }
+.schedule-list h2 a:hover { text-decoration: underline; }
+.schedule-date { margin-top: 12px; color: var(--color-text-secondary); font-size: 13px; }
+.schedule-control input { width: 100%; min-width: 0; box-sizing: border-box; }
+.schedule-control .button { flex-shrink: 0; }
 .published-link { display: inline-flex; align-items: center; gap: var(--space-2); margin-top: var(--space-4); color: var(--color-info); font-size: 13px; }
 .schedule-definition { margin: 0; }
 .schedule-definition > div { min-height: 50px; border-top: 1px solid var(--color-border-subtle); display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); }

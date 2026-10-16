@@ -1108,11 +1108,11 @@ export class GitHubAutomationService {
     const draft = currentState ? null : await this.getDraft(runId);
     const previousState = currentState ?? draft!.state;
     if (previousState.deletedAt) throw new DomainError("CONTENT_NOT_DELETABLE", "이미 삭제된 원고입니다.", 409);
-    if (previousState.publicationStatus !== "none") {
-      throw new DomainError("CONTENT_NOT_DELETABLE", "예약·발행된 원고는 삭제할 수 없습니다.", 409);
+    if (previousState.publicationStatus === "published") {
+      throw new DomainError("CONTENT_NOT_DELETABLE", "발행 완료로 기록된 원고는 삭제할 수 없습니다.", 409);
     }
     const now = new Date().toISOString();
-    return this.updateState(runId, { deletedAt: now, deletedBy: actor }, actor, previousState);
+    return this.updateState(runId, { deletedAt: now, deletedBy: actor, publicationStatus: "none", scheduledAt: null }, actor, previousState);
   }
 
   /**
@@ -1127,8 +1127,8 @@ export class GitHubAutomationService {
     const previousState = currentState ?? (await this.getDraft(runId)).state;
     if (!/^\d+$/.test(runId)) throw new DomainError("CONTENT_NOT_FOUND", "원고를 찾을 수 없습니다.", 404);
     if (previousState.deletedAt) throw new DomainError("CONTENT_NOT_DELETABLE", "이미 삭제된 원고입니다.", 409);
-    if (previousState.publicationStatus !== "none") {
-      throw new DomainError("CONTENT_NOT_DELETABLE", "예약·발행된 원고는 삭제할 수 없습니다.", 409);
+    if (previousState.publicationStatus === "published") {
+      throw new DomainError("CONTENT_NOT_DELETABLE", "발행 완료로 기록된 원고는 삭제할 수 없습니다.", 409);
     }
 
     const tree = await this.tree();

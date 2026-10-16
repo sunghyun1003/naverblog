@@ -47,6 +47,14 @@ export async function persistGitHubDraftDetail(
   }
   await repository.saveQualityResults(detail.content.id, detail.qualityResults);
   for (const approval of detail.approvals) await repository.saveApproval(approval);
+  if (draft.state.publicationStatus === "none") {
+    // Upserts alone leave the old reservation alive after cancellation.
+    for (const publication of await repository.listPublications(detail.content.id)) {
+      if (publication.status === "scheduled" && Date.parse(publication.updatedAt) <= Date.parse(draft.state.updatedAt)) await repository.savePublication({
+        ...publication, status: "prepared", scheduledAt: null, updatedAt: draft.state.updatedAt,
+      });
+    }
+  }
   for (const publication of detail.publications) await repository.savePublication(publication);
   for (const event of detail.auditEvents) await repository.appendAudit(event);
   return (await repository.getContentDetail(detail.content.id)) ?? detail;

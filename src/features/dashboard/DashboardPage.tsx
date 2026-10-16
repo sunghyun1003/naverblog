@@ -26,7 +26,7 @@ const filters: Array<{ key: DashboardFilter; label: string }> = [
   { key: "all", label: "전체" },
   { key: "drafting", label: "작성 중" },
   { key: "ready", label: "완성" },
-  { key: "scheduled", label: "예약 알림" },
+  { key: "scheduled", label: "발행 예정" },
   { key: "published", label: "발행 완료" },
 ];
 
@@ -59,7 +59,7 @@ export function DashboardPage() {
   const [bulkDeleting, setBulkDeleting] = useState(false);
 
   const deletable = (content: { status: ContentStatus }) =>
-    !["scheduled", "published", "deleted"].includes(content.status);
+    !["published", "deleted"].includes(content.status);
 
   const setActiveFilter = (filter: DashboardFilter) => {
     const next = new URLSearchParams(searchParams);
@@ -188,7 +188,7 @@ export function DashboardPage() {
           </button>
           <button type="button" onClick={() => setActiveFilter("scheduled")}>
             <span className="status-strip__icon status-strip__icon--info"><CalendarCheck2 size={21} /></span>
-            <span><small>오늘 예약</small><strong>{connectionStatus === "connecting" ? "-" : scheduledCount}</strong></span>
+            <span><small>발행 예정</small><strong>{connectionStatus === "connecting" ? "-" : scheduledCount}</strong></span>
           </button>
           <button type="button" onClick={() => setActiveFilter("all")}>
             <span className="status-strip__icon status-strip__icon--positive"><FileCheck2 size={21} /></span>

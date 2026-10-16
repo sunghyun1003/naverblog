@@ -5,6 +5,32 @@ import { testSystem } from "./helpers.js";
 
 const admin: Actor = { id: "admin-1", roles: ["admin"] };
 
+test("발행 예정은 해제·변경·삭제 가능하고 수동 발행 기록은 게시 어댑터를 호출하지 않는다", async () => {
+  const system = testSystem();
+  system.adapters.publisher.prepare = async () => { throw new Error("automatic publisher must not be used"); };
+  system.adapters.publisher.publish = async () => { throw new Error("automatic publisher must not be used"); };
+  const make = async (key: string) => {
+    const content = await system.contentService.create({ title: "테스트 완성 원고", topic: "보험", strategy: "original", idempotencyKey: key }, admin);
+    await system.contentService.runPipeline(content.id, key, admin);
+    return content;
+  };
+  const first = await make("manual-publication");
+  await system.contentService.schedule(first.id, "2026-10-20T00:00:00.000Z", admin);
+  await system.contentService.schedule(first.id, "2026-10-21T00:00:00.000Z", admin);
+  const cancelled = await system.contentService.cancelSchedule(first.id, admin);
+  assert.equal(cancelled.state, "review_ready");
+  assert.equal(cancelled.scheduledAt, null);
+  assert.equal((await system.repository.listPublications(first.id)).some(item => item.status === "scheduled"), false);
+  const published = await system.contentService.publish(first.id, admin);
+  assert.equal(published.publication.externalUrl, null);
+  await assert.rejects(system.contentService.cancelSchedule(first.id, admin));
+  const second = await make("scheduled-deletion");
+  await system.contentService.schedule(second.id, "2026-10-20T00:00:00.000Z", admin);
+  await system.contentService.delete(second.id, admin);
+  assert.equal(await system.repository.getContent(second.id), null);
+  assert.deepEqual(await system.repository.listPublications(second.id), []);
+});
+
 test("전체 콘텐츠 자동화 파이프라인이 검토 대기까지 실행된다", async () => {
   const system = testSystem();
   const content = await system.contentService.create(
@@ -64,5 +90,5 @@ test("승인 확인, 예약, 발행 권한과 상태 전이가 이어진다", as
   const published = await system.contentService.publish(content.id, admin);
   assert.equal(published.content.state, "published");
   assert.equal(published.publication.status, "published");
-  assert.match(published.publication.externalUrl ?? "", /^https:\/\//);
+  assert.equal(published.publication.externalUrl, null);
 });

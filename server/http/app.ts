@@ -279,16 +279,15 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   }
 
   function deletedDraftView(draft: AutomationDraftDetail, actorId: string, deletedAt: string): AutomationDraftDetail {
-    return {
-      ...draft,
-      state: {
-        ...draft.state,
-        deletedAt,
-        deletedBy: actorId,
-        updatedAt: deletedAt,
-        updatedBy: actorId,
-      },
-    };
+    return draftWithState(draft, {
+      ...draft.state,
+      publicationStatus: "none",
+      scheduledAt: null,
+      deletedAt,
+      deletedBy: actorId,
+      updatedAt: deletedAt,
+      updatedBy: actorId,
+    });
   }
 
   async function getGitHubDetail(id: string, forceRefresh = false) {
@@ -929,8 +928,8 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     const actor = actorFrom(request, auth?.verifyCookie(request.headers.cookie)?.username);
     if (githubAutomation) {
       const draft = await githubAutomation.getDraft(id);
-      if (!(draftToContent(draft).state === "review_ready" || draftToContent(draft).state === "approved") || draft.publicationStatus !== "none") {
-        return reply.status(409).send({ error: { code: "CONTENT_NOT_SCHEDULABLE", message: "완성된 원고만 예약 알림을 설정할 수 있습니다.", details: null } });
+      if (draft.deleted || !["review_ready", "approved", "scheduled"].includes(draftToContent(draft).state)) {
+        return reply.status(409).send({ error: { code: "CONTENT_NOT_SCHEDULABLE", message: "완성된 원고나 기존 발행 예정 원고만 일정을 저장할 수 있습니다.", details: null } });
       }
       const state = await githubAutomation.updateState(id, { publicationStatus: "scheduled", scheduledAt: body.scheduledAt }, actor.id, draft.state);
       const updatedDraft = draftWithState(draft, state);
@@ -939,14 +938,32 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     }
     return system.contentService.schedule(id, body.scheduledAt, actor);
   });
-  app.post("/api/contents/:id/publish", async (request, reply) => {
+  app.delete("/api/contents/:id/schedule", async (request, reply) => {
     const { id } = idParamsSchema.parse(request.params);
     const actor = actorFrom(request, auth?.verifyCookie(request.headers.cookie)?.username);
     if (githubAutomation) {
-      const body = publicationSchema.parse(request.body);
       const draft = await githubAutomation.getDraft(id);
-      if (draft.publicationStatus !== "scheduled") {
-        return reply.status(409).send({ error: { code: "CONTENT_NOT_SCHEDULED", message: "예약 알림을 설정한 원고만 발행 완료로 처리할 수 있습니다.", details: null } });
+      if (draft.deleted || draft.publicationStatus === "published") {
+        return reply.status(409).send({ error: { code: "CONTENT_NOT_UNSCHEDULABLE", message: "삭제되거나 발행 완료한 원고의 기록은 예약 해제로 변경할 수 없습니다.", details: null } });
+      }
+      // Cancellation must also work for old incomplete drafts. Never approve,
+      // regenerate or discard their text/images just to remove a date.
+      const state = draft.publicationStatus === "none" && !draft.scheduledAt ? draft.state
+        : await githubAutomation.updateState(id, { publicationStatus: "none", scheduledAt: null }, actor.id, draft.state);
+      const updatedDraft = draftWithState(draft, state);
+      const mirrorSynced = await persistGitHubDetailSafely(updatedDraft, "unschedule");
+      return { content: draftToContent(updatedDraft), mirrorSynced };
+    }
+    return { content: await system.contentService.cancelSchedule(id, actor) };
+  });
+  app.post("/api/contents/:id/publish", async (request, reply) => {
+    const { id } = idParamsSchema.parse(request.params);
+    const actor = actorFrom(request, auth?.verifyCookie(request.headers.cookie)?.username);
+    const body = publicationSchema.parse(request.body ?? {});
+    if (githubAutomation) {
+      const draft = await githubAutomation.getDraft(id);
+      if (draft.deleted || !["review_ready", "approved", "scheduled"].includes(draftToContent(draft).state)) {
+        return reply.status(409).send({ error: { code: "CONTENT_NOT_PUBLISHABLE", message: "완성되거나 발행 예정인 원고만 수동 발행 완료로 기록할 수 있습니다.", details: null } });
       }
       const now = new Date().toISOString();
       const state = await githubAutomation.updateState(id, { publicationStatus: "published", publishedAt: now, externalUrl: body.externalUrl || null }, actor.id, draft.state);
@@ -954,7 +971,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       const mirrorSynced = await persistGitHubDetailSafely(updatedDraft, "publish");
       return { content: draftToContent(updatedDraft), publication: state, mirrorSynced };
     }
-    return system.contentService.publish(id, actor);
+    return system.contentService.publish(id, actor, body.externalUrl || null);
   });
   function seoulDate(value: string | Date = new Date()): string {
     const parts = new Intl.DateTimeFormat("en-US", {

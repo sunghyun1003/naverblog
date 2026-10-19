@@ -18,7 +18,7 @@ function formatDate(value: string | null): string | null {
   if (!value) return null;
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) return null;
-  return new Intl.DateTimeFormat("ko-KR", { month: "short", day: "numeric" }).format(date);
+  return new Intl.DateTimeFormat("ko-KR", { year: "numeric", month: "2-digit", day: "2-digit", timeZone: "Asia/Seoul" }).format(date);
 }
 
 export function mapContent(content: ApiContent): ContentItem {
@@ -28,6 +28,7 @@ export function mapContent(content: ApiContent): ContentItem {
     status: statusMap[content.state],
     assignee: content.assigneeId ?? "carrot",
     initials: (content.assigneeId ?? "carrot").slice(0, 1).toUpperCase(),
+    createdAt: formatDate(content.createdAt) ?? "생성일 확인 중",
     updatedAt: formatDate(content.updatedAt) ?? "방금",
     publishAt: formatDate(content.scheduledAt),
   };

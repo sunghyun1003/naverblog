@@ -364,16 +364,16 @@ export function ReviewPage() {
           geo: { label: "GEO 점검", icon: Globe2, tone: "info" },
           editorial: { label: "편집 품질", icon: LayoutTemplate, tone: "positive" },
           tone: { label: "사람 말투", icon: UserRound, tone: "positive" },
-          native_korean: { label: "한국어 자연스러움", icon: Languages, tone: "positive" },
+          native_korean: { label: "한국어 표현 패턴", icon: Languages, tone: "positive" },
           advertising: { label: "광고 위험", icon: ShieldAlert, tone: "warning" },
         }[result.category];
         return {
           id: result.category,
-          label: `${definition.label} ${result.score}점`,
+          label: result.category === "native_korean" ? definition.label : `${definition.label} ${result.score}점`,
           status: result.status,
           icon: definition.icon,
           tone: result.status === "warning" || result.status === "failed" ? "warning" : definition.tone,
-          detail: result.messages.join(" "),
+          detail: `${result.category === "native_korean" ? "지정된 표현 패턴을 검사한 결과이며, 글 전체의 자연스러움을 보장하는 점수가 아닙니다. " : ""}${result.messages.join(" ")}`,
         };
       });
   const failedQualityItems = effectiveQualityItems.filter((item) => item.status === "failed");
@@ -773,11 +773,12 @@ export function ReviewPage() {
           </section>
 
           <section className="inspector-section">
-            <h3>한국어 자연스러움 검사</h3>
+            <h3>한국어 표현 패턴 검사</h3>
             {nativeKoreanQuality ? (
               <>
                 <div className="diff-card">
-                  <p>{nativeKoreanQuality.status === "passed" ? "번역체 검사 통과" : "보정이 필요한 표현이 있습니다."} · {nativeKoreanQuality.score}점</p>
+                  <p>{nativeKoreanQuality.status === "passed" ? "등록된 표현 패턴에서 문제를 찾지 못했습니다." : "문맥을 검토할 표현이 있습니다."}</p>
+                  <small>패턴 검사는 글 전체의 자연스러움이나 정보의 유용성을 평가하지 않습니다.</small>
                   <small>높음 {nativeKoreanQuality.counts.high}건 · 보통 {nativeKoreanQuality.counts.medium}건 · 낮음 {nativeKoreanQuality.counts.low}건</small>
                 </div>
                 {nativeKoreanQuality.issues.length ? (

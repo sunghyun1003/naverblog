@@ -32,3 +32,18 @@ test("콘텐츠 목록은 내부 처리 단계를 운영자 상태로 노출하�
   assert.match(dashboard, /\{ key: "scheduled", label: "발행 예정" \}/);
   assert.doesNotMatch(dashboard, /\{ key: "(?:planning|review|approved|tone)"/);
 });
+
+test("목록 번호와 생성·수정일을 구분하고 작동하지 않는 페이지 버튼을 표시하지 않는다", async () => {
+  const dashboard = await readFile(new URL("../src/features/dashboard/DashboardPage.tsx", import.meta.url), "utf8");
+  assert.match(dashboard, /content-row__number/);
+  assert.match(dashboard, /filteredContents\.map\(\(content, index\)/);
+  assert.match(dashboard, /생성 \{content\.createdAt/);
+  assert.match(dashboard, /수정 \{content\.updatedAt/);
+  assert.doesNotMatch(dashboard, /10개씩|pagination__current/);
+});
+
+test("표현 패턴 점수를 원고 전체의 한국어 자연스러움 점수로 표시하지 않는다", async () => {
+  const review = await readFile(new URL("../src/features/review/ReviewPage.tsx", import.meta.url), "utf8");
+  assert.match(review, /글 전체의 자연스러움을 보장하는 점수가 아닙니다/);
+  assert.doesNotMatch(review, /label: "한국어 자연스러움"/);
+});

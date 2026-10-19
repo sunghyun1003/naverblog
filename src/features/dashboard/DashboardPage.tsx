@@ -1,6 +1,5 @@
 import {
   CalendarCheck2,
-  ChevronLeft,
   ChevronRight,
   Clock3,
   FileCheck2,
@@ -258,13 +257,13 @@ export function DashboardPage() {
                 onChange={(event) => handleSelectionChange(event, toggleAllVisible)}
                 disabled={!selectableContents.length}
               />
-              콘텐츠
-            </span><span>상태</span><span>담당자</span><span>업데이트</span><span>발행 예정</span><span />
+              번호 · 콘텐츠
+            </span><span>상태</span><span>담당자</span><span>생성일 / 수정일 (한국 시간)</span><span>발행 예정</span><span />
           </div>
           <div className="content-table__body">
             {connectionStatus === "connecting" ? (
               <div className="content-list-loading" role="status"><span className="page-loading__spinner" aria-hidden="true" />실제 콘텐츠를 불러오는 중입니다.</div>
-            ) : filteredContents.length ? filteredContents.map((content) => (
+            ) : filteredContents.length ? filteredContents.map((content, index) => (
               <div
                 key={content.id}
                 className={`content-row ${selectedIds.has(content.id) ? "content-row--selected" : ""}`}
@@ -288,11 +287,15 @@ export function DashboardPage() {
                     onKeyDown={(event) => event.stopPropagation()}
                     onChange={(event) => handleSelectionChange(event, () => toggleSelected(content.id))}
                   />
+                  <span className="content-row__number" aria-label={`목록 ${index + 1}번`}>{index + 1}</span>
                   <span>{content.title}</span>
                 </span>
                 <span><StatusBadge status={content.status} /></span>
                 <span className="assignee"><span className="avatar">{content.initials}</span>{content.assignee}</span>
-                <span className="content-row__meta" data-label="업데이트">{content.updatedAt}</span>
+                <span className="content-row__meta content-row__dates">
+                  <span>생성 {content.createdAt ?? "확인 중"}</span>
+                  <small>수정 {content.updatedAt}</small>
+                </span>
                 <span className="content-row__meta" data-label="발행 예정">{content.publishAt ?? "-"}</span>
                 <ChevronRight size={18} aria-hidden="true" />
               </div>
@@ -304,13 +307,7 @@ export function DashboardPage() {
             )}
           </div>
           <footer className="table-footer">
-            <span>{filteredContents.length ? `1–${filteredContents.length}` : "0"} / {filteredContents.length}개</span>
-            <div className="pagination" aria-label="페이지 이동">
-              <button type="button" aria-label="이전 페이지" disabled><ChevronLeft size={18} /></button>
-              <button type="button" className="pagination__current" aria-current="page">1</button>
-              <button type="button" aria-label="다음 페이지" disabled><ChevronRight size={18} /></button>
-            </div>
-            <span>10개씩</span>
+            <span>전체 {contents.length}개 중 {filteredContents.length}개 표시 · 번호는 현재 목록 순서입니다.</span>
           </footer>
         </div>
       </section>

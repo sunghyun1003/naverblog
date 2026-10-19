@@ -11,6 +11,7 @@ export interface ContentItem {
   status: ContentStatus;
   assignee: string;
   initials: string;
+  createdAt?: string;
   updatedAt: string;
   publishAt: string | null;
 }

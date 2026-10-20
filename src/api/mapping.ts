@@ -24,6 +24,7 @@ function formatDate(value: string | null): string | null {
 export function mapContent(content: ApiContent): ContentItem {
   return {
     id: content.id,
+    number: content.number,
     title: content.title,
     status: statusMap[content.state],
     assignee: content.assigneeId ?? "carrot",

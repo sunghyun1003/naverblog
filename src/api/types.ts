@@ -12,6 +12,7 @@ export type ApiContentState =
 
 export interface ApiContent {
   id: string;
+  number?: number;
   creationKey: string;
   title: string;
   topic: string;

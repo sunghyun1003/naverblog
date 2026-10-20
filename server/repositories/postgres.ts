@@ -17,6 +17,7 @@ import type {
 import type { AutomationRepository } from "./contracts.js";
 import { securePostgresConnectionString } from "../db/connection.js";
 import { recoveryFromVersions } from "../domain/generation-recovery.js";
+import type { ContentListLayout } from "../services/content-list-layout.js";
 
 export interface PostgresRepositoryOptions {
   connectionString: string;
@@ -70,6 +71,20 @@ function jobStepFrom(row: QueryResultRow): JobStep {
 
 export class PostgresAutomationRepository implements AutomationRepository {
   readonly pool: Pool;
+
+  async getContentListLayout(): Promise<{ revision: number; value: ContentListLayout } | null> {
+    const result = await this.pool.query("SELECT revision,value FROM content_list_layout WHERE team_id=$1", [this.teamId]);
+    return result.rows[0] as { revision: number; value: ContentListLayout } ?? null;
+  }
+
+  async compareContentListLayout(revision: number, value: ContentListLayout): Promise<boolean> {
+    const result = revision === 0
+      ? await this.pool.query(`INSERT INTO content_list_layout(team_id,revision,value)
+          VALUES($1,1,$2::jsonb) ON CONFLICT DO NOTHING`, [this.teamId, JSON.stringify(value)])
+      : await this.pool.query(`UPDATE content_list_layout SET revision=revision+1,value=$3::jsonb
+          WHERE team_id=$1 AND revision=$2`, [this.teamId, revision, JSON.stringify(value)]);
+    return result.rowCount === 1;
+  }
 
   async getLocalWriterState<T>(): Promise<{ revision: number; value: T } | null> {
     const result = await this.pool.query("SELECT revision,value FROM local_writer_state WHERE team_id=$1", [this.teamId]);

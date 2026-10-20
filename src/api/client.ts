@@ -52,6 +52,7 @@ function normalizeContent(value: unknown, index: number): ApiContent | null {
   const strategy = value.strategy === "original" ? "original" : "trend";
   return {
     id: asString(value.id, `content-${index}`),
+    number: typeof value.number === "number" && Number.isSafeInteger(value.number) && value.number > 0 ? value.number : undefined,
     creationKey: asString(value.creationKey, `content-${index}`),
     title: asString(value.title, "제목 없음"),
     topic: asString(value.topic, asString(value.title, "")),
@@ -353,9 +354,20 @@ export function logout(): Promise<void> {
 
 export async function listContents(signal?: AbortSignal, refresh = false): Promise<ApiContentList> {
   const payload = await request<unknown>(`/api/contents${refresh ? "?refresh=true" : ""}`, { signal });
+  return cacheContentList(payload);
+}
+
+function cacheContentList(payload: unknown): ApiContentList {
   if (!isRecord(payload)) return { items: [] };
   const items = Array.isArray(payload.items) ? payload.items.map(normalizeContent).filter((item): item is ApiContent => item !== null) : [];
   return writeRuntimeCache("contents:shared", { items, freshness: isRecord(payload.freshness) ? payload.freshness as unknown as ApiContentList["freshness"] : undefined });
+}
+
+export async function moveContent(contentId: string, neighborId: string, direction: "up" | "down"): Promise<ApiContentList> {
+  const payload = await request(`/api/contents/${encodeURIComponent(contentId)}/move`, {
+    method: "POST", body: JSON.stringify({ neighborId, direction }),
+  });
+  return cacheContentList(payload);
 }
 
 export function cachedContents(): ApiContentList | null {

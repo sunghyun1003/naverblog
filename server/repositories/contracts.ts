@@ -11,8 +11,9 @@ import type {
   SourceRecord,
   TrendSignal,
 } from "../domain/types.js";
+import type { ContentListLayoutStore } from "../services/content-list-layout.js";
 
-export interface AutomationRepository {
+export interface AutomationRepository extends ContentListLayoutStore {
   getLocalWriterState<T>(): Promise<{ revision: number; value: T } | null>;
   compareLocalWriterState(revision: number, value: unknown): Promise<boolean>;
   createContent(content: ContentRecord): Promise<ContentRecord>;

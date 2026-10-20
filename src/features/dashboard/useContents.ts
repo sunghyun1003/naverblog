@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
-import { cachedContents, createContent, deleteContents, generateContent, getCapabilities, listContents, runPipeline } from "../../api/client";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { cachedContents, createContent, deleteContents, generateContent, getCapabilities, listContents, moveContent, runPipeline } from "../../api/client";
 import { mapContent } from "../../api/mapping";
 import type { ApiCapabilities, ApiFreshness } from "../../api/types";
 import type { ContentItem } from "../../types/content";
@@ -17,8 +17,14 @@ export function useContents() {
   const [freshness, setFreshness] = useState<ApiFreshness | null>(cached?.freshness ?? null);
   const [creating, setCreating] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [moving, setMoving] = useState(false);
+  const movingRef = useRef(false);
+  const readRevision = useRef(0);
 
   const refresh = useCallback(async (signal?: AbortSignal, force = false) => {
+    if (movingRef.current) return;
+    const revision = ++readRevision.current;
+    const current = () => !signal?.aborted && revision === readRevision.current;
     setRefreshing(true);
     try {
       // The content list is the primary surface. A transient capabilities
@@ -26,12 +32,12 @@ export function useContents() {
       // an offline state; reconcile each response independently.
       const results = await Promise.allSettled([
         listContents(signal, force).then((value) => {
-          if (!signal?.aborted) { setContents(value.items.map(mapContent)); setFreshness(value.freshness ?? null); setConnectionStatus("connected"); }
+          if (current()) { setContents(value.items.map(mapContent)); setFreshness(value.freshness ?? null); setConnectionStatus("connected"); }
           return value;
         }),
-        getCapabilities(signal).then((value) => { if (!signal?.aborted) setCapabilities(value); return value; }),
+        getCapabilities(signal).then((value) => { if (current()) setCapabilities(value); return value; }),
       ]);
-      if (signal?.aborted) return;
+      if (!current()) return;
 
       const [contentResult, capabilityResult] = results;
       if (contentResult.status === "fulfilled") {
@@ -51,7 +57,7 @@ export function useContents() {
         throw contentResult.reason;
       }
     } finally {
-      setRefreshing(false);
+      if (current()) setRefreshing(false);
     }
   }, []);
 
@@ -111,6 +117,30 @@ export function useContents() {
     }
   };
 
+  const move = async (id: string, neighborId: string, direction: "up" | "down") => {
+    if (movingRef.current) return;
+    movingRef.current = true;
+    readRevision.current++;
+    setMoving(true);
+    setRefreshing(false);
+    try {
+      const result = await moveContent(id, neighborId, direction);
+      const nextContents = result.items.map(mapContent);
+      setContents(nextContents);
+      setFreshness(result.freshness ?? null);
+      writeRuntimeCache("contents", { contents: nextContents, capabilities, freshness: result.freshness ?? null });
+    } catch (error) {
+      movingRef.current = false;
+      // Resolve a concurrent move, deletion, or uncertain network response
+      // from the mirror; do not force a slow GitHub synchronization.
+      await refresh().catch(() => undefined);
+      throw error;
+    } finally {
+      movingRef.current = false;
+      setMoving(false);
+    }
+  };
+
   return {
     contents,
     connectionStatus,
@@ -118,6 +148,8 @@ export function useContents() {
     freshness,
     creating,
     refreshing,
+    moving,
+    move,
     createAndRun,
     removeMany,
     refreshNow: () => refresh(undefined, true),

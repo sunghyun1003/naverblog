@@ -15,6 +15,7 @@ import type {
 } from "../domain/types.js";
 import { normalizeUrl } from "../domain/utils.js";
 import type { AutomationRepository } from "./contracts.js";
+import type { ContentListLayout } from "../services/content-list-layout.js";
 
 function clone<T>(value: T): T {
   return structuredClone(value);
@@ -28,6 +29,18 @@ function upsertById<T extends { id: string }>(map: Map<string, T[]>, key: string
 }
 
 export class InMemoryAutomationRepository implements AutomationRepository {
+  private listLayout: { revision: number; value: ContentListLayout } | null = null;
+
+  async getContentListLayout() {
+    return clone(this.listLayout);
+  }
+
+  async compareContentListLayout(revision: number, value: ContentListLayout): Promise<boolean> {
+    if ((this.listLayout?.revision ?? 0) !== revision) return false;
+    this.listLayout = { revision: revision + 1, value: clone(value) };
+    return true;
+  }
+
   private localWriter: { revision: number; value: unknown } | null = null;
 
   async getLocalWriterState<T>(): Promise<{ revision: number; value: T } | null> {

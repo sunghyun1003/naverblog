@@ -36,6 +36,10 @@ test("콘텐츠 목록은 내부 처리 단계를 운영자 상태로 노출하�
 test("목록 번호와 생성·수정일을 구분하고 작동하지 않는 페이지 버튼을 표시하지 않는다", async () => {
   const dashboard = await readFile(new URL("../src/features/dashboard/DashboardPage.tsx", import.meta.url), "utf8");
   assert.match(dashboard, /content-row__number/);
+  assert.match(dashboard, /content\.number \?\? "—"/);
+  assert.doesNotMatch(dashboard, /index \+ 1/);
+  assert.match(dashboard, /moveRow\(index, "up"\)/);
+  assert.match(dashboard, /moveRow\(index, "down"\)/);
   assert.match(dashboard, /filteredContents\.map\(\(content, index\)/);
   assert.match(dashboard, /생성 \{content\.createdAt/);
   assert.match(dashboard, /수정 \{content\.updatedAt/);

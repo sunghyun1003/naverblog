@@ -18,6 +18,8 @@ export async function bootstrapSystem(config: AppConfig): Promise<RuntimeSystem>
     });
     try {
       await repository.pool.query("SELECT 1");
+      // Fail during deployment readiness, not on a user's first list request.
+      await repository.pool.query("SELECT team_id,revision,value FROM content_list_layout LIMIT 0");
       const [team, editorialMigration, nativeKoreanMigration, deletedStateMigration, qualityConstraint, contentStateConstraint] = await Promise.all([
         repository.pool.query("SELECT 1 FROM teams WHERE id=$1", [config.DATABASE_TEAM_ID]),
         repository.pool.query(

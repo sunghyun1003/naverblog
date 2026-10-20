@@ -18,6 +18,8 @@ import { appliedImageIds, validImageSelection } from "../services/image-usage.js
 import { LocalWriter } from "../services/local-writer.js";
 import { isLocalWriterWorkerRequest, registerLocalWriterRoutes } from "./local-writer-routes.js";
 import { validApprovalNumber } from "../../shared/compliance-footer.js";
+import { ContentListLayouts } from "../services/content-list-layout.js";
+import { requirePermission } from "../domain/permissions.js";
 
 const createContentSchema = z.object({
   title: z.string().trim().min(5).max(120),
@@ -188,6 +190,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   const persistGitHubData = Boolean(githubAutomation) && databaseProvider === "postgres";
   const snapshotStore = persistGitHubData && system.repository.getSnapshot && system.repository.saveSnapshot;
   const dashboardSync = snapshotStore ? new DashboardSync(system.repository, githubAutomation!) : null;
+  const contentListLayouts = new ContentListLayouts(system.repository);
 
   async function snapshotOrLoad<T>(key: string, load: () => Promise<T>, force = false): Promise<T> {
     if (snapshotStore && !force) {
@@ -511,8 +514,19 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
 
   getCompressed("/api/contents", async (request) => {
     const query = refreshQuerySchema.parse(request.query);
-    if (githubAutomation) return listGitHubContents(query.refresh === "true");
-    return { items: await system.contentService.list(), freshness: freshness("local", false, new Date().toISOString()) };
+    const result = githubAutomation
+      ? await listGitHubContents(query.refresh === "true")
+      : { items: await system.contentService.list(), freshness: freshness("local", false, new Date().toISOString()) };
+    return { ...result, items: await contentListLayouts.arrange(result.items) };
+  });
+  app.post("/api/contents/:id/move", async (request) => {
+    requirePermission(actorFrom(request, auth?.verifyCookie(request.headers.cookie)?.username), "content:edit");
+    const { id } = idParamsSchema.parse(request.params);
+    const move = z.object({ neighborId: z.string().min(1), direction: z.enum(["up", "down"]) }).parse(request.body);
+    const result = githubAutomation
+      ? await listGitHubContents()
+      : { items: await system.contentService.list(), freshness: freshness("local", false, new Date().toISOString()) };
+    return { ...result, items: await contentListLayouts.arrange(result.items, { id, ...move }) };
   });
   app.post("/api/contents", async (request, reply) => {
     if (githubAutomation) {

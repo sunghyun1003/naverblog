@@ -11,6 +11,11 @@ test("상태를 변경한 예전 원고의 생성일은 수정일로 바뀌지 �
   assert.equal(item.status, "ready");
 });
 
+test("원고 고정 번호를 API 값 그대로 사용한다", () => {
+  const item = mapContent({ id: "x", number: 42, title: "x", state: "drafting", createdAt: "", updatedAt: "", scheduledAt: null } as ApiContent);
+  assert.equal(item.number, 42);
+});
+
 test("날짜가 없거나 손상돼도 신규 생성 날짜를 만들어내지 않는다", () => {
   const item = mapContent({ id: "x", title: "x", state: "drafting", createdAt: "invalid", updatedAt: "invalid", scheduledAt: null } as ApiContent);
   assert.equal(item.createdAt, "생성일 확인 중");

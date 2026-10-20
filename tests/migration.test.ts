@@ -2,6 +2,13 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
+test("목록 번호·순서 저장소는 원고 영구 삭제와 독립적이며 비교 후 저장한다", async () => {
+  const sql = await readFile(new URL("../server/db/migrations/007_content_list_layout.sql", import.meta.url), "utf8");
+  assert.match(sql, /team_id text PRIMARY KEY REFERENCES teams/);
+  assert.match(sql, /revision integer NOT NULL/);
+  assert.doesNotMatch(sql, /REFERENCES contents/);
+});
+
 test("초기 마이그레이션에 운영 핵심 테이블과 중복 방지 제약이 포함된다", async () => {
   const sql = await readFile(new URL("../server/db/migrations/001_initial.sql", import.meta.url), "utf8");
   const requiredTables = [

@@ -7,6 +7,7 @@ export type ContentStatus =
 
 export interface ContentItem {
   id: string;
+  number?: number;
   title: string;
   status: ContentStatus;
   assignee: string;

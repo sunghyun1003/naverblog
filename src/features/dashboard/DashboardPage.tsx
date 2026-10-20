@@ -1,5 +1,7 @@
 import {
   CalendarCheck2,
+  ArrowUp,
+  ArrowDown,
   ChevronRight,
   Clock3,
   FileCheck2,
@@ -42,7 +44,7 @@ const legacyFilterMap: Record<string, DashboardFilter> = {
 export function DashboardPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { contents, connectionStatus, creating, refreshing, createAndRun, refreshNow, removeMany } = useContents();
+  const { contents, connectionStatus, creating, refreshing, moving, move, createAndRun, refreshNow, removeMany } = useContents();
   const requestedFilter = searchParams.get("filter");
   const activeFilter: DashboardFilter = requestedFilter
     ? (filters.some((filter) => filter.key === requestedFilter)
@@ -56,6 +58,8 @@ export function DashboardPage() {
   const [toast, setToast] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  const isFiltered = activeFilter !== "all" || Boolean(query.trim()) || mineOnly;
+  const canMove = !isFiltered && !moving && !bulkDeleting && !refreshing && connectionStatus === "connected";
 
   const deletable = (content: { status: ContentStatus }) =>
     !["published", "deleted"].includes(content.status);
@@ -164,12 +168,25 @@ export function DashboardPage() {
     }
   };
 
+  const moveRow = async (index: number, direction: "up" | "down") => {
+    const item = contents[index];
+    const neighbor = contents[index + (direction === "up" ? -1 : 1)];
+    if (!canMove || !item || !neighbor) return;
+    try {
+      await move(item.id, neighbor.id, direction);
+      setToast(`${item.number}번 원고를 ${direction === "up" ? "위로" : "아래로"} 이동했습니다.`);
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "순서 저장에 실패했습니다. 다시 시도해주세요.");
+    }
+    window.setTimeout(() => setToast(""), 3600);
+  };
+
   return (
     <div className="dashboard-page">
       <section className="dashboard-main">
         <header className="operations-heading">
           <div className="operations-heading__actions">
-            <Button icon={<RefreshCw size={17} />} onClick={() => void refreshNow()} disabled={refreshing}>
+            <Button icon={<RefreshCw size={17} />} onClick={() => void refreshNow().catch((error: unknown) => setToast(error instanceof Error ? error.message : "새로고침에 실패했습니다."))} disabled={refreshing || moving}>
               {refreshing ? "불러오는 중..." : "새로고침"}
             </Button>
             <Button variant="brand" icon={<Plus size={18} />} onClick={() => setCreateOpen(true)} disabled={connectionStatus !== "connected"}>
@@ -219,7 +236,7 @@ export function DashboardPage() {
             {selectedIds.size > 0 ? (
               <div className="bulk-selection">
                 <span>{selectedIds.size}건 선택</span>
-                <Button variant="danger" size="small" icon={<Trash2 size={16} />} onClick={() => void removeSelected()} disabled={bulkDeleting}>
+                <Button variant="danger" size="small" icon={<Trash2 size={16} />} onClick={() => void removeSelected()} disabled={bulkDeleting || moving}>
                   {bulkDeleting ? "삭제 중..." : "선택 삭제"}
                 </Button>
               </div>
@@ -258,7 +275,7 @@ export function DashboardPage() {
                 disabled={!selectableContents.length}
               />
               번호 · 콘텐츠
-            </span><span>상태</span><span>담당자</span><span>생성일 / 수정일 (한국 시간)</span><span>발행 예정</span><span />
+            </span><span>상태</span><span>담당자</span><span>생성일 / 수정일 (한국 시간)</span><span>발행 예정</span><span>순서</span><span />
           </div>
           <div className="content-table__body">
             {connectionStatus === "connecting" ? (
@@ -287,7 +304,7 @@ export function DashboardPage() {
                     onKeyDown={(event) => event.stopPropagation()}
                     onChange={(event) => handleSelectionChange(event, () => toggleSelected(content.id))}
                   />
-                  <span className="content-row__number" aria-label={`목록 ${index + 1}번`}>{index + 1}</span>
+                  <span className="content-row__number" aria-label={content.number ? `원고 ${content.number}번` : "번호 확인 중"}>{content.number ?? "—"}</span>
                   <span>{content.title}</span>
                 </span>
                 <span><StatusBadge status={content.status} /></span>
@@ -297,6 +314,12 @@ export function DashboardPage() {
                   <small>수정 {content.updatedAt}</small>
                 </span>
                 <span className="content-row__meta" data-label="발행 예정">{content.publishAt ?? "-"}</span>
+                <span className="content-row__order" role="group" aria-label={`${content.number ?? ""}번 원고 순서`} onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
+                  <button type="button" aria-label={`${content.number ?? ""}번 원고 위로 이동`} title={isFiltered ? "전체 목록에서 순서를 변경할 수 있습니다." : "위로 이동"}
+                    disabled={!canMove || index === 0 || !content.number} onClick={() => void moveRow(index, "up")}><ArrowUp size={16} /></button>
+                  <button type="button" aria-label={`${content.number ?? ""}번 원고 아래로 이동`} title={isFiltered ? "전체 목록에서 순서를 변경할 수 있습니다." : "아래로 이동"}
+                    disabled={!canMove || index === contents.length - 1 || !content.number} onClick={() => void moveRow(index, "down")}><ArrowDown size={16} /></button>
+                </span>
                 <ChevronRight size={18} aria-hidden="true" />
               </div>
             )) : (
@@ -307,7 +330,7 @@ export function DashboardPage() {
             )}
           </div>
           <footer className="table-footer">
-            <span>전체 {contents.length}개 중 {filteredContents.length}개 표시 · 번호는 현재 목록 순서입니다.</span>
+            <span>전체 {contents.length}개 중 {filteredContents.length}개 표시 · 원고 번호는 고정입니다. {isFiltered ? "순서 변경은 전체 목록에서 가능합니다." : "↑↓ 버튼으로 표시 순서를 변경할 수 있습니다."}</span>
           </footer>
         </div>
       </section>

@@ -1,5 +1,6 @@
 import type { ApiAutomationHistoryItem, ApiAutomationSettings, ApiCapabilities, ApiContent, ApiContentDetail, ApiContentList, ApiJob, ApiTrendItem, ApiTrendSnapshot, ApiTrendSummary, ApiUser, ApiWorkflowRun } from "./types";
 import { cachedRequest, withAbort, invalidateRuntimeCache, writeRuntimeCache, readRuntimeCache, clearRuntimeCache } from "./runtimeCache";
+import type { ComplianceFeedbackDocument, ComplianceFeedbackInput } from "../../shared/compliance-feedback";
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "";
 
@@ -314,6 +315,16 @@ async function requestNetwork<T>(path: string, init?: RequestInit): Promise<T> {
 
 export function getSession(signal?: AbortSignal): Promise<{ user: ApiUser }> {
   return request("/api/auth/session", { signal });
+}
+
+// Loaded only when the feedback tab opens. Saving a note must not invalidate
+// manuscript caches or trigger slow article re-fetches on other tabs.
+export function getComplianceFeedback(contentId: string, signal?: AbortSignal): Promise<ComplianceFeedbackDocument> {
+  return requestNetwork(`/api/contents/${encodeURIComponent(contentId)}/compliance-feedback`, { signal });
+}
+export function saveComplianceFeedback(contentId: string, id: string, expectedRevision: number, input: ComplianceFeedbackInput): Promise<ComplianceFeedbackDocument> {
+  return requestNetwork(`/api/contents/${encodeURIComponent(contentId)}/compliance-feedback/${encodeURIComponent(id)}`,
+    { method: "PUT", body: JSON.stringify({ expectedRevision, input }) });
 }
 
 export interface NaverWriterJob {

@@ -1,0 +1,28 @@
+.compliance-feedback { width: 100%; max-width: 880px; padding: 28px; color: var(--color-text); overflow-wrap: anywhere; }
+.compliance-feedback header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.compliance-feedback .button { flex-shrink: 0; white-space: nowrap; }
+.compliance-feedback h2 { font-size: 20px; }
+.compliance-feedback h3 { font-size: 16px; margin: 24px 0 12px; }
+.compliance-feedback p { margin: 10px 0; font-size: 14px; line-height: 1.65; white-space: pre-wrap; }
+.compliance-feedback__notice { color: var(--color-text-secondary); background: var(--color-surface-subtle, #f6f7f7); border-radius: 10px; padding: 14px; }
+.compliance-feedback fieldset { display: grid; gap: 16px; border: 0; padding: 0; margin: 0; min-width: 0; }
+.compliance-feedback label { display: grid; gap: 8px; font-size: 14px; font-weight: 600; min-width: 0; }
+.compliance-feedback textarea, .compliance-feedback select { width: 100%; min-width: 0; border: 1px solid var(--color-border); border-radius: 8px; background: white; color: inherit; padding: 12px; font: inherit; font-weight: 400; }
+.compliance-feedback textarea { resize: vertical; line-height: 1.6; }
+.compliance-feedback textarea:focus-visible, .compliance-feedback select:focus-visible { outline: 2px solid var(--color-brand, #ff581d); outline-offset: 2px; }
+.compliance-feedback__options { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.compliance-feedback .compliance-feedback__check { display: flex; align-items: center; gap: 8px; font-weight: 400; }
+.compliance-feedback__check input { width: 18px; height: 18px; flex: none; }
+.compliance-feedback__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.compliance-feedback__error { color: #a42920; padding: 12px; background: #fff1ed; border-radius: 8px; }
+.compliance-feedback__saved { color: #08785c; }
+.compliance-feedback__item { margin: 14px 0; padding: 18px; border: 1px solid var(--color-border); border-radius: 12px; }
+.compliance-feedback__meta { display: flex; flex-wrap: wrap; gap: 8px; font-size: 12px; color: var(--color-text-secondary); }
+.compliance-feedback blockquote { margin: 14px 0; padding-left: 12px; border-left: 3px solid #f9a674; white-space: pre-wrap; font-size: 14px; }
+.compliance-feedback small { color: var(--color-text-secondary); }
+@media (max-width: 767px) {
+  .compliance-feedback { padding: 20px 16px; }
+  .compliance-feedback header { flex-direction: column; }
+  .compliance-feedback__options { grid-template-columns: 1fr; }
+  .compliance-feedback textarea, .compliance-feedback select { font-size: 16px; }
+}

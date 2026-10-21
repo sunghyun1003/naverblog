@@ -149,6 +149,7 @@
 }
 
 .editor-tabs {
+  overflow-x: auto;
   position: sticky;
   z-index: 15;
   top: 154px;
@@ -162,6 +163,8 @@
 }
 
 .editor-tabs button {
+  flex: 0 0 auto;
+  white-space: nowrap;
   position: relative;
   min-width: 64px;
   border: 0;

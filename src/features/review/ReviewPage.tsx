@@ -19,7 +19,7 @@ import {
   Copy,
   Download,
 } from "lucide-react";
-import { Fragment, useEffect, useState, type ReactNode } from "react";
+import { Fragment, lazy, Suspense, useEffect, useState, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ApiError, cancelContentSchedule, contentImageUrl, generateContentImages, getContentCopyAssets, getContentWord, selectContentImages } from "../../api/client";
 import { generatedImageCaption, markdownBlocks, renderableImages } from "./imageUsage";
@@ -38,7 +38,8 @@ import { NaverDraftButton } from "./NaverDraftButton";
 
 const complianceImageSrc = `${import.meta.env.BASE_URL}${COMPLIANCE_IMAGE_PATH.slice(1)}`;
 
-type ReviewTab = "draft" | "sources" | "images" | "history";
+const ComplianceFeedbackPanel = lazy(() => import("./ComplianceFeedbackPanel"));
+type ReviewTab = "draft" | "sources" | "images" | "history" | "compliance";
 
 interface VisualPlanItem {
   afterSection: number;
@@ -153,6 +154,7 @@ export function ReviewPage() {
   const { contentId } = useParams();
   const { detail, connectionStatus, loadError, reload, refresh, applyDetail, reject: rejectApi, resumeTone: resumeToneApi, retryFailed: retryFailedApi, edit: editApi, remove: removeApi } = useContentDetail(contentId);
   const [tab, setTab] = useState<ReviewTab>("draft");
+  const [feedbackOpened, setFeedbackOpened] = useState(false);
   const [activeOutline, setActiveOutline] = useState("summary");
   const [expandedQuality, setExpandedQuality] = useState("");
   const [rejectOpen, setRejectOpen] = useState(false);
@@ -673,12 +675,18 @@ export function ReviewPage() {
             <button type="button" role="tab" aria-selected={tab === "sources"} onClick={() => setTab("sources")}>근거</button>
             <button type="button" role="tab" aria-selected={tab === "images"} onClick={() => setTab("images")}>이미지</button>
             <button type="button" role="tab" aria-selected={tab === "history"} onClick={() => setTab("history")}>변경 이력</button>
+            <button type="button" role="tab" aria-selected={tab === "compliance"} onClick={() => { setFeedbackOpened(true); setTab("compliance"); }}>준법심의 피드백</button>
           </div>
 
           {tab === "draft" ? <ArticleDraft title={latestVersion?.title} body={latestVersion?.body} contentId={detail.content.id} imagePackage={renderableImagePackage} complianceNumber={complianceNumber} /> : null}
           {tab === "sources" ? <EvidenceReviewPanel evidence={evidenceReview} sources={detail.sources} claims={detail.claims} /> : null}
           {tab === "images" ? <ImageAssetsView contentId={detail.content.id} packageState={imagePackage} contentStatus={status} pending={imagePending || pipelineBusy} busy={imageBusy} onSelect={(assetId) => void selectImage(assetId)} onGenerate={(assetId, feedback) => void generateImages(assetId, feedback)} /> : null}
           {tab === "history" ? <HistoryView versions={detail.versions} /> : null}
+          <div hidden={tab !== "compliance"}>
+            {feedbackOpened ? <Suspense fallback={<p className="review-content-empty">피드백 화면을 준비하는 중입니다.</p>}>
+              <ComplianceFeedbackPanel key={detail.content.id} contentId={detail.content.id} topic={detail.content.topic} />
+            </Suspense> : null}
+          </div>
         </section>
 
         <aside className="quality-inspector">

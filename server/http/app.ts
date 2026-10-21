@@ -20,6 +20,7 @@ import { isLocalWriterWorkerRequest, registerLocalWriterRoutes } from "./local-w
 import { validApprovalNumber } from "../../shared/compliance-footer.js";
 import { ContentListLayouts } from "../services/content-list-layout.js";
 import { requirePermission } from "../domain/permissions.js";
+import { feedbackInputSchema, MemoryComplianceFeedbackStore, saveComplianceFeedback } from "../services/compliance-feedback.js";
 
 const createContentSchema = z.object({
   title: z.string().trim().min(5).max(120),
@@ -191,6 +192,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   const snapshotStore = persistGitHubData && system.repository.getSnapshot && system.repository.saveSnapshot;
   const dashboardSync = snapshotStore ? new DashboardSync(system.repository, githubAutomation!) : null;
   const contentListLayouts = new ContentListLayouts(system.repository);
+  const complianceFeedback = githubAutomation ?? new MemoryComplianceFeedbackStore();
 
   async function snapshotOrLoad<T>(key: string, load: () => Promise<T>, force = false): Promise<T> {
     if (snapshotStore && !force) {
@@ -570,6 +572,23 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     const query = refreshQuerySchema.parse(request.query);
     if (githubAutomation) return getGitHubDetail(id, query.refresh === "true");
     return system.contentService.detail(id);
+  });
+
+  app.get("/api/contents/:id/compliance-feedback", async (request) => {
+    const { id } = idParamsSchema.parse(request.params);
+    const detail = githubAutomation ? await getGitHubDetail(id) : await system.contentService.detail(id);
+    if (detail.content.state === "deleted") throw new DomainError("CONTENT_NOT_FOUND", "삭제된 원고입니다.", 404);
+    return complianceFeedback.getComplianceFeedback(id);
+  });
+  app.put("/api/contents/:id/compliance-feedback/:feedbackId", async (request) => {
+    const actor = actorFrom(request, auth?.verifyCookie(request.headers.cookie)?.username);
+    requirePermission(actor, "content:review");
+    const { id, feedbackId } = z.object({ id: z.string().min(1), feedbackId: z.string().uuid() }).parse(request.params);
+    const { expectedRevision, input } = z.object({ expectedRevision: z.number().int().nonnegative(), input: feedbackInputSchema }).strict().parse(request.body);
+    const detail = githubAutomation ? await getGitHubDetail(id) : await system.contentService.detail(id);
+    if (detail.content.state === "deleted") throw new DomainError("CONTENT_NOT_FOUND", "삭제된 원고입니다.", 404);
+    return saveComplianceFeedback(complianceFeedback, id, feedbackId, expectedRevision, input,
+      { title: detail.content.title, version: detail.versions.at(-1)?.sequence ?? 1 }, actor.id);
   });
 
   app.get("/api/contents/:id/word", async (request, reply) => {

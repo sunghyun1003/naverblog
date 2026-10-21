@@ -1,5 +1,7 @@
 import { DomainError } from "../domain/errors.js";
 import { createHash } from "node:crypto";
+import type { ComplianceFeedbackDocument } from "../../shared/compliance-feedback.js";
+import { emptyFeedback, feedbackDocumentSchema } from "./compliance-feedback.js";
 import { appliedImageIds, imageManifestKey, imageReviewAccepted, validImageSelection, type ImageSelection } from "./image-usage.js";
 
 export interface GitHubAutomationConfig {
@@ -799,6 +801,39 @@ export class GitHubAutomationService {
     const value = await this.readOptionalJson<AutomationSettings>("config/automation-settings.json") ?? defaultAutomationSettings;
     this.automationSettingsCache = { value, expiresAt: Date.now() + 60_000 };
     return value;
+  }
+
+  async getComplianceFeedback(contentId: string): Promise<ComplianceFeedbackDocument> {
+    return (await this.readComplianceFeedback(contentId)).value;
+  }
+
+  private async readComplianceFeedback(contentId: string): Promise<{ value: ComplianceFeedbackDocument; sha?: string }> {
+    if (!/^\d+$/.test(contentId)) throw new DomainError("INVALID_CONTENT_ID", "원고 번호가 올바르지 않습니다.", 400);
+    const response = await this.raw(`/contents/dashboard/compliance-feedback/${contentId}.json?ref=${encodeURIComponent(this.config.branch)}`);
+    if (response.status === 404) return { value: emptyFeedback(contentId) };
+    if (!response.ok) throw await this.githubError(response);
+    const file = await response.json() as GitHubFileResponse;
+    try {
+      const value = feedbackDocumentSchema.parse(JSON.parse(Buffer.from(file.content.replace(/\s/g, ""), "base64").toString("utf8")));
+      if (value.contentId !== contentId || file.encoding !== "base64") throw new Error("Invalid feedback document");
+      return { value, sha: file.sha };
+    } catch {
+      throw new DomainError("FEEDBACK_DATA_INVALID", "저장된 피드백을 읽지 못했습니다. 기존 기록을 보호하기 위해 저장을 중단했습니다.", 502);
+    }
+  }
+
+  async compareComplianceFeedback(value: ComplianceFeedbackDocument, expectedRevision: number): Promise<boolean> {
+    const current = await this.readComplianceFeedback(value.contentId);
+    if (current.value.revision !== expectedRevision) return false;
+    const response = await this.raw(`/contents/dashboard/compliance-feedback/${value.contentId}.json`, {
+      method: "PUT", body: JSON.stringify({ message: `dashboard: save compliance feedback for ${value.contentId}`,
+        branch: this.config.branch, ...(current.sha ? { sha: current.sha } : {}),
+        content: Buffer.from(`${JSON.stringify(value, null, 2)}\n`, "utf8").toString("base64") }),
+    });
+    if (response.status === 409 || response.status === 422) return false;
+    if (!response.ok) throw await this.githubError(response);
+    // Feedback is separate from article snapshots and never dispatches a rewrite.
+    return true;
   }
 
   async updateAutomationSettings(settings: AutomationSettings): Promise<AutomationSettings> {

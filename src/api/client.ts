@@ -1,6 +1,7 @@
 import type { ApiAutomationHistoryItem, ApiAutomationSettings, ApiCapabilities, ApiContent, ApiContentDetail, ApiContentList, ApiJob, ApiTrendItem, ApiTrendSnapshot, ApiTrendSummary, ApiUser, ApiWorkflowRun } from "./types";
 import { cachedRequest, withAbort, invalidateRuntimeCache, writeRuntimeCache, readRuntimeCache, clearRuntimeCache } from "./runtimeCache";
 import type { ComplianceFeedbackDocument, ComplianceFeedbackInput } from "../../shared/compliance-feedback";
+import type { PublicationRecordDocument, PublicationRecordInput } from "../../shared/publication-record";
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "";
 
@@ -598,6 +599,15 @@ export function markContentPublished(contentId: string, externalUrl = ""): Promi
     method: "POST",
     body: JSON.stringify({ externalUrl }),
   });
+}
+
+// Load only on demand; notes must not invalidate article caches or refetch the list.
+export function getPublicationRecord(contentId: string, signal?: AbortSignal): Promise<PublicationRecordDocument> {
+  return requestNetwork(`/api/contents/${encodeURIComponent(contentId)}/publication-record`, { signal });
+}
+export function savePublicationRecord(contentId: string, entryId: string, expectedRevision: number, input: PublicationRecordInput): Promise<PublicationRecordDocument> {
+  return requestNetwork(`/api/contents/${encodeURIComponent(contentId)}/publication-record/${encodeURIComponent(entryId)}`,
+    { method: "PUT", body: JSON.stringify({ expectedRevision, input }) });
 }
 
 export function cancelContentSchedule(contentId: string): Promise<{ content: ApiContent; mirrorSynced?: boolean }> {

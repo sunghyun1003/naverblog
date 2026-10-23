@@ -21,6 +21,7 @@ import { validApprovalNumber } from "../../shared/compliance-footer.js";
 import { ContentListLayouts } from "../services/content-list-layout.js";
 import { requirePermission } from "../domain/permissions.js";
 import { feedbackInputSchema, MemoryComplianceFeedbackStore, saveComplianceFeedback } from "../services/compliance-feedback.js";
+import { MemoryPublicationRecordStore, publicationRecordInputSchema, publicationRecordView, publicationUrlSchema, savePublicationRecord } from "../services/publication-record.js";
 
 const createContentSchema = z.object({
   title: z.string().trim().min(5).max(120),
@@ -48,11 +49,10 @@ const bulkDeleteSchema = z.object({
   ids: z.array(z.string().trim().min(1)).min(1).max(50),
 });
 const scheduleSchema = z.object({ scheduledAt: z.iso.datetime({ offset: true }) });
-const naverBlogUrlSchema = z.url().refine((value) => value.startsWith("https://blog.naver.com/"), "네이버 블로그 URL을 입력하세요.");
 // Publishing is performed manually in Naver. The URL is useful for traceability
 // but optional so an operator can mark a post complete immediately after
 // pasting it, even before copying the final Naver URL.
-const publicationSchema = z.object({ externalUrl: z.union([naverBlogUrlSchema, z.literal("")]).optional().default("") });
+const publicationSchema = z.object({ externalUrl: publicationUrlSchema.optional().default("") });
 const loginSchema = z.object({ username: z.string().min(1).max(100), password: z.string().min(1).max(200) });
 const generationSchema = z.object({
   topic: z.string().trim().max(120).default(""),
@@ -193,6 +193,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   const dashboardSync = snapshotStore ? new DashboardSync(system.repository, githubAutomation!) : null;
   const contentListLayouts = new ContentListLayouts(system.repository);
   const complianceFeedback = githubAutomation ?? new MemoryComplianceFeedbackStore();
+  const publicationRecords = githubAutomation ?? new MemoryPublicationRecordStore();
 
   async function snapshotOrLoad<T>(key: string, load: () => Promise<T>, force = false): Promise<T> {
     if (snapshotStore && !force) {
@@ -589,6 +590,27 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     if (detail.content.state === "deleted") throw new DomainError("CONTENT_NOT_FOUND", "삭제된 원고입니다.", 404);
     return saveComplianceFeedback(complianceFeedback, id, feedbackId, expectedRevision, input,
       { title: detail.content.title, version: detail.versions.at(-1)?.sequence ?? 1 }, actor.id);
+  });
+
+  async function publicationSource(id: string) {
+    // Read authoritative status before writes; never derive eligibility from a stale list.
+    if (githubAutomation) return githubAutomation.getPublishedPostUrl(id);
+    const detail = await system.contentService.detail(id);
+    if (!["published", "measured"].includes(detail.content.state)) throw new DomainError("CONTENT_NOT_PUBLISHED", "수동 발행 완료한 원고에서만 발행 기록을 관리할 수 있습니다.", 409);
+    return detail.publications.find(item => item.status === "published")?.externalUrl ?? null;
+  }
+  app.get("/api/contents/:id/publication-record", async request => {
+    const { id } = idParamsSchema.parse(request.params);
+    const [originalUrl, record] = await Promise.all([publicationSource(id), publicationRecords.getPublicationRecord(id)]);
+    return publicationRecordView(record, originalUrl);
+  });
+  app.put("/api/contents/:id/publication-record/:entryId", async request => {
+    const actor = actorFrom(request, auth?.verifyCookie(request.headers.cookie)?.username);
+    requirePermission(actor, "content:publish");
+    const { id, entryId } = z.object({ id: z.string().min(1), entryId: z.string().uuid() }).parse(request.params);
+    const { expectedRevision, input } = z.object({ expectedRevision: z.number().int().nonnegative(), input: publicationRecordInputSchema }).strict().parse(request.body);
+    const originalUrl = await publicationSource(id);
+    return savePublicationRecord(publicationRecords, id, entryId, expectedRevision, input, originalUrl, actor.id);
   });
 
   app.get("/api/contents/:id/word", async (request, reply) => {

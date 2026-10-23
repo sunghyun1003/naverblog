@@ -6,6 +6,7 @@ import type { ApiContent, ApiFreshness } from "../../api/types";
 import { Button } from "../../components/Button";
 import { StatusBadge } from "../../components/StatusBadge";
 import { mapContent } from "../../api/mapping";
+import { PublicationRecordPanel } from "./PublicationRecordPanel";
 
 const visible = (content: ApiContent) => ["review_ready", "approved", "scheduled", "published", "measured"].includes(content.state);
 const scheduleInput = (value: string | null) => value
@@ -96,6 +97,7 @@ export function SchedulePage() {
                 </div>
               </> : null}
               {(content.state === "published" || content.state === "measured") && content.publishedAt ? <p className="published-link">발행 기록 {new Date(content.publishedAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })} (한국 시간)</p> : null}
+              {content.state === "published" || content.state === "measured" ? <PublicationRecordPanel contentId={content.id} /> : null}
             </article>
           );
         })}

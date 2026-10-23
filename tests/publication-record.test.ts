@@ -47,6 +47,25 @@ test("only safe desktop/mobile NAVER HTTPS links are accepted", () => {
   for (const value of ["javascript:alert(1)", "http://blog.naver.com/a", "https://blog.naver.com.evil.com/a", "https://blog.naver.com@evil.com/a", "https://evil.com/a", "https://blog.naver.com/", "https://user:pw@blog.naver.com/a", "https://blog.naver.com:8080/a"]) assert.equal(isNaverBlogUrl(value), false, value);
 });
 
+test("multibyte URLs and notes cannot create an unreadably large GitHub record", async () => {
+  const store = new MemoryPublicationRecordStore();
+  const externalUrl = 'https://blog.naver.com/' + '가'.repeat(2000);
+  const input = { externalUrl, note: '나'.repeat(2000) };
+  let revision = 0;
+  while (revision < 100) {
+    try {
+      const saved = await savePublicationRecord(store, "123", randomUUID(), revision, input, null, "publisher");
+      revision = saved.revision;
+      assert.ok(Buffer.byteLength(JSON.stringify(saved, null, 2) + '\n', 'utf8') <= 900_000);
+    } catch (error) {
+      assert.equal((error as { code: string }).code, "PUBLICATION_RECORD_LIMIT");
+      break;
+    }
+  }
+  assert.ok(revision > 50 && revision < 100);
+  assert.equal((await store.getPublicationRecord("123")).entries.length, revision);
+});
+
 test("API publication notes preserve all manuscript data, require publication permission, and reject invalid states", async t => {
   const system = testSystem();
   const content = await system.contentService.create({ title: "자동차보험 발행 기록 테스트", topic: "자동차보험", strategy: "original", idempotencyKey: "publication-record" }, { id: "a", roles: ["admin"] });

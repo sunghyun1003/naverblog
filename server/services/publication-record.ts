@@ -31,10 +31,11 @@ export async function savePublicationRecord(store: PublicationRecordStore, conte
   }
   if (current.revision !== expectedRevision) throw conflict();
   if (!input.note && externalUrl === current.externalUrl) return current;
-  // Keep even maximum-length Korean notes below the Contents API's inline file limit.
   if (current.entries.length >= 100) throw new DomainError("PUBLICATION_RECORD_LIMIT", "발행 기록이 100개에 도달했습니다. 기존 기록은 보존됩니다.", 422);
   const next: PublicationRecordDocument = { ...current, revision: current.revision + 1, externalUrl,
     entries: [...current.entries, { id: entryId, externalUrl, note: input.note, recordedAt: new Date().toISOString(), recordedBy: actor }] };
+  // URLs can also contain multibyte Korean text. Bound actual bytes, not just characters.
+  if (Buffer.byteLength(`${JSON.stringify(next, null, 2)}\n`, "utf8") > 900_000) throw new DomainError("PUBLICATION_RECORD_LIMIT", "발행 기록의 저장 용량에 도달했습니다. 기존 기록은 보존됩니다.", 422);
   if (!await store.comparePublicationRecord(next, current.revision)) throw conflict();
   return next;
 }

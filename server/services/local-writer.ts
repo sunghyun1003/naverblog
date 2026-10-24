@@ -2,16 +2,17 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { DomainError } from "../domain/errors.js";
 import type { AutomationRepository } from "../repositories/contracts.js";
 import type { NaverTransfer } from "./naver-transfer.js";
+import type { NaverCategory } from "../../shared/naver-writer-target.js";
 
 export type WriterStatus = "queued" | "running" | "needs_check" | "saved" | "cancelled";
 interface WriterJob {
   id: string; contentId: string; title: string; fingerprint: string;
-  blogId: string; status: WriterStatus; updatedAt: number;
+  blogId: string; category?: NaverCategory; status: WriterStatus; updatedAt: number;
   message: string; leaseHash?: string; payload?: NaverTransfer;
 }
 interface WriterState {
-  pairing?: { hash: string; expiresAt: number; blogId: string };
-  device?: { tokenHash: string; blogId: string; lastSeen: number };
+  pairing?: { hash: string; expiresAt: number; blogId: string; category?: NaverCategory };
+  device?: { tokenHash: string; blogId: string; category?: NaverCategory; lastSeen: number; protocolVersion?: number };
   jobs: WriterJob[];
   // Only compact receipts survive history pruning; sending an unchanged article
   // twice never creates another Naver draft, even after many later jobs.
@@ -25,6 +26,7 @@ const onlineMs = 90_000;
 const leaseMs = 120_000;
 export const publicWriterJob = (job: WriterJob) => ({
   id: job.id, contentId: job.contentId, title: job.title, blogId: job.blogId,
+  category: job.category ?? null,
   status: job.status, updatedAt: job.updatedAt, message: job.message,
 });
 
@@ -63,16 +65,18 @@ export class LocalWriter {
     return this.change(state => ({
       connected: Boolean(state.device), online: Boolean(state.device && this.now() - state.device.lastSeen < onlineMs),
       blogId: state.device?.blogId ?? null,
+      category: state.device?.category ?? null,
+      helperCompatible: !state.device?.category || (state.device.protocolVersion ?? 1) >= 2,
       jobs: state.jobs.filter(job => !contentId || job.contentId === contentId).map(publicWriterJob),
       blockingJob: state.jobs.filter(job => ["queued", "running", "needs_check"].includes(job.status)).map(publicWriterJob)[0] ?? null,
     }));
   }
 
-  async createPairing(blogId: string) {
+  async createPairing(blogId: string, category?: NaverCategory) {
     const code = secret();
     return this.change(state => {
       if (state.jobs.some(j => ["running", "queued", "needs_check"].includes(j.status))) return fail("WRITER_ACTIVE", "진행 중인 작업을 먼저 확인해주세요.");
-      state.pairing = { hash: hash(code), expiresAt: this.now() + 600_000, blogId };
+      state.pairing = { hash: hash(code), expiresAt: this.now() + 600_000, blogId, ...(category ? { category: { ...category } } : {}) };
       return { code, expiresAt: state.pairing.expiresAt };
     });
   }
@@ -83,15 +87,22 @@ export class LocalWriter {
       if (!state.pairing || state.pairing.expiresAt < this.now() || !equal(code, state.pairing.hash)) return fail("PAIRING_INVALID", "연결 코드가 만료되었거나 올바르지 않습니다.", 401);
       if (state.jobs.some(j => ["running", "queued", "needs_check"].includes(j.status))) return fail("WRITER_ACTIVE", "진행 중인 작업을 먼저 확인해주세요.");
       const blogId = state.pairing.blogId;
-      state.device = { tokenHash: hash(token), blogId, lastSeen: 0 };
+      const category = state.pairing.category;
+      state.device = { tokenHash: hash(token), blogId, lastSeen: 0, ...(category ? { category } : {}) };
       delete state.pairing;
-      return { token, blogId };
+      return { token, blogId, profileVersion: 2, ...(category ? { category } : {}) };
     });
   }
 
-  async enqueue(payload: NaverTransfer) {
+  async enqueue(payload: NaverTransfer, target?: { blogId: string; categoryId: string | null }) {
     return this.change(state => {
       if (!state.device || this.now() - state.device.lastSeen >= onlineMs) return fail("WRITER_OFFLINE", "Windows PC에서 도우미를 실행한 뒤 다시 눌러주세요.");
+      if (state.device.category && (state.device.protocolVersion ?? 1) < 2) return fail("WRITER_UPDATE_REQUIRED", "카테고리 지정에 맞게 PC 도우미를 업데이트하고 다시 실행해주세요.");
+      if ((state.device.category && !target) || (target && (target.blogId !== state.device.blogId || target.categoryId !== (state.device.category?.id ?? null)))) {
+        return fail("WRITER_TARGET_CHANGED", "연결된 블로그·카테고리가 바뀌었습니다. 연결 화면을 다시 열고 전송 대상을 확인해주세요.");
+      }
+      // Keep legacy receipt keys: changing a category must not silently duplicate
+      // an unchanged article already saved to the same blog.
       const fingerprint = hash(`${state.device.blogId}:${payload.fingerprint}`);
       const previous = state.receipts[fingerprint];
       if (previous) {
@@ -101,21 +112,25 @@ export class LocalWriter {
       }
       if (state.jobs.some(j => ["queued", "running", "needs_check"].includes(j.status))) return fail("WRITER_ACTIVE", "이전 임시저장 작업을 먼저 확인해주세요.");
       const job: WriterJob = { id: secret(), contentId: payload.contentId, title: payload.title, fingerprint,
-        blogId: state.device.blogId, status: "queued", updatedAt: this.now(), message: "PC에서 작업을 받는 중입니다.", payload };
+        blogId: state.device.blogId, ...(state.device.category ? { category: { ...state.device.category } } : {}),
+        status: "queued", updatedAt: this.now(), message: "PC에서 작업을 받는 중입니다.", payload };
       state.jobs = [...state.jobs.slice(-19), job];
       state.receipts[fingerprint] = job.id;
       return publicWriterJob(job);
     });
   }
 
-  async poll(token: string) {
+  async poll(token: string, protocolVersion = 1) {
     const lease = secret();
     return this.change(state => {
-      this.device(state, token).lastSeen = this.now();
+      const device = this.device(state, token);
+      device.lastSeen = this.now();
+      device.protocolVersion = protocolVersion;
       // Interrupted external actions must NEVER be automatically replayed.
       if (state.jobs.some(j => ["running", "needs_check"].includes(j.status))) return { job: null };
       const job = state.jobs.find(j => j.status === "queued");
       if (!job) return { job: null };
+      if (job.category && protocolVersion < 2) return { job: null };
       job.status = "running"; job.updatedAt = this.now(); job.leaseHash = hash(lease);
       job.message = "Windows PC에서 네이버 임시저장을 준비하고 있습니다.";
       return { job: { ...publicWriterJob(job), payload: job.payload!, lease } };

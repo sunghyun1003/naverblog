@@ -202,3 +202,68 @@ test("Postgres 작업 할당은 팀과 이전 revision 모두가 일치해야 �
   assert.match(calls[2]!.sql, /WHERE team_id=\$1 AND revision=\$2/);
   assert.deepEqual(calls[2]!.args.slice(0, 2), ["carrot-company", 7]);
 });
+
+test("새 블로그 연결은 이전 토큰을 폐기하고 카테고리를 PC와 작업에 전달한다", async () => {
+  const { writer, device: old } = await fixture();
+  const pairing = await writer.createPairing("hanwhains_carrot", { id: "63", name: "자동차보험" });
+  const device = await writer.pair(pairing.code);
+  assert.equal(device.profileVersion, 2);
+  assert.deepEqual(device.category, { id: "63", name: "자동차보험" });
+  await assert.rejects(() => writer.poll(old.token, 2), /연결을 다시/);
+  await writer.poll(device.token, 2);
+  assert.equal((await writer.status()).helperCompatible, true);
+  assert.equal((await writer.status()).blogId, "hanwhains_carrot");
+  const job = await writer.enqueue(naverTransfer(example()), { blogId: device.blogId, categoryId: "63" });
+  assert.deepEqual(job.category, device.category);
+  assert.equal((await writer.poll(device.token, 2)).job?.blogId, "hanwhains_carrot");
+});
+
+test("구형 도우미는 카테고리 작업을 잘못 처리할 수 없고, 설정 화면 조회는 전송하지 않는다", async () => {
+  const { writer } = await fixture();
+  const pairing = await writer.createPairing("hanwhains_carrot", { id: "63", name: "자동차보험" });
+  const device = await writer.pair(pairing.code);
+  await writer.poll(device.token);
+  assert.equal((await writer.status()).helperCompatible, false);
+  await assert.rejects(() => writer.enqueue(naverTransfer(example())), /업데이트/);
+  await writer.poll(device.token, 2);
+  assert.equal((await writer.status()).jobs.length, 0);
+  await assert.rejects(() => writer.enqueue(naverTransfer(example())), /연결 화면/);
+  await assert.rejects(() => writer.enqueue(naverTransfer(example()), { blogId: "my_blog", categoryId: "63" }), /연결 화면/);
+  await assert.rejects(() => writer.enqueue(naverTransfer(example()), { blogId: device.blogId, categoryId: "64" }), /연결 화면/);
+  const job = await writer.enqueue(naverTransfer(example()), { blogId: device.blogId, categoryId: "63" });
+  assert.equal((await writer.poll(device.token)).job, null);
+  assert.equal((await writer.poll(device.token, 2)).job?.id, job.id);
+});
+
+test("계정 교체는 기존 영수증을 보존하고 카테고리 변경으로 동일 원고를 중복 생성하지 않는다", async () => {
+  const { writer, device } = await fixture();
+  const payload = naverTransfer(example());
+  const old = await writer.enqueue(payload);
+  const claim = (await writer.poll(device.token)).job!;
+  await writer.report(device.token, claim.id, claim.lease, "saved", "저장 검증 완료");
+  const categoryPair = await writer.createPairing("my_blog", { id: "63", name: "자동차보험" });
+  const categoryDevice = await writer.pair(categoryPair.code);
+  await writer.poll(categoryDevice.token, 2);
+  assert.equal((await writer.enqueue(payload, { blogId: categoryDevice.blogId, categoryId: "63" })).id, old.id);
+  const newPair = await writer.createPairing("hanwhains_carrot", { id: "63", name: "자동차보험" });
+  const newDevice = await writer.pair(newPair.code);
+  await writer.poll(newDevice.token, 2);
+  assert.notEqual((await writer.enqueue(payload, { blogId: newDevice.blogId, categoryId: "63" })).id, old.id);
+  assert.equal((await writer.status()).jobs.find(j => j.id === old.id)?.status, "saved");
+});
+
+test("카테고리 HTTP 연결은 유효한 번호·이름만 허용한다", async () => {
+  const auth = new SessionAuthService({ username: "tester", password: "test-password", sessionSecret: "test-secret-only", secureCookie: false });
+  const app = buildApp({ auth });
+  const headers = { cookie: auth.sessionCookie({ username: "tester", expiresAt: Date.now() + 100000 }), "x-requested-with": "dashboard" };
+  try {
+    for (const category of [{ id: "63&blogId=other", name: "자동차보험" }, { id: "63", name: "" }, { id: 63, name: "자동차보험" }]) {
+      assert.equal((await app.inject({ method: "POST", url: "/api/local-writer/pairing", headers, payload: { blogId: "hanwhains_carrot", category } })).statusCode, 400);
+    }
+    const pairing = await app.inject({ method: "POST", url: "/api/local-writer/pairing", headers, payload: { blogId: "https://blog.naver.com/hanwhains_carrot", category: { id: "63", name: "자동차보험" } } });
+    assert.equal(pairing.statusCode, 200);
+    const device = await app.inject({ method: "POST", url: "/api/local-writer/worker/pair", payload: { code: pairing.json().code } });
+    assert.deepEqual(device.json().category, { id: "63", name: "자동차보험" });
+    assert.equal(device.json().blogId, "hanwhains_carrot");
+  } finally { await app.close(); }
+});

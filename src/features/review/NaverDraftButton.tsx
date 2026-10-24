@@ -5,6 +5,7 @@ import { Button } from "../../components/Button";
 import { Modal } from "../../components/Modal";
 import { getNaverWriter, pairNaverWriter, resolveNaverDraft, revokeNaverWriter, sendNaverDraft, type NaverWriterStatus } from "../../api/client";
 import "./naver-writer.css";
+import { DEFAULT_NAVER_BLOG_ID, DEFAULT_NAVER_CATEGORY } from "../../../shared/naver-writer-target";
 
 export function NaverDraftButton({ contentId, versionId, disabled }: { contentId: string; versionId: string; disabled: boolean }) {
   const [open, setOpen] = useState(false);
@@ -12,9 +13,11 @@ export function NaverDraftButton({ contentId, versionId, disabled }: { contentId
   const working = useRef(false);
   const [status, setStatus] = useState<NaverWriterStatus | null>(null);
   const [error, setError] = useState("");
-  const [blogId, setBlogId] = useState("https://blog.naver.com/cest_la_mode");
+  const [blogId, setBlogId] = useState(`https://blog.naver.com/${DEFAULT_NAVER_BLOG_ID}`);
+  const [categoryName, setCategoryName] = useState<string>(DEFAULT_NAVER_CATEGORY.name);
+  const [categoryId, setCategoryId] = useState<string>(DEFAULT_NAVER_CATEGORY.id);
   const [pairing, setPairing] = useState<{ code: string; expiresAt: number } | null>(null);
-  const job = status?.jobs.at(-1);
+  const job = status?.jobs.filter(item => item.blogId === status.blogId).at(-1);
 
   // No background polling or extra requests on normal page load. Poll only this
   // lightweight status while the user has this dialog open, without overlapping.
@@ -40,7 +43,8 @@ export function NaverDraftButton({ contentId, versionId, disabled }: { contentId
   }
 
   async function send() {
-    await sendNaverDraft(contentId, versionId);
+    if (!status?.blogId) throw new Error("연결된 블로그를 먼저 확인해주세요.");
+    await sendNaverDraft(contentId, versionId, { blogId: status.blogId, categoryId: status.category?.id ?? null });
     setStatus(await getNaverWriter(contentId));
   }
   function begin() {
@@ -48,7 +52,7 @@ export function NaverDraftButton({ contentId, versionId, disabled }: { contentId
     void act(async () => {
       const next = await getNaverWriter(contentId);
       setStatus(next);
-      if (next.connected && next.online) await send();
+      // Opening connection settings must never enqueue work to the old account.
     });
   }
 
@@ -64,7 +68,9 @@ export function NaverDraftButton({ contentId, versionId, disabled }: { contentId
             먼저 확인할 작업: <a href={`/contents/${encodeURIComponent(status.blockingJob.contentId)}`}>{status.blockingJob.title}</a>
           </p> : null}
           {status.connected ? <>
-            <p><strong>{status.blogId}</strong> · 카테고리 기본값 · {status.online ? "PC 도우미 실행 중" : "PC 도우미 꺼짐"}</p>
+            <p><strong>{status.blogId}</strong> · {status.category ? `요청 카테고리: ${status.category.name} (${status.category.id})` : "카테고리 기본값"} · {status.online ? "PC 도우미 실행 중" : "PC 도우미 꺼짐"}</p>
+            {status.helperCompatible === false ? <p role="alert">PC 도우미를 업데이트하고 다시 실행해야 카테고리를 지정할 수 있습니다.</p> : null}
+            {status.category ? <small>해당 카테고리의 글쓰기 화면으로 입력합니다. 임시저장 완료는 제목·본문·이미지 검증 결과이며, 최종 카테고리는 직접 발행하기 전에 네이버에서 확인해주세요.</small> : null}
             {!status.online ? <p>Windows PC에서 <code>npm run writer:start</code>를 실행해주세요. PC가 꺼져 있으면 나중에 자동 실행하지 않습니다.</p> : null}
           </> : null}
             {job ? <section className="naver-writer__status" aria-live="polite">
@@ -84,7 +90,7 @@ export function NaverDraftButton({ contentId, versionId, disabled }: { contentId
             </section> : null}
           {status.connected ? <>
             <div className="naver-writer__actions">
-              <Button variant="brand" disabled={busy || !status.online || job?.status === "running" || job?.status === "queued" || job?.status === "needs_check"} onClick={() => void act(send)}>{busy ? "처리 중…" : "현재 원고 보내기"}</Button>
+              <Button variant="brand" disabled={busy || !status.online || status.helperCompatible === false || Boolean(status.blockingJob)} onClick={() => void act(send)}>{busy ? "처리 중…" : "이 블로그로 현재 원고 보내기"}</Button>
               <Button disabled={busy} onClick={() => {
                 if (window.confirm("PC 연결을 해제할까요? 이미 네이버에 입력한 글은 삭제하지 않습니다.")) void act(async () => { await revokeNaverWriter(); setStatus(await getNaverWriter(contentId)); });
               }}>PC 연결 해제</Button>
@@ -92,8 +98,12 @@ export function NaverDraftButton({ contentId, versionId, disabled }: { contentId
           </> : <>
             <p>처음 한 번만 PC 도우미와 블로그를 연결합니다. 네이버 비밀번호는 도우미 브라우저에 직접 입력하며 서버로 보내지 않습니다.</p>
             <label className="field"><span className="field__label">네이버 블로그 주소 또는 블로그 ID</span>
-              <input value={blogId} onChange={e => setBlogId(e.target.value)} placeholder="https://blog.naver.com/블로그ID" autoComplete="off" /></label>
-            <Button disabled={busy || !blogId.trim()} onClick={() => void act(async () => setPairing(await pairNaverWriter(blogId)))}>PC 연결 코드 만들기</Button>
+              <input value={blogId} onChange={e => { setBlogId(e.target.value); setPairing(null); setCategoryId(""); setCategoryName(""); }} placeholder="https://blog.naver.com/블로그ID" autoComplete="off" /></label>
+            <label className="field"><span className="field__label">카테고리명 · 기본값 사용 시 비워두기</span>
+              <input value={categoryName} onChange={e => { setCategoryName(e.target.value); setPairing(null); }} maxLength={100} autoComplete="off" /></label>
+            <label className="field"><span className="field__label">카테고리 번호 · 네이버 카테고리 주소의 categoryNo</span>
+              <input value={categoryId} onChange={e => { setCategoryId(e.target.value); setPairing(null); }} inputMode="numeric" maxLength={9} autoComplete="off" /></label>
+            <Button disabled={busy || !blogId.trim() || (Boolean(categoryName.trim()) !== Boolean(categoryId.trim())) || (Boolean(categoryId.trim()) && !/^[1-9][0-9]{0,8}$/.test(categoryId.trim()))} onClick={() => void act(async () => setPairing(await pairNaverWriter(blogId, categoryId.trim() ? { id: categoryId.trim(), name: categoryName.trim() } : undefined)))}>PC 연결 코드 만들기</Button>
             {pairing ? <label className="field"><span className="field__label">1회용 연결 코드 · 10분 뒤 만료</span><textarea readOnly value={pairing.code} rows={3} onFocus={e => e.target.select()} /><small>PC의 연결 코드 입력란에만 붙여넣으세요. 채팅이나 GitHub에 올리지 마세요.</small></label> : null}
             <ol><li>프로젝트 폴더의 PowerShell에서 <code>npm run writer:setup</code></li>
               <li><code>npm run writer:pair</code> 실행 → 위 연결 코드 입력</li>

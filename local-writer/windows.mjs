@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { mkdir, readFile, writeFile, open, unlink } from "node:fs/promises";
 import path from "node:path";
+import { validateTarget } from "./target.mjs";
 
 export function writerDirectory() {
   if (process.platform !== "win32" || !process.env.LOCALAPPDATA) throw new Error("이 도우미는 Windows PC용입니다.");
@@ -26,8 +27,8 @@ export async function loadDevice() {
   const encrypted = await readFile(path.join(writerDirectory(), "device.dpapi"), "utf8").catch(() => { throw new Error("먼저 npm run writer:pair 로 PC를 연결해주세요."); });
   const plaintext = await powershell("$ErrorActionPreference='Stop'; $value=[Console]::In.ReadToEnd() | ConvertTo-SecureString; $ptr=[Runtime.InteropServices.Marshal]::SecureStringToBSTR($value); try { [Console]::Out.Write([Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr)) } finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr) }", encrypted);
   const device = JSON.parse(plaintext);
-  if (!/^[a-f0-9]{64}$/.test(device.token) || !/^[a-zA-Z0-9_-]{2,50}$/.test(device.blogId)) throw new Error("PC 연결을 다시 설정해주세요.");
-  return device;
+  if (!/^[a-f0-9]{64}$/.test(device.token)) throw new Error("PC 연결을 다시 설정해주세요.");
+  return validateTarget(device);
 }
 export async function acquireLock() {
   await mkdir(writerDirectory(), { recursive: true });

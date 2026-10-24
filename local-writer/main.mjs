@@ -8,6 +8,7 @@ import { chromium } from "playwright";
 import { writerDirectory, loadDevice, saveDevice, acquireLock } from "./windows.mjs";
 import { transferPlan, previewHtml } from "./document.mjs";
 import { writeNaverDraft } from "./naver-editor.mjs";
+import { validateTarget, writeUrl, editorBlogId, sameTarget, profileParts, categoryDescription } from "./target.mjs";
 
 // Intentionally fixed destination; never send the device credential to an URL
 // supplied by a job, a redirect, an image manifest or a command-line argument.
@@ -42,8 +43,8 @@ const prompt = async message => {
   try { return (await input.question(message)).trim(); } finally { input.close(); }
 };
 
-async function browser() {
-  return chromium.launchPersistentContext(path.join(writerDirectory(), "naver-profile"), {
+async function browser(device) {
+  return chromium.launchPersistentContext(path.join(writerDirectory(), ...profileParts(device)), {
     channel: "chrome", headless: false, viewport: { width: 1280, height: 900 },
     acceptDownloads: false,
   });
@@ -71,6 +72,7 @@ async function runJob(context, device, job, isStopping) {
   })();
   heartbeat.catch(() => {});
   try {
+    if (!sameTarget(device, job)) throw new Error("PC에 연결한 블로그·카테고리와 전송 대상이 다릅니다. 다시 연결해주세요.");
     const plan = transferPlan(job.payload);
     const images = new Map();
     for (const asset of job.payload.assets) {
@@ -121,37 +123,40 @@ async function main() {
       const code = await prompt("대시보드의 1회용 PC 연결 코드: ");
       if (!/^[a-f0-9]{64}$/.test(code)) throw new Error("연결 코드 형식이 올바르지 않습니다.");
       const device = await api("pair", { code });
+      validateTarget(device);
       await saveDevice(device);
-      process.stdout.write(`PC 연결 완료: ${device.blogId}. 다음: npm run writer:login\n`);
+      process.stdout.write(`PC 연결 완료: ${device.blogId} · ${categoryDescription(device)}. 다음: npm run writer:login\n`);
       return;
     }
     // Allow first login before the dashboard release/pairing is available.
     const loginBlog = command === "login" ? process.argv[3] : undefined;
-    if (loginBlog && !/^[a-zA-Z0-9_-]{2,50}$/.test(loginBlog)) throw new Error("블로그 ID 형식이 올바르지 않습니다.");
-    const device = loginBlog ? { blogId: loginBlog } : await loadDevice();
+    const loginCategoryId = command === "login" ? process.argv[4] : undefined;
+    const loginCategoryName = command === "login" ? process.argv[5] : undefined;
+    if (Boolean(loginCategoryId) !== Boolean(loginCategoryName)) throw new Error("카테고리 번호와 이름을 함께 입력해주세요.");
+    const device = validateTarget(loginBlog ? { blogId: loginBlog, profileVersion: 2,
+      ...(loginCategoryId ? { category: { id: loginCategoryId, name: loginCategoryName } } : {}) } : await loadDevice());
     if (command === "login") {
-      context = await browser();
+      context = await browser(device);
       const page = await context.newPage();
-      await page.goto(`https://blog.naver.com/PostWriteForm.naver?blogId=${encodeURIComponent(device.blogId)}`);
+      await page.goto(writeUrl(device));
       process.stdout.write(`전용 브라우저에서 직접 로그인하고 대상 블로그(${device.blogId})를 확인하세요. 캡차/추가 인증도 직접 완료해주세요.\n`);
       await prompt("로그인을 마쳤다면 Enter (비밀번호를 여기에 입력하지 마세요): ");
       let editorOpen = false;
       for (const tab of context.pages()) {
-        const url = new URL(tab.url());
-        if (url.origin === "https://blog.naver.com" && url.searchParams.get("blogId") === device.blogId
+        if (editorBlogId(tab.url()) === device.blogId
           && await tab.locator(".se-documentTitle .se-text-paragraph").isVisible()) editorOpen = true;
       }
       if (!editorOpen) throw new Error("전용 브라우저가 아직 네이버 로그인 화면입니다. 로그인 완료 후 다시 시도해주세요.");
       process.stdout.write("브라우저 로그인 상태를 PC에 보관했습니다. 다음: npm run writer:start\n");
       return;
     }
-    process.stdout.write(`PC 도우미 실행 중: ${device.blogId} · 기본 카테고리 · 임시저장만. 종료: Ctrl+C\n`);
+    process.stdout.write(`PC 도우미 실행 중: ${device.blogId} · ${categoryDescription(device)} · 임시저장만. 종료: Ctrl+C\n`);
     while (!exiting) {
       try {
-        const { job } = await api("poll", {}, device.token);
+        const { job } = await api("poll", { protocolVersion: 2 }, device.token);
         if (job) {
           if (!context) {
-            context = await browser();
+            context = await browser(device);
             context.on("close", () => { context = undefined; });
           }
           await runJob(context, device, job, () => exiting);

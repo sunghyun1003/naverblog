@@ -11,6 +11,10 @@ const codeSchema = z.string().regex(/^[a-f0-9]{64}$/);
 const jobSchema = z.object({ jobId: codeSchema });
 const blogSchema = z.string().trim().transform(value => value.replace(/^https:\/\/blog\.naver\.com\//, "").replace(/\/$/, ""))
   .pipe(z.string().regex(/^[a-zA-Z0-9_-]{2,50}$/, "블로그 주소 또는 블로그 ID를 입력해주세요."));
+const categorySchema = z.object({
+  id: z.string().regex(/^[1-9][0-9]{0,8}$/, "카테고리 번호를 확인해주세요."),
+  name: z.string().trim().min(1).max(100).refine(value => !/[\u0000-\u001f\u007f]/.test(value), "카테고리명을 확인해주세요."),
+});
 function token(request: FastifyRequest): string {
   const value = request.headers.authorization?.match(/^Bearer ([a-f0-9]{64})$/)?.[1];
   if (!value) throw new DomainError("WRITER_UNAUTHORIZED", "PC 연결 인증이 필요합니다.", 401);
@@ -33,18 +37,20 @@ export function registerLocalWriterRoutes(app: FastifyInstance, options: {
     return writer.status(query.contentId);
   });
   app.post("/api/local-writer/pairing", async request => {
-    const body = z.object({ blogId: blogSchema }).parse(request.body);
-    return writer.createPairing(body.blogId);
+    const body = z.object({ blogId: blogSchema, category: categorySchema.optional() }).parse(request.body);
+    return writer.createPairing(body.blogId, body.category);
   });
   app.post("/api/local-writer/revoke", () => writer.revoke());
   app.post("/api/contents/:id/naver-draft", async request => {
     const { id } = z.object({ id: z.string().min(1).max(100) }).parse(request.params);
-    const { versionId } = z.object({ versionId: z.string().min(1).max(200) }).parse(request.body);
+    const { versionId, target } = z.object({ versionId: z.string().min(1).max(200),
+      target: z.object({ blogId: blogSchema, categoryId: z.string().regex(/^[1-9][0-9]{0,8}$/).nullable() }).optional(),
+    }).parse(request.body);
     // Do not make an expensive GitHub call when the PC isn't even available.
     if (!(await writer.status()).online) throw new DomainError("WRITER_OFFLINE", "Windows PC에서 도우미를 실행해주세요.", 409);
     const payload = naverTransfer(await options.detail(id));
     if (payload.versionId !== versionId) throw new DomainError("DRAFT_CHANGED", "원고가 변경되었습니다. 새로고침한 뒤 다시 보내주세요.", 409);
-    return writer.enqueue(payload);
+    return writer.enqueue(payload, target);
   });
   app.post("/api/local-writer/resolve", async request => {
     const { jobId, saved } = jobSchema.extend({ saved: z.boolean() }).parse(request.body);
@@ -54,7 +60,10 @@ export function registerLocalWriterRoutes(app: FastifyInstance, options: {
     const { code } = z.object({ code: codeSchema }).parse(request.body);
     return writer.pair(code);
   });
-  app.post("/api/local-writer/worker/poll", request => writer.poll(token(request)));
+  app.post("/api/local-writer/worker/poll", request => {
+    const body = z.object({ protocolVersion: z.number().int().min(1).max(2).default(1) }).parse(request.body ?? {});
+    return writer.poll(token(request), body.protocolVersion);
+  });
   app.post("/api/local-writer/worker/report", async request => {
     const body = jobSchema.extend({ lease: codeSchema, status: z.enum(["running", "needs_check", "saved"]), message: z.string().trim().min(1).max(400) }).parse(request.body);
     return writer.report(token(request), body.jobId, body.lease, body.status, body.message);

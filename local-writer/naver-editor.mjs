@@ -1,9 +1,9 @@
 // Conservative UI adapter. No private Naver API, cookie extraction, stealth,
 // CAPTCHA handling or publication operation. Editor changes fail closed.
 import { escapeHtml, assertDocumentOrder, generatedImageCaption } from "./document.mjs";
+import { writeUrl, editorBlogId, categoryListUrl, assertCategoryLink } from "./target.mjs";
 
 const normal = value => value.replace(/\s+/g, "").normalize("NFC");
-const writeUrl = blogId => `https://blog.naver.com/PostWriteForm.naver?blogId=${encodeURIComponent(blogId)}`;
 const imageKey = src => { const url = new URL(src); return url.origin + url.pathname; };
 const readOrder = container => container.locator(".se-component:not(.se-documentTitle)").evaluateAll(elements => elements.map(el => el.classList.contains("se-image")
   ? { kind: "image" } : { kind: "text", text: [...el.querySelectorAll(".__se-node")].map(node => node.textContent ?? "").join("") }));
@@ -30,10 +30,11 @@ export async function loadedEditorImages(frame, count) {
 export async function verifySavedDraft(context, job, expectedOrder, uploadedImages) {
   const page = await context.newPage();
   page.setDefaultTimeout(15_000);
-  await page.goto(writeUrl(job.blogId), { waitUntil: "domcontentloaded" });
+  // Read back without a category parameter: a requested URL is not proof of
+  // the saved draft's category. Never open publication controls to verify it.
+  await page.goto(writeUrl(job, false), { waitUntil: "domcontentloaded" });
   await page.waitForLoadState("networkidle", { timeout: 15_000 });
-  const url = new URL(page.url());
-  if (url.origin !== "https://blog.naver.com" || url.searchParams.get("blogId") !== job.blogId) throw new Error("저장 결과를 확인할 블로그에 접근하지 못했습니다.");
+  if (editorBlogId(page.url()) !== job.blogId) throw new Error("저장 결과를 확인할 블로그에 접근하지 못했습니다.");
   await page.locator(".se-documentTitle").waitFor({ state: "visible" });
   if (await page.getByText("작성 중인 글이 있습니다.", { exact: true }).isVisible()) throw new Error("다시 열린 편집기에 복구할 내용이 있습니다. 기존 입력을 건드리지 않고 저장 결과 확인을 멈췄습니다.");
   await page.getByRole("button", { name: /임시저장된 글 보기/ }).click();
@@ -51,20 +52,24 @@ export async function verifySavedDraft(context, job, expectedOrder, uploadedImag
 }
 
 export async function writeNaverDraft(context, job, plan, images, report) {
-  if (context.pages().some(tab => {
-    const url = new URL(tab.url());
-    return url.origin === "https://blog.naver.com" && url.pathname === "/PostWriteForm.naver";
-  })) throw new Error("전용 브라우저에 이전 네이버 편집기가 열려 있습니다. 해당 글을 확인하고 편집기 탭을 닫은 뒤 다시 요청해주세요. 기존 내용은 건드리지 않았습니다.");
+  if (context.pages().some(tab => editorBlogId(tab.url()) !== null)) throw new Error("전용 브라우저에 이전 네이버 편집기가 열려 있습니다. 해당 글을 확인하고 편집기 탭을 닫은 뒤 다시 요청해주세요. 기존 내용은 건드리지 않았습니다.");
   const page = await context.newPage();
   page.setDefaultTimeout(15_000);
   // Login and security challenges are intentionally left to the account owner.
-  await page.goto(writeUrl(job.blogId), { waitUntil: "domcontentloaded" });
+  if (job.category) {
+    await page.goto(categoryListUrl(job), { waitUntil: "domcontentloaded" });
+    // Observed 2026-10-24 on the target blog: a#category63 is the sidebar
+    // category link. If Naver changes it, stop before inserting any manuscript.
+    const categoryLink = page.locator(`a#category${job.category.id}`);
+    await categoryLink.waitFor({ state: "attached" });
+    assertCategoryLink(job, await categoryLink.textContent(), await categoryLink.getAttribute("href"));
+  }
+  await page.goto(writeUrl(job), { waitUntil: "domcontentloaded" });
   await page.waitForLoadState("networkidle", { timeout: 15_000 });
   if (new URL(page.url()).hostname !== "blog.naver.com") throw new Error("네이버 로그인이 필요합니다. 도우미 브라우저에서 직접 로그인해주세요.");
   const findEditor = async () => {
     for (const frame of page.frames()) {
-      const url = new URL(frame.url());
-      if (url.origin !== "https://blog.naver.com" || url.searchParams.get("blogId") !== job.blogId) continue;
+      if (editorBlogId(frame.url()) !== job.blogId) continue;
       if (await frame.locator(".se-documentTitle .se-text-paragraph").count() === 1) return frame;
     }
     return null;
@@ -174,5 +179,6 @@ export async function writeNaverDraft(context, job, plan, images, report) {
   // confirmed persistence, so close our own saved editor before reading back.
   await page.close();
   await verifySavedDraft(context, job, expectedOrder, uploadedImages);
-  return "네이버 임시저장 글을 다시 열어 제목·본문·이미지와 순서를 확인했습니다. 발행은 하지 않았습니다.";
+  return "네이버 임시저장 글을 다시 열어 제목·본문·이미지와 순서를 확인했습니다. 발행은 하지 않았습니다."
+    + (job.category ? ` 요청 카테고리: ${job.category.name}. 카테고리 저장 여부는 직접 발행하기 전에 확인해주세요.` : "");
 }

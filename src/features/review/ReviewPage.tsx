@@ -161,6 +161,9 @@ export function ReviewPage() {
   const [decisionBusy, setDecisionBusy] = useState<"reject" | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [editBusy, setEditBusy] = useState(false);
+  const [editSnapshot, setEditSnapshot] = useState<{ version: ApiContentVersion; updatedAt: string } | null>(null);
+  const [editError, setEditError] = useState("");
+  const [editConflict, setEditConflict] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [cancelScheduleBusy, setCancelScheduleBusy] = useState(false);
   const [rewritePending, setRewritePending] = useState(false);
@@ -353,6 +356,12 @@ export function ReviewPage() {
     url: /^https?:\/\//i.test(source.url) ? source.url : "",
   }));
   const latestVersion = detail.versions.at(-1) ?? null;
+  // Age of the read cache and manual publication tracking do not lock an
+  // article. The save endpoint checks the authoritative version for conflicts.
+  const editUnavailableReason = status === "deleted" ? "삭제된 원고는 수정할 수 없습니다."
+    : !latestVersion?.body.trim() ? "수정할 원고 본문이 없습니다."
+      : connectionStatus !== "connected" ? "서버 연결을 확인해주세요."
+        : editBusy || deleteBusy || cancelScheduleBusy ? "처리 중입니다." : "";
   const imagePackage = imagePackageFrom(latestVersion) ?? queuedImagePackage(detail.content);
   const renderableImagePackage = renderableImages(imagePackage);
   const imageGenerationFailed = !renderableImagePackage && (imagePackage?.status === "failed" || detail.content.imageGenerationStatus === "failed");
@@ -565,19 +574,42 @@ export function ReviewPage() {
   };
 
   const saveEdit = async (input: { title: string; body: string; reason: string | null; approvalNumber: string }) => {
+    if (!editSnapshot || editBusy) return;
     setEditBusy(true);
+    setEditError("");
     try {
-      await editApi(input);
-      await refresh();
+      const saved = await editApi({ ...input, expected: { versionId: editSnapshot.version.id, updatedAt: editSnapshot.updatedAt } });
       setEditOpen(false);
-      setToast("수정본을 새 버전으로 저장했어요. 자동 재생성은 실행하지 않습니다.");
+      setToast(saved.freshness?.mirrorSynced === false
+        ? "수정본은 원본 저장소에 저장됐습니다. 목록 반영은 지연되고 있지만 이 화면은 저장한 최신 내용입니다."
+        : "수정본을 저장했어요. 발행 기록은 유지되며 네이버 글 변경이나 자동 재생성은 하지 않습니다.");
     } catch (error) {
-      setToast(error instanceof Error ? error.message : "원고 수정에 실패했습니다.");
+      setEditError(error instanceof Error ? error.message : "원고 수정에 실패했습니다. 입력 내용은 유지됩니다.");
+      setEditConflict(error instanceof ApiError && ["CONTENT_EDIT_STALE", "CONTENT_STATE_CONFLICT"].includes(error.code));
       throw error;
     } finally {
       setEditBusy(false);
       window.setTimeout(() => setToast(""), 3600);
     }
+  };
+
+  const openEdit = () => {
+    if (!latestVersion || editUnavailableReason) return;
+    setEditSnapshot({ version: latestVersion, updatedAt: detail.content.updatedAt });
+    setEditError(""); setEditConflict(false); setEditOpen(true);
+  };
+
+  const reloadEdit = async () => {
+    if (editBusy || !window.confirm("입력 중인 수정 내용을 지우고 최신 원고로 다시 열까요? 필요한 내용은 먼저 복사해주세요. 저장된 원고는 변경되지 않습니다.")) return;
+    setEditBusy(true);
+    try {
+      const current = await refresh(true);
+      const version = current.versions.at(-1);
+      if (current.freshness?.stale || !version) throw new Error("최신 원본을 확인하지 못했습니다. 입력 내용은 유지됩니다. 잠시 후 다시 시도해주세요.");
+      setEditSnapshot({ version, updatedAt: current.content.updatedAt });
+      setEditError(""); setEditConflict(false);
+    } catch (error) { setEditError(error instanceof Error ? error.message : "최신 원고를 불러오지 못했습니다."); }
+    finally { setEditBusy(false); }
   };
 
   const remove = async () => {
@@ -624,7 +656,7 @@ export function ReviewPage() {
             }).catch((error: unknown) => setToast(error instanceof Error ? error.message : "예약 해제에 실패했습니다."))
               .finally(() => setCancelScheduleBusy(false));
           }}>{cancelScheduleBusy ? "해제 중..." : "예약 해제"}</Button> : null}
-          <Button icon={<Pencil size={17} />} title={status === "scheduled" ? "예약 해제 후 수정할 수 있습니다." : undefined} disabled={["scheduled", "published", "deleted"].includes(status) || connectionStatus !== "connected" || staleDetail || editBusy || deleteBusy || cancelScheduleBusy} onClick={() => setEditOpen(true)}>직접 수정</Button>
+          <Button icon={<Pencil size={17} />} title={editUnavailableReason || "대시보드에 저장된 원고 수정 · 네이버 게시글은 변경하지 않음"} disabled={Boolean(editUnavailableReason)} onClick={openEdit}>직접 수정</Button>
           <Button variant="danger" icon={<Trash2 size={17} />} disabled={["published", "deleted"].includes(status) || connectionStatus !== "connected" || staleDetail || editBusy || deleteBusy || cancelScheduleBusy} onClick={() => void remove()}>삭제</Button>
           <Button icon={<Download size={17} />} title={wordUnavailableReason || "저장된 제목·본문·적용 이미지와 AI 이미지 주석을 Word 파일로 다운로드"}
             disabled={Boolean(wordUnavailableReason)}
@@ -840,9 +872,11 @@ export function ReviewPage() {
       <EditContentDialog
         open={editOpen}
         busy={editBusy}
-        initialTitle={latestVersion?.title ?? detail.content.title}
-        initialBody={latestVersion?.body ?? ""}
-        initialApprovalNumber={complianceNumber}
+        initialTitle={editSnapshot?.version.title ?? ""}
+        initialBody={editSnapshot?.version.body ?? ""}
+        initialApprovalNumber={approvalNumber(editSnapshot?.version.metadata.approvalNumber)}
+        error={editError}
+        onReload={editConflict ? reloadEdit : undefined}
         onClose={() => setEditOpen(false)}
         onSave={saveEdit}
       />

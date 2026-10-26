@@ -1138,9 +1138,6 @@ export class GitHubAutomationService {
     const draft = currentState ? null : await this.getDraft(runId);
     const previousState = currentState ?? draft!.state;
     if (previousState.deletedAt) throw new DomainError("CONTENT_NOT_EDITABLE", "삭제된 원고는 직접 수정할 수 없습니다.", 409);
-    if (previousState.publicationStatus !== "none") {
-      throw new DomainError("CONTENT_NOT_EDITABLE", "예약·발행된 원고는 직접 수정할 수 없습니다.", 409);
-    }
     if (previousState.rewriteStatus === "queued") {
       throw new DomainError("CONTENT_EDIT_CONFLICT", "자동 재작성 중인 원고는 완료 후 수정할 수 있습니다.", 409);
     }
@@ -1155,7 +1152,9 @@ export class GitHubAutomationService {
       ...(input.approvalNumber !== undefined ? { approvalNumber: input.approvalNumber.trim() } : {}),
       reviewStatus: "pending",
       autoApproved: false,
-      publicationStatus: "none",
+      // Publication is a manual tracking record, not a lock on this copy.
+      // Preserve its dates, URL and status; this never edits a Naver post.
+      publicationStatus: previousState.publicationStatus,
       checks: { sources: false, advertising: false },
       reason: null,
       approvedBy: null,
@@ -1163,6 +1162,9 @@ export class GitHubAutomationService {
       approvedAt: null,
       rejectedAt: null,
       revision: baseRevision + 1,
+      ...(previousState.imageSelection?.revision === baseRevision ? {
+        imageSelection: { ...previousState.imageSelection, revision: baseRevision + 1 },
+      } : {}),
       rewriteStatus: null,
       rewriteRequestedAt: null,
       rewrittenAt: null,

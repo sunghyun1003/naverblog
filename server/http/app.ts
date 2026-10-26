@@ -40,6 +40,7 @@ const rejectionSchema = z.object({
     .max(1000, "반려 사유는 1,000자 이하로 입력해주세요."),
 });
 const editContentSchema = z.object({
+  expected: z.object({ versionId: z.string().min(1), updatedAt: z.string().min(1) }).optional(),
   approvalNumber: z.string().trim().refine(validApprovalNumber, "심의필 문구는 1~200자의 한 줄 텍스트로 입력해주세요.").optional(),
   title: z.string().trim().min(5, "제목은 5자 이상 입력해주세요.").max(120),
   body: z.string().trim().min(20, "원고는 20자 이상 입력해주세요.").max(100_000),
@@ -179,6 +180,14 @@ function canRejectGitHubDraft(draft: AutomationDraftDetail): boolean {
 
 function freshness(source: "github" | "postgres-cache" | "local", stale: boolean, asOf: string | null, mirrorSynced = true) {
   return { source, stale, asOf, mirrorSynced };
+}
+
+function assertEditBase(detail: ContentDetail, expected?: { versionId: string; updatedAt: string }) {
+  // Optional for older clients; the current editor always sends its opening
+  // version. Cache age alone is never a reason to reject a manual edit.
+  if (expected && (detail.versions.at(-1)?.id !== expected.versionId || detail.content.updatedAt !== expected.updatedAt)) {
+    throw new DomainError("CONTENT_EDIT_STALE", "수정 창을 연 뒤 원본이 변경되어 저장하지 않았습니다. 입력한 내용은 유지됩니다. 최신 원고와 비교한 뒤 다시 저장해주세요.", 409);
+  }
 }
 
 export function buildApp(options: AppOptions = {}): FastifyInstance {
@@ -634,14 +643,24 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     const { id } = idParamsSchema.parse(request.params);
     const body = editContentSchema.parse(request.body);
     const actor = actorFrom(request, auth?.verifyCookie(request.headers.cookie)?.username);
+    requirePermission(actor, "content:edit");
     if (githubAutomation) {
       const draft = await githubAutomation.getDraft(id);
+      assertEditBase(draftToDetail(draft), body.expected);
+      if (activePipelineMarkers.includes(draft.pipelineStatus.toUpperCase())) {
+        throw new DomainError("CONTENT_EDIT_CONFLICT", "자동 작성이 진행 중입니다. 작업이 끝나면 저장해주세요. 입력한 수정 내용은 유지됩니다.", 409);
+      }
       const state = await githubAutomation.editDraft(id, body, actor.id, draft.state);
       const updatedDraft = draftWithState(draft, state);
       const mirrorSynced = await persistGitHubDetailSafely(updatedDraft, "edit");
-      return { ...draftToContent(updatedDraft), mirrorSynced };
+      // Return the saved version directly. A failed follow-up cache refresh
+      // must not make a successful save look failed or restore the old body.
+      return { ...draftToContent(updatedDraft), mirrorSynced,
+        detail: { ...draftToDetail(updatedDraft), freshness: freshness("github", false, state.updatedAt, mirrorSynced) } };
     }
-    return system.contentService.edit(id, body, actor);
+    assertEditBase(await system.contentService.detail(id), body.expected);
+    const content = await system.contentService.edit(id, body, actor);
+    return { ...content, detail: await system.contentService.detail(id) };
   });
   app.delete("/api/contents/:id", async (request) => {
     const { id } = idParamsSchema.parse(request.params);

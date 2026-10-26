@@ -440,14 +440,15 @@ export function retryFailedGeneration(contentId: string): Promise<ApiContent> {
   return request(`/api/contents/${encodeURIComponent(contentId)}/retry`, { method: "POST" });
 }
 
-export function editContent(
+export async function editContent(
   contentId: string,
-  input: { title: string; body: string; reason?: string | null; approvalNumber?: string },
-): Promise<ApiContent> {
-  return request(`/api/contents/${encodeURIComponent(contentId)}`, {
+  input: { title: string; body: string; reason?: string | null; approvalNumber?: string; expected: { versionId: string; updatedAt: string } },
+): Promise<ApiContentDetail> {
+  const result = await request<{ detail: unknown }>(`/api/contents/${encodeURIComponent(contentId)}`, {
     method: "PATCH",
     body: JSON.stringify(input),
   });
+  return writeRuntimeCache(`content:${contentId}`, normalizeContentDetail(result.detail));
 }
 
 export function deleteContent(contentId: string): Promise<ApiContent> {

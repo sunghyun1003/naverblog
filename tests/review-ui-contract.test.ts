@@ -31,6 +31,19 @@ test("Word 다운로드는 캐시 나이로 막지 않고 실제 버전 변경 �
   assert.match(source, /확인 후 Word 다운로드를 다시 눌러주세요/);
 });
 
+test("직접 수정은 캐시 나이·발행 표시로 잠그지 않고 편집 시작 버전으로 저장한다", async () => {
+  const source = await readFile(new URL("../src/features/review/ReviewPage.tsx", import.meta.url), "utf8");
+  const policy = source.slice(source.indexOf("const editUnavailableReason ="), source.indexOf("const imagePackage ="));
+  assert.doesNotMatch(policy, /staleDetail|freshness|scheduled|published/);
+  assert.match(policy, /deleted/);
+  assert.match(source, /disabled=\{Boolean\(editUnavailableReason\)\}/);
+  const save = source.slice(source.indexOf("const saveEdit ="), source.indexOf("const openEdit ="));
+  assert.match(save, /expected: \{ versionId: editSnapshot.version.id, updatedAt: editSnapshot.updatedAt \}/);
+  assert.doesNotMatch(save, /await refresh/);
+  assert.match(source, /initialBody=\{editSnapshot\?\.version.body/);
+  assert.match(source, /CONTENT_EDIT_STALE/);
+});
+
 test("모바일 원고 상세 헤더는 버튼을 가로 스크롤로 숨기지 않는다", async () => {
   const source = await readFile(new URL("../src/styles/product-theme.css", import.meta.url), "utf8");
   const mobileBlockStart = source.lastIndexOf("@media (max-width: 767px)", source.indexOf("/*\n * Shared page frame"));

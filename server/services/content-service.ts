@@ -123,8 +123,11 @@ export class ContentService {
   async edit(contentId: string, input: EditContentInput, actor: Actor): Promise<ContentRecord> {
     requirePermission(actor, "content:edit");
     const content = await this.requireContent(contentId);
-    if (["scheduled", "published", "measured", "deleted"].includes(content.state)) {
-      throw new DomainError("CONTENT_NOT_EDITABLE", "예약·발행된 원고와 삭제된 원고는 직접 수정할 수 없습니다.", 409);
+    if (content.state === "deleted") {
+      throw new DomainError("CONTENT_NOT_EDITABLE", "삭제된 원고는 직접 수정할 수 없습니다.", 409);
+    }
+    if (content.rewriteStatus === "queued" || (await this.repository.listJobs(contentId)).some(job => ["queued", "running"].includes(job.status))) {
+      throw new DomainError("CONTENT_EDIT_CONFLICT", "자동 작성이 진행 중입니다. 작업이 끝나면 저장해주세요.", 409);
     }
     const versions = await this.repository.listVersions(contentId);
     const previous = versions.at(-1);
@@ -146,11 +149,13 @@ export class ContentService {
       createdBy: actor.id,
       createdAt: now,
       parentVersionId: previous.id,
-      metadata: { approvalNumber: input.approvalNumber ?? previous.metadata.approvalNumber, reason: input.reason?.trim() || null, editedManually: true },
+      metadata: { ...previous.metadata, copyPackage: body, copyPackageHtml: null,
+        approvalNumber: input.approvalNumber ?? previous.metadata.approvalNumber, reason: input.reason?.trim() || null, editedManually: true },
     });
+    const nextState = ["scheduled", "published", "measured"].includes(content.state) ? content.state : "review_ready";
     const updated = await this.changeState(
-      { ...content, title, state: "review_ready", rewriteStatus: null },
-      "review_ready",
+      { ...content, title, state: nextState, rewriteStatus: null },
+      nextState,
       actor.id,
       "content.edited",
       { reason: input.reason?.trim() || null, versionSequence: previous.sequence + 1 },

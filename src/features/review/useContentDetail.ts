@@ -90,16 +90,11 @@ export function useContentDetail(contentId: string | undefined) {
     return content;
   };
 
-  const edit = async (input: { title: string; body: string; reason?: string | null }) => {
+  const edit = async (input: Parameters<typeof editContent>[1]) => {
     if (!contentId || connectionStatus !== "connected" || !detail) throw new Error("원고 연결을 확인한 뒤 다시 시도해주세요.");
-    const content = await editContent(contentId, input);
-    setDetail((current) => {
-      if (!current) return current;
-      const next = { ...current, content };
-      writeRuntimeCache(`content:${contentId}`, next);
-      return next;
-    });
-    return content;
+    const saved = await editContent(contentId, input);
+    applyDetail(saved);
+    return saved;
   };
 
   const remove = async () => {

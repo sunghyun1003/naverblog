@@ -12,6 +12,8 @@ export function EditContentDialog({
   initialTitle,
   initialBody,
   initialApprovalNumber,
+  error,
+  onReload,
   onClose,
   onSave,
 }: {
@@ -20,6 +22,8 @@ export function EditContentDialog({
   initialTitle: string;
   initialBody: string;
   initialApprovalNumber?: string;
+  error?: string;
+  onReload?: () => Promise<void>;
   onClose: () => void;
   onSave: (input: { title: string; body: string; reason: string | null; approvalNumber: string }) => Promise<void>;
 }) {
@@ -55,7 +59,7 @@ export function EditContentDialog({
       open={open}
       onClose={() => { if (!busy) onClose(); }}
       title="원고 직접 수정"
-      description="수정본은 새 버전으로 저장되고 검토 대기 상태로 돌아갑니다. 기존 자동 생성 원고와 이력은 보존됩니다."
+      description="대시보드 원고를 수정합니다. 기존 생성 원고·적용 이미지·발행 기록은 유지되며, 네이버에 게시된 글은 자동으로 변경되지 않습니다. 저장 시 최신 원본과 충돌 여부를 확인합니다."
       footer={(
         <>
           <Button type="button" onClick={onClose} disabled={busy}>취소</Button>
@@ -66,6 +70,7 @@ export function EditContentDialog({
       )}
     >
       <form id="edit-content-form" className="edit-content-form" onSubmit={submit}>
+        {error ? <div role="alert"><p>{error}</p>{onReload ? <Button type="button" disabled={busy} onClick={() => void onReload()}>최신 원고로 다시 열기</Button> : null}</div> : null}
         <label className="field">
           <span className="field__label">제목</span>
           <input

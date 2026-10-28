@@ -1,0 +1,43 @@
+name: Renumber remaining contents
+on:
+  workflow_dispatch:
+    inputs:
+      expected_fingerprint:
+        description: 'Leave empty for preview; apply only the exact preview fingerprint'
+        required: false
+        default: ''
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: dashboard-production
+  cancel-in-progress: false
+jobs:
+  renumber:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx tsx --test tests/content-list-renumber.test.ts
+      - uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: "projects/${{ vars.GCP_PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github-actions/providers/github-actions"
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+      - uses: google-github-actions/setup-gcloud@v3
+      - name: Preview or apply numbering only
+        env:
+          DATABASE_TEAM_ID: carrot-company
+          RENUMBER_EXPECTED_FINGERPRINT: ${{ inputs.expected_fingerprint }}
+          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          NODE_OPTIONS: --network-family-autoselection-attempt-timeout=2000
+        run: |
+          DATABASE_URL="$(gcloud secrets versions access latest --secret=dashboard-database-direct-url --project "$GCP_PROJECT_ID")"
+          echo "::add-mask::$DATABASE_URL"
+          export DATABASE_URL
+          npx tsx server/db/renumber-content-list.ts

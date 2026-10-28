@@ -1,4 +1,5 @@
 import { DomainError } from "../domain/errors.js";
+import { createHash } from "node:crypto";
 import type { ContentRecord } from "../domain/types.js";
 
 export interface ContentListLayout {
@@ -16,6 +17,28 @@ export interface ContentMove {
   id: string;
   neighborId: string;
   direction: "up" | "down";
+}
+
+/** Explicit maintenance only. Ordinary reads/deletions must never call this. */
+export function planContentRenumbering(teamId: string, saved: { revision: number; value: ContentListLayout },
+  contents: Array<Pick<ContentRecord, "id" | "state" | "createdAt">>) {
+  const active = contents.filter(item => item.state !== "deleted");
+  const ids = new Set(active.map(item => item.id));
+  const previous = saved.value;
+  if (ids.size !== active.length || new Set(previous.order).size !== previous.order.length
+    || new Set(previous.entries.map(item => item.id)).size !== previous.entries.length) {
+    throw new Error("번호표에 중복 ID가 있어 초기화를 중단합니다.");
+  }
+  // Match arrange(): new arrivals above the existing custom order. Never sort
+  // existing rows by title/updatedAt or undo a user's up/down rearrangement.
+  const missing = active.filter(item => !previous.order.includes(item.id)).sort((a, b) =>
+    a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id, "en", { numeric: true }));
+  const order = [...missing.map(item => item.id).reverse(), ...previous.order.filter(id => ids.has(id))];
+  const entries = order.toReversed().map((id, index) => ({ id, number: index + 1 }));
+  const value: ContentListLayout = { nextNumber: entries.length + 1, entries, order };
+  const fingerprint = createHash("sha256").update(JSON.stringify({ teamId, saved, order })).digest("hex");
+  const oldNumbers = new Map(previous.entries.map(entry => [entry.id, entry.number]));
+  return { fingerprint, value, changes: entries.map(entry => ({ ...entry, previousNumber: oldNumbers.get(entry.id) ?? null })) };
 }
 
 /** Numbers are a permanent registry; display order is an independent preference.

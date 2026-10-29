@@ -10,8 +10,10 @@ import { SessionAuthService } from "../server/services/session-auth.js";
 
 const now = "2026-09-14T01:00:00.000Z";
 const ids = ["hero", "visual-01", "visual-02"];
-test("기존 이미지에도 설명과 AI 주석을 붙이고 중복 표기하지 않는다", () => {
-  assert.equal(generatedImageCaption("보험 서류"), "보험 서류 · AI로 생성한 이미지입니다.");
+test("기존 이미지도 보이는 캡션에는 AI 주석만 남기고 대체 설명은 합치지 않는다", () => {
+  for (const description of ["보험 서류", "제목 대표 이미지", "절 제목 — 본문 참고 이미지", "개념 일러스트 · AI로 생성한 이미지입니다."]) {
+    assert.equal(generatedImageCaption(description), "AI로 생성한 이미지입니다.");
+  }
   assert.equal(generatedImageCaption(" "), "AI로 생성한 이미지입니다.");
   assert.equal(generatedImageCaption(generatedImageCaption("대표")), generatedImageCaption("대표"));
 });

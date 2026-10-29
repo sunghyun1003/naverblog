@@ -85,15 +85,19 @@ test("적용 이미지는 외부 링크 없이 파일에 내장하고 주석과 
   assert.equal(result.imageCount, 3);
   assert.equal(xml.match(/<w:drawing>/g)?.length, 4);
   assert.equal(xml.match(/<w:t[^>]*>[^<]*AI로 생성한 이미지입니다./g)?.length, 3);
-  assert.ok(xml.indexOf("대표 이미지 · AI") < xml.indexOf("핵심 포인트"));
-  assert.ok(xml.indexOf("비교 이미지 · AI") > xml.indexOf("세 번째 요약"));
-  assert.ok(xml.indexOf("비교 이미지 · AI") < xml.indexOf(">비교표<"));
-  assert.ok(xml.indexOf("추가 이미지 · AI") > xml.indexOf("마지막 안내 문구"));
+  const captions = [...xml.matchAll(/<w:t[^>]*>AI로 생성한 이미지입니다\.<\/w:t>/g)].map(match => match.index!);
+  assert.equal(captions.length, 3);
+  assert.ok(captions[0] < xml.indexOf("핵심 포인트"));
+  assert.ok(captions[1] > xml.indexOf("세 번째 요약"));
+  assert.ok(captions[1] < xml.indexOf(">비교표<"));
+  assert.ok(captions[2] > xml.indexOf("마지막 안내 문구"));
+  assert.doesNotMatch(xml, /<w:t[^>]*>[^<]*(?:대표 이미지|비교 이미지|추가 이미지)/);
+  assert.match(xml, /descr="대표 이미지"/, "대체 설명은 이미지 메타데이터에 보존");
   const embedded = Object.values(zip.files).filter(file => file.name.startsWith("word/media/") && !file.dir);
   assert.equal(embedded.length, 2); // Repeated generated fixtures + original disclosure JPEG.
   const hashes = await Promise.all(embedded.map(async file => createHash("sha256").update(await file.async("nodebuffer")).digest("hex")));
   assert.deepEqual(new Set(hashes), new Set([sha256, COMPLIANCE_IMAGE_SHA256]));
-  assert.ok(xml.lastIndexOf("<w:drawing>") > xml.indexOf("추가 이미지 · AI"));
+  assert.ok(xml.lastIndexOf("<w:drawing>") > captions[2]);
   assert.ok(xml.indexOf(DEFAULT_APPROVAL_NUMBER) > xml.lastIndexOf("<w:drawing>"));
   assert.equal(xml.split(DEFAULT_APPROVAL_NUMBER).length - 1, 1);
   assert.doesNotMatch(await zip.file("word/_rels/document.xml.rels")!.async("string"), /Type="[^"]*\/image"[^>]*TargetMode="External"/);

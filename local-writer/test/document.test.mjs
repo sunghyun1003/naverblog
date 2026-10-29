@@ -21,12 +21,14 @@ test("제목 중복 없이 원문·3줄 요약·FAQ·링크·안내문과 이미
   assert.equal((html.match(/AI로 생성한 이미지입니다\./g) ?? []).length, value.assets.length);
 });
 
-test("오래된 전송·빈 설명에도 AI 생성 표기를 포함하고 설명 HTML은 이스케이프한다", () => {
+test("오래된 전송도 캡션에는 AI 주석만 남기고 대체 설명은 안전하게 보존한다", () => {
   assert.equal(generatedImageCaption(), "AI로 생성한 이미지입니다.");
   assert.equal(generatedImageCaption(generatedImageCaption("대표")), generatedImageCaption("대표"));
   const value = payload({ assets: [{ ...payload().assets[0], altText: "<script>설명</script>" }] });
   const html = previewHtml(value, transferPlan(value));
-  assert.match(html, /<figcaption>&lt;script&gt;설명&lt;\/script&gt; · AI로 생성한 이미지입니다\.<\/figcaption>/);
+  assert.match(html, /<figcaption>AI로 생성한 이미지입니다\.<\/figcaption>/);
+  assert.match(html, /alt="&lt;script&gt;설명&lt;\/script&gt;"/);
+  assert.deepEqual([...html.matchAll(/<figcaption>(.*?)<\/figcaption>/g)].map(match => match[1]), ["AI로 생성한 이미지입니다."]);
   assert.doesNotMatch(html, /<script>/);
 });
 test("일치하지 않는 이미지 위치를 조용히 버리지 않는다", () => {

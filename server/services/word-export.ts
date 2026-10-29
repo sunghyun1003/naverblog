@@ -171,8 +171,7 @@ export async function exportContentWord(
         type: image.type, data: image.body, transformation: { width: image.width, height: image.height },
         altText: { name: image.asset.id, title: image.asset.altText, description: image.asset.altText },
       })] }));
-      const caption = image.asset.altText.includes(disclosure) ? image.asset.altText : [image.asset.altText.trim(), disclosure].filter(Boolean).join(" · ");
-      children.push(new Paragraph({ style: "Caption", children: [new TextRun(caption)] }));
+      children.push(new Paragraph({ style: "Caption", children: [new TextRun(disclosure)] }));
     }
   };
   addImages(asset => asset.role === "hero");

@@ -3,11 +3,8 @@ import { Marked } from "marked";
 
 export const escapeHtml = value => String(value).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 // Keep this local: the Windows helper must also disclose old queued payloads.
-export function generatedImageCaption(altText = "") {
-  const disclosure = "AI로 생성한 이미지입니다.";
-  const description = String(altText).trim();
-  return description.includes(disclosure) ? description
-    : [description, disclosure].filter(Boolean).join(" · ");
+export function generatedImageCaption(_altText = "") {
+  return "AI로 생성한 이미지입니다.";
 }
 export function compactOrder(items) {
   const result = [];

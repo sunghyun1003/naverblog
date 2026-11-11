@@ -116,6 +116,7 @@ async function main() {
   const release = await acquireLock();
   let context;
   let exiting = false;
+  let desktopInput;
   const stop = () => { exiting = true; };
   process.on("SIGINT", stop); process.on("SIGTERM", stop);
   try {
@@ -150,7 +151,12 @@ async function main() {
       process.stdout.write("브라우저 로그인 상태를 PC에 보관했습니다. 다음: npm run writer:start\n");
       return;
     }
-    process.stdout.write(`PC 도우미 실행 중: ${device.blogId} · ${categoryDescription(device)} · 임시저장만. 종료: Ctrl+C\n`);
+    if (process.env.WRITER_DESKTOP === "1") {
+      desktopInput = createInterface({ input: process.stdin });
+      desktopInput.on("line", line => { if (line === "stop") stop(); });
+      desktopInput.on("close", stop);
+    }
+    process.stdout.write(`PC 도우미 실행 중: ${device.blogId} · ${categoryDescription(device)} · 임시저장만.\n`);
     while (!exiting) {
       try {
         const { job } = await api("poll", { protocolVersion: 2 }, device.token);
@@ -169,6 +175,7 @@ async function main() {
       for (let i = 0; i < 15 && !exiting; i++) await delay(1000);
     }
   } finally {
+    desktopInput?.close();
     await context?.close().catch(() => {});
     await release();
   }

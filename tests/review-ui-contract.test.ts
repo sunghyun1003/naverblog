@@ -69,13 +69,11 @@ test("원고 수정 완료는 복구 정보 유무가 아니라 명시적인 작
   assert.match(source, /const withoutUnavailableImages = removeUnavailableImages\(source\)/);
 });
 
-test("본문·이미지 탭·복사 HTML·네이버 입력에 AI 생성 주석을 빠뜨리지 않는다", async () => {
+test("AI 문구 대신 네이버 자체 표시를 사용하며 저장 검증은 유지한다", async () => {
   const source = await readFile(new URL("../src/features/review/ReviewPage.tsx", import.meta.url), "utf8");
-  assert.match(source, /<figcaption>\{generatedImageCaption\(hero.altText\)\}<\/figcaption>/);
-  assert.match(source, /<figcaption>\{generatedImageCaption\(asset.altText\)\}<\/figcaption>/);
-  assert.match(source, /<p>\{generatedImageCaption\(asset.altText\)\}<\/p>/);
-  assert.match(source, /caption.textContent = generatedImageCaption\(asset.altText\)/);
+  assert.doesNotMatch(source, /generatedImageCaption/);
+  assert.match(source, /caption.remove\(\)/);
   const writer = await readFile(new URL("../local-writer/naver-editor.mjs", import.meta.url), "utf8");
-  assert.match(writer, /await paste\(`<p>\$\{escapeHtml\(generatedImageCaption\(item.asset.altText\)\)\}<\/p>`\)/);
+  assert.doesNotMatch(writer, /generatedImageCaption/);
   assert.match(writer, /verifySavedDraft\(context, job, expectedOrder, uploadedImages\)/);
 });

@@ -13,7 +13,6 @@ import { loadComplianceImage } from "./compliance-footer.js";
 import { approvalNumber, COMPLIANCE_IMAGE_ALT, COMPLIANCE_IMAGE_ID } from "../../shared/compliance-footer.js";
 
 export const WORD_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-const disclosure = "AI로 생성한 이미지입니다.";
 const assetSchema = z.object({
   id: z.string().regex(/^[a-z0-9-]+$/), role: z.enum(["hero", "inline"]),
   afterSection: z.number().int().nonnegative(), altText: z.string(),
@@ -171,7 +170,6 @@ export async function exportContentWord(
         type: image.type, data: image.body, transformation: { width: image.width, height: image.height },
         altText: { name: image.asset.id, title: image.asset.altText, description: image.asset.altText },
       })] }));
-      children.push(new Paragraph({ style: "Caption", children: [new TextRun(disclosure)] }));
     }
   };
   addImages(asset => asset.role === "hero");

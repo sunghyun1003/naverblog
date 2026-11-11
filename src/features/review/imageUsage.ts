@@ -1,12 +1,5 @@
 import type { ApiGeneratedImagePackage } from "../../api/types";
 
-export const AI_IMAGE_DISCLOSURE = "AI로 생성한 이미지입니다.";
-
-/** Visible caption for generated assets; alt text remains a scene description. */
-export function generatedImageCaption(_altText: string): string {
-  return AI_IMAGE_DISCLOSURE;
-}
-
 export function markdownBlocks(body: string): string[] {
   return body.replace(/\r\n?/g, "\n").split(/\n\s*\n/);
 }

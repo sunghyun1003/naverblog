@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createHash } from "node:crypto";
-import { transferPlan, previewHtml, assertDocumentOrder, generatedImageCaption } from "../document.mjs";
+import { transferPlan, previewHtml, assertDocumentOrder } from "../document.mjs";
 
 const payload = (overrides = {}) => {
   const value = { schemaVersion: 1, contentId: "123", versionId: "v2", title: "테스트 원고", body: "# 테스트 원고\n\n처음 문단\n\n## 3줄 요약\n\n- 하나\n- 둘\n- 셋\n\n## 주요 내용\n\n**중요한 설명**\n\n## FAQ\n\n### 질문은?\n\n답변입니다.\n\n## 출처\n\n[공식 근거](https://example.com)\n\n> 개별 약관을 확인해주세요.",
@@ -43,17 +43,14 @@ test("제목 중복 없이 원문·3줄 요약·FAQ·링크·안내문과 이미
   assert.equal((html.match(/<h1>/g) ?? []).length, 1);
   assert.equal((html.match(/<li>/g) ?? []).length, 3);
   for (const text of ["FAQ", "답변입니다.", "https://example.com", "개별 약관"]) assert.ok(html.includes(text));
-  assert.equal((html.match(/AI로 생성한 이미지입니다\./g) ?? []).length, value.assets.length);
+  assert.doesNotMatch(html, /<figcaption>/);
 });
 
-test("오래된 전송도 캡션에는 AI 주석만 남기고 대체 설명은 안전하게 보존한다", () => {
-  assert.equal(generatedImageCaption(), "AI로 생성한 이미지입니다.");
-  assert.equal(generatedImageCaption(generatedImageCaption("대표")), generatedImageCaption("대표"));
+test("이미지 캡션은 생략하고 대체 설명은 안전하게 보존한다", () => {
   const value = payload({ assets: [{ ...payload().assets[0], altText: "<script>설명</script>" }] });
   const html = previewHtml(value, transferPlan(value));
-  assert.match(html, /<figcaption>AI로 생성한 이미지입니다\.<\/figcaption>/);
+  assert.doesNotMatch(html, /<figcaption>/);
   assert.match(html, /alt="&lt;script&gt;설명&lt;\/script&gt;"/);
-  assert.deepEqual([...html.matchAll(/<figcaption>(.*?)<\/figcaption>/g)].map(match => match[1]), ["AI로 생성한 이미지입니다."]);
   assert.doesNotMatch(html, /<script>/);
 });
 test("일치하지 않는 이미지 위치를 조용히 버리지 않는다", () => {
@@ -85,7 +82,7 @@ test("필수 안내 이미지는 출처까지 모두 끝난 뒤 삽입하고 AI 
   assert.deepEqual(plan.at(-2), { kind: "image", asset: footer });
   assert.equal(plan.at(-1).html, `<p>${approvalNumber}</p>`);
   const html = previewHtml(value, plan);
-  assert.equal((html.match(/AI로 생성한 이미지입니다\./g) ?? []).length, 2);
+  assert.doesNotMatch(html, /AI로 생성한 이미지입니다/);
   assert.ok(html.indexOf("compliance-notice.jpg") > html.indexOf("개별 약관을 확인해주세요"));
   assert.ok(html.indexOf(approvalNumber) > html.indexOf("compliance-notice.jpg"));
   assert.throws(() => transferPlan(payload({ schemaVersion: 2, approvalNumber })), /필수 안내/);

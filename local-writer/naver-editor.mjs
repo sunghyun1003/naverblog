@@ -1,6 +1,7 @@
 // Conservative UI adapter. No private Naver API, cookie extraction, stealth,
 // CAPTCHA handling or publication operation. Editor changes fail closed.
-import { escapeHtml, assertDocumentOrder, generatedImageCaption } from "./document.mjs";
+import { assertDocumentOrder } from "./document.mjs";
+import { readableBlocks, paragraphPause } from "./typography.mjs";
 import { writeUrl, editorBlogId, categoryListUrl, assertCategoryLink } from "./target.mjs";
 
 const normal = value => value.replace(/\s+/g, "").normalize("NFC");
@@ -98,6 +99,20 @@ export async function writeNaverDraft(context, job, plan, images, report) {
   const expectedOrder = [];
   let needsBodyFocus = true;
   async function paste(html) {
+    const blocks = await page.evaluate(readableBlocks, html);
+    for (const block of blocks) {
+      await report("문단별 서식을 적용하며 천천히 입력하고 있습니다. AI 활용 표시는 네이버에서 직접 체크해주세요.");
+      await pasteBlock(block.html);
+      let remaining = paragraphPause(block.text);
+      while (remaining > 0) {
+        const wait = Math.min(4000, remaining);
+        await new Promise(resolve => setTimeout(resolve, wait));
+        remaining -= wait;
+        await report("문단별 입력 진행 중입니다. 전용 편집기를 직접 조작하지 마세요.");
+      }
+    }
+  }
+  async function pasteBlock(html) {
     const plain = await page.evaluate(async value => {
       const doc = new DOMParser().parseFromString(value, "text/html");
       const text = doc.body.textContent ?? "";
@@ -119,7 +134,11 @@ export async function writeNaverDraft(context, job, plan, images, report) {
     await page.keyboard.press("Enter");
   }
   await report("제목과 원고를 네이버 편집기에 입력하고 있습니다.");
-  await title.click(); await page.keyboard.insertText(job.payload.title);
+  await title.click();
+  for (const character of job.payload.title) {
+    await page.keyboard.insertText(character);
+    await new Promise(resolve => setTimeout(resolve, 80));
+  }
   let imageCount = 0;
   for (const item of plan) {
     await report("원고와 이미지 순서를 확인하며 입력하고 있습니다.");
@@ -148,8 +167,7 @@ export async function writeNaverDraft(context, job, plan, images, report) {
     const lastIsText = await container.locator(".se-component").last().evaluate(el => el.classList.contains("se-text"));
     if (!lastIsText) throw new Error("이미지 뒤 입력 위치를 확인하지 못했습니다. 열린 편집기에 원고가 남아 있습니다.");
     needsBodyFocus = true;
-    // Included in expectedOrder, so read-back verifies the disclosure persisted.
-    if (item.asset.role !== "footer") await paste(`<p>${escapeHtml(generatedImageCaption(item.asset.altText))}</p>`);
+    // The operator sets Naver's native AI-use checkbox before publication.
   }
   if (normal(await title.innerText()) !== normal(job.payload.title)) throw new Error("제목이 원본과 일치하지 않습니다.");
   const actual = normal(await authorText(container));

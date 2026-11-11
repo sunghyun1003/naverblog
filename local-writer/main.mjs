@@ -5,7 +5,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 import { chromium } from "playwright";
-import { writerDirectory, loadDevice, saveDevice, acquireLock } from "./windows.mjs";
+import { writerDirectory, loadDevice, saveDevice, acquireLock, checkDeviceStorage } from "./windows.mjs";
 import { transferPlan, previewHtml } from "./document.mjs";
 import { writeNaverDraft } from "./naver-editor.mjs";
 import { validateTarget, writeUrl, editorBlogId, sameTarget, profileParts, categoryDescription } from "./target.mjs";
@@ -121,6 +121,7 @@ async function main() {
   process.on("SIGINT", stop); process.on("SIGTERM", stop);
   try {
     if (command === "pair") {
+      await checkDeviceStorage();
       const code = await prompt("대시보드의 1회용 PC 연결 코드: ");
       if (!/^[a-f0-9]{64}$/.test(code)) throw new Error("연결 코드 형식이 올바르지 않습니다.");
       const device = await api("pair", { code });

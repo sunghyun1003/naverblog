@@ -9,14 +9,28 @@ export function writerDirectory() {
 }
 function powershell(script, input) {
   return new Promise((resolve, reject) => {
-    const child = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], { windowsHide: true, stdio: ["pipe", "pipe", "pipe"] });
+    // Do not inherit PowerShell 7/Codex modules into Windows PowerShell 5.1.
+    const home = path.join(process.env.SystemRoot || "C:\\Windows", "System32", "WindowsPowerShell", "v1.0");
+    const child = spawn(path.join(home, "powershell.exe"), ["-NoProfile", "-NonInteractive", "-Command", "[Console]::InputEncoding=[Text.Encoding]::UTF8; [Console]::OutputEncoding=[Text.Encoding]::UTF8; " + script], {
+      windowsHide: true, stdio: ["pipe", "pipe", "pipe"],
+      env: { ...process.env, PSModulePath: path.join(home, "Modules") },
+    });
     let output = "";
     child.stdout.setEncoding("utf8"); child.stdout.on("data", value => { output += value; });
     // Never echo a failure's stderr: it may contain secret input.
+    child.stderr.resume();
+    child.stdin.on("error", () => reject(new Error("Windows 보안 저장소 입력에 실패했습니다.")));
     child.on("error", () => reject(new Error("Windows 보안 저장소를 실행하지 못했습니다.")));
     child.on("close", code => code === 0 ? resolve(output.trim()) : reject(new Error("Windows 보안 저장소 처리에 실패했습니다.")));
     child.stdin.end(input);
   });
+}
+export async function checkDeviceStorage() {
+  await powershell("$ErrorActionPreference='Stop'; $value=[Console]::In.ReadToEnd(); $cipher=ConvertTo-SecureString $value -AsPlainText -Force | ConvertFrom-SecureString; $secure=ConvertTo-SecureString $cipher; $ptr=[Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure); try { if ([Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr) -cne $value) { throw 'Storage check failed' } } finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr) }", "PC 연결 저장 검사");
+  await mkdir(writerDirectory(), { recursive: true });
+  const probe = path.join(writerDirectory(), `storage-check-${process.pid}.tmp`);
+  try { await writeFile(probe, "storage-check", { flag: "wx" }); }
+  finally { await unlink(probe).catch(() => {}); }
 }
 export async function saveDevice(device) {
   const encrypted = await powershell("$ErrorActionPreference='Stop'; $value=[Console]::In.ReadToEnd(); ConvertTo-SecureString $value -AsPlainText -Force | ConvertFrom-SecureString", JSON.stringify(device));

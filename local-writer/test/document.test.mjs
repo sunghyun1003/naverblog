@@ -9,6 +9,31 @@ const payload = (overrides = {}) => {
       { id: "visual-01", role: "inline", afterSection: 2, altText: "본문 이미지", sha256: "b".repeat(64) }], ...overrides };
   return { ...value, fingerprint: createHash("sha256").update(JSON.stringify(value)).digest("hex") };
 };
+
+const reorderKeys = value => Array.isArray(value) ? value.map(reorderKeys)
+  : value && typeof value === "object" ? Object.fromEntries(Object.keys(value).sort().reverse().map(key => [key, reorderKeys(value[key])])) : value;
+
+test("DB가 항목 순서를 바꿔도 V1/V2 전송은 유지하고 실제 변경은 거절한다", () => {
+  for (const version of [1, 2]) {
+    const value = version === 1 ? payload() : payload({ schemaVersion: 2, approvalNumber: "확인필-테스트",
+      assets: [...payload().assets, { id: "footer", role: "footer", afterSection: 0, altText: "가입 안내", sha256: "c".repeat(64) }] });
+    const reordered = reorderKeys(value);
+    assert.deepEqual(transferPlan(reordered), transferPlan(value));
+    for (const change of [
+      copy => { copy.body += "변경"; },
+      copy => { copy.title += "변경"; },
+      copy => { copy.assets[0].sha256 = "d".repeat(64); },
+      copy => { copy.assets.reverse(); },
+      copy => { copy.assets[0].altText += "변경"; },
+      copy => { copy.unknown = "추가"; },
+      copy => { copy.assets[0].unknown = "추가"; },
+      ...(version === 2 ? [copy => { copy.approvalNumber += "변경"; }] : []),
+    ]) {
+      const changed = structuredClone(reordered); change(changed);
+      assert.throws(() => transferPlan(changed), /내용이 변경/);
+    }
+  }
+});
 test("제목 중복 없이 원문·3줄 요약·FAQ·링크·안내문과 이미지 순서를 보존", () => {
   const value = payload(); const plan = transferPlan(value);
   assert.equal(plan[0].asset.id, "hero");

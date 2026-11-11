@@ -43,7 +43,18 @@ export function validateTransfer(payload) {
       || !(payload.schemaVersion === 2 ? ["hero", "inline", "footer"] : ["hero", "inline"]).includes(asset.role) || !Number.isInteger(asset.afterSection)) throw new Error("이미지 정보가 올바르지 않습니다.");
   }
   const { fingerprint, ...data } = payload;
-  if (createHash("sha256").update(JSON.stringify(data)).digest("hex") !== fingerprint) throw new Error("원고 전송 중 내용이 변경되었습니다.");
+  const digest = value => createHash("sha256").update(JSON.stringify(value)).digest("hex");
+  // PostgreSQL jsonb does not preserve object key insertion order. Rebuild the
+  // producer's V1/V2 wire order, including nested assets, without ignoring any
+  // unknown fields or changing strings / array order. Keep legacy wire support.
+  const ordered = (value, keys) => Object.fromEntries([
+    ...keys.filter(key => Object.hasOwn(value, key)).map(key => [key, value[key]]),
+    ...Object.keys(value).filter(key => !keys.includes(key)).sort().map(key => [key, value[key]]),
+  ]);
+  const restored = ordered({ ...data, assets: data.assets.map(asset => ordered(asset,
+    ["id", "role", "afterSection", "altText", "sha256"])) },
+  ["schemaVersion", "contentId", "versionId", "title", "body", "assets", "approvalNumber"]);
+  if (digest(data) !== fingerprint && digest(restored) !== fingerprint) throw new Error("원고 전송 중 내용이 변경되었습니다.");
 }
 
 /** Same section positioning as the dashboard, independent from stale HTML.

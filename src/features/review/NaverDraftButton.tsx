@@ -111,7 +111,7 @@ export function NaverDraftButton({ contentId, versionId, disabled }: { contentId
               <li><strong>실행 시작</strong> → 이 팝업이 ‘PC 도우미 실행 중’으로 바뀌면 <strong>이 블로그로 현재 원고 보내기</strong>를 누릅니다.</li></ol>
           </>}
         </>}
-        <small>본문 17px·왼쪽 정렬·넉넉한 줄간격으로 문단별로 천천히 전송합니다. 네이버가 일부 서식을 바꿀 수 있으니 발행 전 확인해주세요. 이미지의 AI 활용 체크박스는 네이버에서 직접 설정해주세요. 3줄 요약·FAQ·출처·심의필은 유지됩니다.</small>
+        <small>네이버 기본 편집 서식으로 전송합니다. 발행 전 서식을 확인하고 이미지의 AI 활용 체크박스는 네이버에서 직접 설정해주세요. 3줄 요약·FAQ·출처·심의필은 유지됩니다.</small>
       </div>
     </Modal>, document.body)}
   </>;

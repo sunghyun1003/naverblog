@@ -8,7 +8,8 @@ import { chromium } from "playwright";
 import { writerDirectory, loadDevice, saveDevice, acquireLock, checkDeviceStorage } from "./windows.mjs";
 import { transferPlan, previewHtml } from "./document.mjs";
 import { writeNaverDraft } from "./naver-editor.mjs";
-import { validateTarget, writeUrl, editorBlogId, sameTarget, profileParts, categoryDescription } from "./target.mjs";
+import { confirmNaverLogin } from "./login.mjs";
+import { validateTarget, writeUrl, sameTarget, profileParts, categoryDescription } from "./target.mjs";
 
 // Intentionally fixed destination; never send the device credential to an URL
 // supplied by a job, a redirect, an image manifest or a command-line argument.
@@ -143,12 +144,7 @@ async function main() {
       await page.goto(writeUrl(device));
       process.stdout.write(`전용 브라우저에서 직접 로그인하고 대상 블로그(${device.blogId})를 확인하세요. 캡차/추가 인증도 직접 완료해주세요.\n`);
       await prompt("로그인을 마쳤다면 Enter (비밀번호를 여기에 입력하지 마세요): ");
-      let editorOpen = false;
-      for (const tab of context.pages()) {
-        if (editorBlogId(tab.url()) === device.blogId
-          && await tab.locator(".se-documentTitle .se-text-paragraph").isVisible()) editorOpen = true;
-      }
-      if (!editorOpen) throw new Error("전용 브라우저가 아직 네이버 로그인 화면입니다. 로그인 완료 후 다시 시도해주세요.");
+      await confirmNaverLogin(context, device);
       process.stdout.write("브라우저 로그인 상태를 PC에 보관했습니다. 다음: npm run writer:start\n");
       return;
     }

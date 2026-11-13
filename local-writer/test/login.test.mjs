@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { confirmNaverLogin } from "../login.mjs";
+import { confirmNaverLogin, closeEmptyLoginEditor } from "../login.mjs";
 
 const device = { blogId: "hanwhains_carrot", category: { id: "63", name: "자동차보험" } };
 const url = "https://blog.naver.com/hanwhains_carrot/postwrite?categoryNo=63";
@@ -53,4 +53,24 @@ test("detached frame does not prevent checking another target frame", async () =
   const editor = frame(url);
   const f = fixture([detached, editor]);
   assert.equal(await confirmNaverLogin(f.context, device, fast), editor);
+});
+
+test("only an empty login editor closes, with a live tab retained for the authenticated session", async () => {
+  for (const variant of ["empty", "body", "title", "image", "recovery", "unknown"]) {
+    let closed = false; let keepAlive = false;
+    const context = { pages: () => [{}], newPage: async () => { keepAlive = true; } };
+    const editor = {
+      getByText: () => ({ isVisible: async () => variant === "recovery" }),
+      locator: selector => ({
+        count: async () => variant === "unknown" ? 0 : 1,
+        locator: nested => ({
+          count: async () => variant === "image" ? 1 : 0,
+          allTextContents: async () => [selector.includes("documentTitle") ? (variant === "title" ? "기존 제목" : "") : (variant === "body" ? "기존 내용" : "")],
+        }),
+      }),
+      page: () => ({ close: async () => { assert.equal(keepAlive, true); closed = true; } }),
+    };
+    assert.equal(await closeEmptyLoginEditor(editor, context), variant === "empty", variant);
+    assert.equal(closed, variant === "empty", variant);
+  }
 });

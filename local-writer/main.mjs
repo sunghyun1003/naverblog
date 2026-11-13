@@ -8,7 +8,8 @@ import { chromium } from "playwright";
 import { writerDirectory, loadDevice, saveDevice, acquireLock, checkDeviceStorage } from "./windows.mjs";
 import { transferPlan, previewHtml } from "./document.mjs";
 import { writeNaverDraft } from "./naver-editor.mjs";
-import { confirmNaverLogin } from "./login.mjs";
+import { confirmNaverLogin, closeEmptyLoginEditor } from "./login.mjs";
+import { desktopCommands } from "./desktop-input.mjs";
 import { validateTarget, writeUrl, sameTarget, profileParts, categoryDescription } from "./target.mjs";
 
 // Intentionally fixed destination; never send the device credential to an URL
@@ -138,25 +139,43 @@ async function main() {
     if (Boolean(loginCategoryId) !== Boolean(loginCategoryName)) throw new Error("카테고리 번호와 이름을 함께 입력해주세요.");
     const device = validateTarget(loginBlog ? { blogId: loginBlog, profileVersion: 2,
       ...(loginCategoryId ? { category: { id: loginCategoryId, name: loginCategoryName } } : {}) } : await loadDevice());
+    if (process.env.WRITER_DESKTOP === "1") desktopInput = desktopCommands(process.stdin, stop);
     if (command === "login") {
       context = await browser(device);
+      context.on("close", () => { context = undefined; desktopInput?.close(); stop(); });
       const page = await context.newPage();
       await page.goto(writeUrl(device));
       process.stdout.write(`전용 브라우저에서 직접 로그인하고 대상 블로그(${device.blogId})를 확인하세요. 캡차/추가 인증도 직접 완료해주세요.\n`);
-      await prompt("로그인을 마쳤다면 Enter (비밀번호를 여기에 입력하지 마세요): ");
-      await confirmNaverLogin(context, device);
-      process.stdout.write("브라우저 로그인 상태를 PC에 보관했습니다. 다음: npm run writer:start\n");
-      return;
+      while (true) {
+        if (process.env.WRITER_DESKTOP === "1") process.stdout.write("WRITER_LOGIN_WAITING\n");
+        const answer = desktopInput ? await desktopInput.next()
+          : await prompt("로그인을 마쳤다면 Enter (비밀번호를 여기에 입력하지 마세요): ");
+        if (answer === "stop") return;
+        try {
+          const editor = await confirmNaverLogin(context, device);
+          if (exiting) return;
+          if (process.env.WRITER_DESKTOP !== "1") {
+            process.stdout.write("로그인 확인 완료. 브라우저 종료 시 네이버가 다시 로그인을 요구할 수 있습니다. PC 도우미 창에서는 로그인한 브라우저를 유지합니다.\n");
+            return;
+          }
+          const cleared = await closeEmptyLoginEditor(editor, context);
+          if (!cleared) process.stdout.write("열린 글쓰기 탭에 내용 또는 복구 안내가 있을 수 있어 그대로 두었습니다. 기존 글을 확인하고 해당 탭을 닫은 뒤 원고를 보내주세요.\n");
+          process.stdout.write("로그인 확인 완료. 로그인한 브라우저를 유지하고 대시보드 연결을 시작합니다.\nWRITER_LOGIN_READY\n");
+          break;
+        } catch (error) {
+          if (exiting) return;
+          if (process.env.WRITER_DESKTOP !== "1" || !context?.pages().length) throw error;
+          process.stdout.write(`${error.message}\n창을 닫지 않았습니다. 전용 Chrome을 확인한 뒤 로그인 완료를 다시 누르거나 실행 중지를 눌러주세요.\n`);
+        }
+      }
     }
-    if (process.env.WRITER_DESKTOP === "1") {
-      desktopInput = createInterface({ input: process.stdin });
-      desktopInput.on("line", line => { if (line === "stop") stop(); });
-      desktopInput.on("close", stop);
-    }
-    process.stdout.write(`PC 도우미 실행 중: ${device.blogId} · ${categoryDescription(device)} · 임시저장만.\n`);
+    process.stdout.write(`대시보드 연결 확인 중: ${device.blogId} · ${categoryDescription(device)} · 임시저장만.\n`);
+    let connected = false;
     while (!exiting) {
       try {
         const { job } = await api("poll", { protocolVersion: 2 }, device.token);
+        if (!connected) process.stdout.write("대시보드 연결 확인 완료. PC 도우미 실행 중입니다.\n");
+        connected = true;
         if (job) {
           if (!context) {
             context = await browser(device);
@@ -165,8 +184,9 @@ async function main() {
           await runJob(context, device, job, () => exiting);
         }
       } catch (error) {
+        connected = false;
         if (error.status === 401) throw new Error("PC 연결이 해제되었습니다. 다시 연결해주세요.");
-        process.stdout.write("대시보드 연결을 확인하고 다시 대기합니다.\n");
+        process.stdout.write(`대시보드 연결 실패${Number.isInteger(error.status) ? ` (HTTP ${error.status})` : " (네트워크 또는 응답 확인 오류)"}. 잠시 후 다시 확인합니다.\n`);
       }
       // Short chunks let Ctrl+C stop promptly, even while idle.
       for (let i = 0; i < 15 && !exiting; i++) await delay(1000);

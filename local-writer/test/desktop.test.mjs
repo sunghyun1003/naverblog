@@ -14,7 +14,15 @@ test("클릭형 실행기는 연결 코드를 명령행에 넣지 않고 숨긴 
   assert.match(ui, /StandardInput\.WriteLine\('stop'\)/);
   const main = await readFile(new URL("../main.mjs", import.meta.url), "utf8");
   assert.match(main, /process\.env\.WRITER_DESKTOP === "1"/);
-  assert.match(main, /desktopInput\.on\("close", stop\)/);
+  assert.match(main, /desktopCommands\(process.stdin, stop\)/);
+  assert.match(main, /if \(exiting\) return/);
+  assert.match(ui, /WRITER_LOGIN_READY/);
+  assert.match(ui, /WRITER_LOGIN_WAITING/);
+  assert.doesNotMatch(ui, /ReadToEndAsync/);
+  assert.match(ui, /ReadLineAsync/);
+  assert.match(ui, /\$lineNumber -lt 30/);
+  assert.match(ui, /\$status\.AppendText/);
+  assert.ok(main.indexOf('await api("poll"') < main.indexOf('대시보드 연결 확인 완료'));
 });
 
 test("Windows GUI 스크립트가 콘솔 없이 시작 가능한 형식으로 로드된다", { skip: process.platform !== "win32" }, () => {

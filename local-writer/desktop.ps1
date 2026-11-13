@@ -21,7 +21,7 @@ $form.MaximizeBox = $false
 $help = New-Object System.Windows.Forms.Label
 $help.Location = New-Object System.Drawing.Point(20, 18)
 $help.Size = New-Object System.Drawing.Size(590, 80)
-$help.Text = "처음 연결: 대시보드에서 PC 연결 코드를 만든 뒤 아래에 붙여넣으세요.`r`n연결 후: 네이버 로그인 → 로그인 완료 → 실행 시작 순서입니다.`r`n이미 연결·로그인했다면 실행 시작만 누르세요. 실제 발행은 하지 않습니다."
+$help.Text = "처음 연결: 대시보드에서 PC 연결 코드를 만든 뒤 아래에 붙여넣으세요.`r`n네이버 로그인 → 로그인 완료를 누르면 자동으로 연결 대기를 시작합니다.`r`n로그인한 전용 Chrome과 이 창은 켜두세요. 실제 발행은 하지 않습니다."
 $form.Controls.Add($help)
 $code = New-Object System.Windows.Forms.TextBox
 $code.Location = New-Object System.Drawing.Point(20, 105)
@@ -73,12 +73,14 @@ function Start-Writer($command, $inputValue = '') {
     $script:worker = New-Object System.Diagnostics.Process
     $script:worker.StartInfo = $info
     [void]$script:worker.Start()
-    $script:output = $script:worker.StandardOutput.ReadToEndAsync()
-    $script:errors = $script:worker.StandardError.ReadToEndAsync()
+    $script:streams = @(
+      @{ Reader = $script:worker.StandardOutput; Pending = $script:worker.StandardOutput.ReadLineAsync(); Ended = $false },
+      @{ Reader = $script:worker.StandardError; Pending = $script:worker.StandardError.ReadLineAsync(); Ended = $false }
+    )
     $script:mode = $command
     if ($command -eq 'pair') { $script:worker.StandardInput.WriteLine($inputValue); $code.Clear() }
     $pair.Enabled = $false; $login.Enabled = $false; $start.Enabled = $false
-    $confirmed.Enabled = $command -eq 'login'
+    $confirmed.Enabled = $false
     $stop.Enabled = $command -eq 'start'
     $status.Text = switch ($command) {
       'pair' { 'PC 연결을 등록하고 있습니다.' }
@@ -115,10 +117,30 @@ $dashboard.Add_Click({ Start-Process 'https://carrot-blog.web.app/contents' })
 $timer = New-Object System.Windows.Forms.Timer
 $timer.Interval = 500
 $timer.Add_Tick({
-  if ($script:worker -and $script:worker.HasExited -and $script:output.IsCompleted -and $script:errors.IsCompleted) {
-    $result = ($script:output.Result + "`r`n" + $script:errors.Result).Trim()
-    $result = $result -replace 'npm run writer:pair', '도우미 창의 PC 연결' -replace 'npm run writer:login', '네이버 로그인 버튼' -replace 'npm run writer:start', '실행 시작 버튼'
-    $status.Text = if ($result) { $result } else { '도우미가 종료되었습니다.' }
+  if (!$script:worker) { return }
+  # Drain completed line reads while the worker is alive, not only on exit.
+  # Bound each tick and the visible log so a noisy worker cannot freeze the UI.
+  foreach ($stream in $script:streams) {
+    for ($lineNumber = 0; $lineNumber -lt 30 -and !$stream.Ended -and $stream.Pending.IsCompleted; $lineNumber++) {
+      if ($stream.Pending.IsFaulted -or $stream.Pending.IsCanceled) { $stream.Ended = $true; break }
+      $line = $stream.Pending.Result
+      if ($null -eq $line) { $stream.Ended = $true; break }
+      if ($line -eq 'WRITER_LOGIN_WAITING') {
+        $confirmed.Enabled = $true; $stop.Enabled = $true
+        $stream.Pending = $stream.Reader.ReadLineAsync(); continue
+      }
+      if ($line -eq 'WRITER_LOGIN_READY') {
+        $script:mode = 'start'; $confirmed.Enabled = $false; $stop.Enabled = $true
+        $stream.Pending = $stream.Reader.ReadLineAsync(); continue
+      }
+      $line = $line -replace 'npm run writer:pair', '도우미 창의 PC 연결' -replace 'npm run writer:login', '네이버 로그인 버튼' -replace 'npm run writer:start', '실행 시작 버튼'
+      if ($line) { $status.AppendText("`r`n" + $line) }
+      if ($status.TextLength -gt 10000) { $status.Text = $status.Text.Substring($status.TextLength - 8000) }
+      $stream.Pending = $stream.Reader.ReadLineAsync()
+    }
+  }
+  if ($script:worker.HasExited -and !($script:streams | Where-Object { !$_.Ended })) {
+    $status.AppendText("`r`n도우미 작업 종료.")
     $script:worker.Dispose(); $script:worker = $null
     $pair.Enabled = $true; $login.Enabled = $true; $start.Enabled = $true
     $confirmed.Enabled = $false; $stop.Enabled = $false

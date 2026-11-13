@@ -18,6 +18,27 @@ export async function findLoginEditor(context, device) {
   return null;
 }
 
+// Keep the authenticated browser alive, but remove only the confirmed empty
+// login editor tab so the writer's existing-draft protection still works.
+// Unknown structure, recovery prompts and any content always stay untouched.
+export async function closeEmptyLoginEditor(frame, context) {
+  try {
+    if (await frame.getByText("작성 중인 글이 있습니다.", { exact: true }).isVisible()) return false;
+    const container = frame.locator(".se-components-wrap");
+    const title = frame.locator(".se-documentTitle .se-text-paragraph");
+    if (await container.count() !== 1 || await title.count() !== 1) return false;
+    const nodes = container.locator(".__se-node");
+    const body = (await nodes.allTextContents()).join("").trim();
+    const heading = (await title.locator(".__se-node").allTextContents()).join("").trim();
+    const nonText = await container.locator(".se-component:not(.se-documentTitle):not(.se-text)").count();
+    if (body || heading || nonText) return false;
+    // Keep at least one tab open; do not rely on last-tab-close semantics.
+    if (context.pages().length === 1) await context.newPage();
+    await frame.page().close();
+    return true;
+  } catch { return false; }
+}
+
 export async function confirmNaverLogin(context, device, { wait = delay, attempts = 30 } = {}) {
   validateTarget(device);
   const waitForEditor = async count => {

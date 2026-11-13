@@ -15,7 +15,8 @@ interface WriterState {
   device?: { tokenHash: string; blogId: string; category?: NaverCategory; lastSeen: number; protocolVersion?: number };
   jobs: WriterJob[];
   // Only compact receipts survive history pruning; sending an unchanged article
-  // twice never creates another Naver draft, even after many later jobs.
+  // twice cannot silently create another Naver draft, even after many later jobs.
+  // A retained saved job can be resent only with explicit receipt confirmation.
   receipts: Record<string, string>;
 }
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
@@ -94,7 +95,7 @@ export class LocalWriter {
     });
   }
 
-  async enqueue(payload: NaverTransfer, target?: { blogId: string; categoryId: string | null }) {
+  async enqueue(payload: NaverTransfer, target?: { blogId: string; categoryId: string | null }, resendSavedJobId?: string) {
     return this.change(state => {
       if (!state.device || this.now() - state.device.lastSeen >= onlineMs) return fail("WRITER_OFFLINE", "Windows PC에서 도우미를 실행한 뒤 다시 눌러주세요.");
       if (state.device.category && (state.device.protocolVersion ?? 1) < 2) return fail("WRITER_UPDATE_REQUIRED", "카테고리 지정에 맞게 PC 도우미를 업데이트하고 다시 실행해주세요.");
@@ -105,7 +106,12 @@ export class LocalWriter {
       // an unchanged article already saved to the same blog.
       const fingerprint = hash(`${state.device.blogId}:${payload.fingerprint}`);
       const previous = state.receipts[fingerprint];
-      if (previous) {
+      // Explicit consent applies only to this exact saved receipt. A retry of
+      // the same request cannot create another job after the receipt changes.
+      if (resendSavedJobId && (previous !== resendSavedJobId || !state.jobs.some(j => j.id === previous && j.status === "saved"))) {
+        return fail("WRITER_RESEND_CHANGED", "저장 기록이 변경되었습니다. 화면을 다시 열고 확인해주세요.");
+      }
+      if (previous && !resendSavedJobId) {
         const job = state.jobs.find(j => j.id === previous);
         if (job) return publicWriterJob(job);
         return fail("ALREADY_SENT", "동일한 원고를 이미 보냈습니다. 네이버 임시저장 목록을 확인해주세요.");

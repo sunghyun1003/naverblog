@@ -13,6 +13,7 @@ export function NaverDraftButton({ contentId, versionId, disabled }: { contentId
   const working = useRef(false);
   const [status, setStatus] = useState<NaverWriterStatus | null>(null);
   const [error, setError] = useState("");
+  const [savedReceipt, setSavedReceipt] = useState<string | null>(null);
   const [blogId, setBlogId] = useState(`https://blog.naver.com/${DEFAULT_NAVER_BLOG_ID}`);
   const [categoryName, setCategoryName] = useState<string>(DEFAULT_NAVER_CATEGORY.name);
   const [categoryId, setCategoryId] = useState<string>(DEFAULT_NAVER_CATEGORY.id);
@@ -42,12 +43,14 @@ export function NaverDraftButton({ contentId, versionId, disabled }: { contentId
     finally { working.current = false; setBusy(false); }
   }
 
-  async function send() {
+  async function send(resendSavedJobId?: string) {
     if (!status?.blogId) throw new Error("연결된 블로그를 먼저 확인해주세요.");
-    await sendNaverDraft(contentId, versionId, { blogId: status.blogId, categoryId: status.category?.id ?? null });
+    const result = await sendNaverDraft(contentId, versionId, { blogId: status.blogId, categoryId: status.category?.id ?? null }, resendSavedJobId);
+    setSavedReceipt(result.status === "saved" ? result.id : null);
     setStatus(await getNaverWriter(contentId));
   }
   function begin() {
+    setSavedReceipt(null);
     setOpen(true);
     void act(async () => {
       const next = await getNaverWriter(contentId);
@@ -74,7 +77,8 @@ export function NaverDraftButton({ contentId, versionId, disabled }: { contentId
             {!status.online ? <p>바탕화면의 <strong>블로그 임시저장 도우미</strong>를 열고 <strong>실행 시작</strong>을 누르세요. 이 창을 여는 것만으로 도우미가 켜지지는 않습니다. PC가 꺼져 있으면 나중에 자동 실행하지 않습니다.</p> : null}
           </> : null}
             {job ? <section className="naver-writer__status" aria-live="polite">
-              <strong>{({ queued: "전송 대기", running: "PC에서 처리 중", needs_check: "네이버에서 확인 필요", saved: "임시저장 확인됨", cancelled: "전송 취소됨" })[job.status]}</strong>
+              <strong>{({ queued: "전송 대기", running: "PC에서 처리 중", needs_check: "네이버에서 확인 필요", saved: "이전 임시저장 완료 기록", cancelled: "전송 취소됨" })[job.status]}</strong>
+              <small>{new Date(job.updatedAt).toLocaleString("ko-KR")}</small>
               <p>{job.message}</p>
               {job.status === "needs_check" ? <>
                 <p>네이버 임시저장 목록에서 제목·본문·이미지를 확인해주세요. 확인 전에는 중복 전송을 막습니다.</p>
@@ -89,8 +93,14 @@ export function NaverDraftButton({ contentId, versionId, disabled }: { contentId
               </> : null}
             </section> : null}
           {status.connected ? <>
+            {savedReceipt ? <section role="status" className="naver-writer__status">
+              <p>동일한 원고를 이미 임시저장한 기록이 있어 새 작업을 시작하지 않았습니다. 네이버 임시저장 목록을 먼저 확인해주세요.</p>
+              <Button disabled={busy || !status.online || Boolean(status.blockingJob) || status.helperCompatible === false} onClick={() => {
+                if (window.confirm("같은 원고를 새 임시저장본으로 다시 보낼까요? 기존 네이버 글은 수정·삭제하지 않으며 중복 글이 생길 수 있습니다.")) void act(() => send(savedReceipt));
+              }}>확인 후 새 임시저장본으로 다시 보내기</Button>
+            </section> : null}
             <div className="naver-writer__actions">
-              <Button variant="brand" disabled={busy || !status.online || status.helperCompatible === false || Boolean(status.blockingJob)} onClick={() => void act(send)}>{busy ? "처리 중…" : "이 블로그로 현재 원고 보내기"}</Button>
+              <Button variant="brand" disabled={busy || !status.online || status.helperCompatible === false || Boolean(status.blockingJob)} onClick={() => void act(() => send())}>{busy ? "처리 중…" : "이 블로그로 현재 원고 보내기"}</Button>
               <Button disabled={busy} onClick={() => {
                 if (window.confirm("PC 연결을 해제할까요? 이미 네이버에 입력한 글은 삭제하지 않습니다.")) void act(async () => { await revokeNaverWriter(); setStatus(await getNaverWriter(contentId)); });
               }}>PC 연결 해제</Button>

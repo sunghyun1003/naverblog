@@ -346,8 +346,8 @@ export function getNaverWriter(contentId: string, signal?: AbortSignal): Promise
 export function pairNaverWriter(blogId: string, category?: { id: string; name: string }): Promise<{ code: string; expiresAt: number }> {
   return requestNetwork("/api/local-writer/pairing", { method: "POST", body: JSON.stringify({ blogId, category }) });
 }
-export function sendNaverDraft(contentId: string, versionId: string, target: { blogId: string; categoryId: string | null }): Promise<NaverWriterJob> {
-  return requestNetwork(`/api/contents/${encodeURIComponent(contentId)}/naver-draft`, { method: "POST", body: JSON.stringify({ versionId, target }) });
+export function sendNaverDraft(contentId: string, versionId: string, target: { blogId: string; categoryId: string | null }, resendSavedJobId?: string): Promise<NaverWriterJob> {
+  return requestNetwork(`/api/contents/${encodeURIComponent(contentId)}/naver-draft`, { method: "POST", body: JSON.stringify({ versionId, target, resendSavedJobId }) });
 }
 export function resolveNaverDraft(jobId: string, saved: boolean): Promise<NaverWriterJob> {
   return requestNetwork("/api/local-writer/resolve", { method: "POST", body: JSON.stringify({ jobId, saved }) });

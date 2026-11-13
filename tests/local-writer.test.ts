@@ -85,6 +85,38 @@ test("동시 클릭과 동시 PC 폴링에도 작업은 한 번만 할당된다"
   const claims = await Promise.all([writer.poll(device.token), writer.poll(device.token)]);
   assert.equal(claims.filter(c => c.job).length, 1);
 });
+
+test("완료 원고 재전송은 정확한 저장 기록 확인으로만 허용하고 동시 재요청은 중복 생성하지 않는다", async () => {
+  const { writer, device } = await fixture();
+  const payload = naverTransfer(example());
+  const original = await writer.enqueue(payload);
+  const claim = (await writer.poll(device.token)).job!;
+  await assert.rejects(() => writer.enqueue(payload, undefined, original.id), /저장 기록/);
+  await writer.report(device.token, claim.id, claim.lease, "saved", "저장 검증 완료");
+  assert.equal((await writer.enqueue(payload)).id, original.id);
+  assert.equal((await writer.poll(device.token)).job, null);
+  await assert.rejects(() => writer.enqueue({ ...payload, fingerprint: "other" }, undefined, original.id), /저장 기록/);
+  const attempts = await Promise.allSettled([
+    writer.enqueue(payload, undefined, original.id), writer.enqueue(payload, undefined, original.id),
+  ]);
+  assert.equal(attempts.filter(result => result.status === "fulfilled").length, 1);
+  const state = await writer.status();
+  assert.equal(state.jobs.length, 2);
+  assert.equal(state.jobs[0]?.status, "saved");
+  assert.equal(state.jobs[1]?.status, "queued");
+  assert.notEqual(state.jobs[1]?.id, original.id);
+  assert.equal((await writer.poll(device.token)).job?.id, state.jobs[1]?.id);
+});
+
+test("저장 원고 재전송 확인으로 다른 진행 작업을 우회하지 못한다", async () => {
+  const { writer, device } = await fixture();
+  const payload = naverTransfer(example());
+  const original = await writer.enqueue(payload);
+  const claim = (await writer.poll(device.token)).job!;
+  await writer.report(device.token, claim.id, claim.lease, "saved", "저장 검증 완료");
+  await writer.enqueue({ ...payload, fingerprint: "other", contentId: "456" });
+  await assert.rejects(() => writer.enqueue(payload, undefined, original.id), /이전 임시저장/);
+});
 test("PC 중단 이후 자동 재전송하지 않고 수동 확인을 기다린다", async () => {
   const { writer, device, advance } = await fixture();
   await writer.enqueue(naverTransfer(example()));
@@ -185,6 +217,11 @@ test("HTTP 연결→요청→수신→이미지 검증→저장 보고가 원고
     const completed = await post("/api/local-writer/worker/report", { jobId: job.id, lease: job.lease, status: "saved", message: "재열기 검증 완료" }, device.token);
     assert.equal(completed.json().status, "saved");
     assert.equal((await post("/api/contents/123/naver-draft", { versionId: "v2" })).json().id, job.id);
+    const resend = await post("/api/contents/123/naver-draft", { versionId: "v2", resendSavedJobId: job.id });
+    assert.equal(resend.statusCode, 200);
+    assert.equal(resend.json().status, "queued");
+    assert.notEqual(resend.json().id, job.id);
+    assert.equal((await post("/api/contents/123/naver-draft", { versionId: "v2", resendSavedJobId: job.id })).statusCode, 409);
     assert.equal(detail.content.state, "approved");
   } finally { await app.close(); }
 });

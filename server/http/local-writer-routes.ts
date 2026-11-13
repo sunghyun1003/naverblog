@@ -43,14 +43,15 @@ export function registerLocalWriterRoutes(app: FastifyInstance, options: {
   app.post("/api/local-writer/revoke", () => writer.revoke());
   app.post("/api/contents/:id/naver-draft", async request => {
     const { id } = z.object({ id: z.string().min(1).max(100) }).parse(request.params);
-    const { versionId, target } = z.object({ versionId: z.string().min(1).max(200),
+    const { versionId, target, resendSavedJobId } = z.object({ versionId: z.string().min(1).max(200),
+      resendSavedJobId: codeSchema.optional(),
       target: z.object({ blogId: blogSchema, categoryId: z.string().regex(/^[1-9][0-9]{0,8}$/).nullable() }).optional(),
     }).parse(request.body);
     // Do not make an expensive GitHub call when the PC isn't even available.
     if (!(await writer.status()).online) throw new DomainError("WRITER_OFFLINE", "Windows PC에서 도우미를 실행해주세요.", 409);
     const payload = naverTransfer(await options.detail(id));
     if (payload.versionId !== versionId) throw new DomainError("DRAFT_CHANGED", "원고가 변경되었습니다. 새로고침한 뒤 다시 보내주세요.", 409);
-    return writer.enqueue(payload, target);
+    return writer.enqueue(payload, target, resendSavedJobId);
   });
   app.post("/api/local-writer/resolve", async request => {
     const { jobId, saved } = jobSchema.extend({ saved: z.boolean() }).parse(request.body);

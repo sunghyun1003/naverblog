@@ -8,6 +8,18 @@ const imageKey = src => { const url = new URL(src); return url.origin + url.path
 const readOrder = container => container.locator(".se-component:not(.se-documentTitle)").evaluateAll(elements => elements.map(el => el.classList.contains("se-image")
   ? { kind: "image" } : { kind: "text", text: [...el.querySelectorAll(".__se-node")].map(node => node.textContent ?? "").join("") }));
 
+export async function waitUploadedImage(frame, count) {
+  // Earlier off-screen images may be replaced by lazy-loading placeholders.
+  // Check the new image in view, not every earlier image at the same instant.
+  await frame.waitForFunction(count => document.querySelectorAll(".se-components-wrap .se-component.se-image img").length === count, count, { timeout: 30_000 });
+  await frame.locator(".se-components-wrap .se-component.se-image img").nth(count - 1).scrollIntoViewIfNeeded();
+  await frame.waitForFunction(count => {
+    const imgs = [...document.querySelectorAll(".se-components-wrap .se-component.se-image img")];
+    const img = imgs[count - 1];
+    return imgs.length === count && img?.complete && img.naturalWidth > 0 && /^https:\/\//.test(img.src);
+  }, count, { timeout: 30_000 });
+}
+
 export async function loadedEditorImages(frame, count) {
   const images = frame.locator(".se-components-wrap .se-component.se-image img");
   const sources = [];
@@ -122,7 +134,9 @@ export async function writeNaverDraft(context, job, plan, images, report) {
   await title.click(); await page.keyboard.insertText(job.payload.title);
   let imageCount = 0;
   for (const item of plan) {
-    await report("원고와 이미지 순서를 확인하며 입력하고 있습니다.");
+    await report(item.kind === "html"
+      ? (imageCount === job.payload.assets.length ? "심의필 문구를 입력하고 있습니다." : "본문 문단을 입력하고 있습니다.")
+      : `이미지 ${imageCount + 1}/${job.payload.assets.length}${item.asset.role === "footer" ? " (가입 안내)" : ""}를 업로드하고 확인하고 있습니다.`);
     if (item.kind === "html") { await paste(item.html); continue; }
     const data = images.get(item.asset.id);
     if (!data) throw new Error("이미지 파일이 준비되지 않았습니다.");
@@ -139,10 +153,7 @@ export async function writeNaverDraft(context, job, plan, images, report) {
     }
     imageCount++;
     expectedOrder.push({ kind: "image" });
-    await frame.waitForFunction(count => {
-      const imgs = [...document.querySelectorAll(".se-components-wrap .se-component.se-image img")];
-      return imgs.length === count && imgs.every(img => img.complete && img.naturalWidth > 0 && /^https:\/\//.test(img.src));
-    }, imageCount, { timeout: 30_000 });
+    await waitUploadedImage(frame, imageCount);
     // Only append to an actual text paragraph after the image. If Naver doesn't
     // create one automatically, stop instead of inserting text before the image.
     const lastIsText = await container.locator(".se-component").last().evaluate(el => el.classList.contains("se-text"));
@@ -150,6 +161,7 @@ export async function writeNaverDraft(context, job, plan, images, report) {
     needsBodyFocus = true;
     // The operator sets Naver's native AI-use checkbox before publication.
   }
+  await report("심의필을 포함한 본문과 이미지 순서를 최종 확인하고 있습니다.");
   if (normal(await title.innerText()) !== normal(job.payload.title)) throw new Error("제목이 원본과 일치하지 않습니다.");
   const actual = normal(await authorText(container));
   let cursor = 0;
@@ -160,7 +172,7 @@ export async function writeNaverDraft(context, job, plan, images, report) {
   }
   if (await container.locator(".se-component.se-image").count() !== job.payload.assets.length) throw new Error("본문 이미지 수가 원본과 다릅니다.");
   assertDocumentOrder(expectedOrder, await readOrder(container));
-  const uploadedImages = await container.locator(".se-component.se-image img").evaluateAll(elements => elements.map(img => img.src));
+  const uploadedImages = await loadedEditorImages(frame, job.payload.assets.length);
   // Observed 2026-09-27: '저장' saves a temporary draft; '발행' is separate.
   const save = frame.getByRole("button", { name: "저장", exact: true });
   if (await save.count() !== 1) throw new Error("임시저장 버튼을 명확히 확인하지 못했습니다. 발행 버튼은 누르지 않습니다.");

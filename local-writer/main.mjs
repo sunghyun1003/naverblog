@@ -64,11 +64,18 @@ async function runJob(context, device, job, isStopping) {
   await writeFile(journal, JSON.stringify({ startedAt: new Date().toISOString(), status: "started" }));
   let stopped = false;
   let leaseError = null;
+  let stage = "원고와 이미지 파일 준비";
+  const progress = async message => {
+    stage = message;
+    process.stdout.write(`${message}\n`);
+    await writeFile(journal, JSON.stringify({ status: "started", stage, updatedAt: new Date().toISOString() }));
+    await report("running", message);
+  };
   const heartbeat = (async () => {
     while (!stopped) {
       await delay(25_000);
       if (stopped) break;
-      try { await report("running", "PC에서 원고 전송을 진행 중입니다. 열린 네이버 편집기를 직접 조작하지 마세요."); }
+      try { await report("running", stage); }
       catch { leaseError = new Error("PC 연결 확인에 실패했습니다. 중복 작업을 막기 위해 전송을 멈춥니다."); break; }
     }
   })();
@@ -90,10 +97,11 @@ async function runJob(context, device, job, isStopping) {
     await preview.locator("img").evaluateAll(async elements => {
       await Promise.all(elements.map(img => img.decode()));
     });
+    await progress("네이버 편집기를 열고 입력 가능한 상태인지 확인하고 있습니다.");
     const outcome = await writeNaverDraft(context, job, plan, images, async message => {
       if (isStopping()) throw new Error("사용자가 PC 도우미를 종료했습니다. 네이버 임시저장 목록을 확인해주세요.");
       if (leaseError) throw leaseError;
-      await report("running", message);
+      await progress(message);
     });
     stopped = true;
     await writeFile(journal, JSON.stringify({ status: "saved", message: outcome, updatedAt: new Date().toISOString() }));
@@ -105,8 +113,8 @@ async function runJob(context, device, job, isStopping) {
     stopped = true;
     // Do not upload stack traces, HTML, screenshot, browser cookies or full URLs.
     const message = error instanceof Error && !/locator|Timeout|waiting|call log/i.test(error.message)
-      ? error.message.slice(0, 250) : "네이버 편집기 조작을 확인하지 못해 중단했습니다. 열린 창을 확인해주세요. 원본 미리보기와 이미지는 PC에 보존되어 있습니다.";
-    await writeFile(journal, JSON.stringify({ status: "needs_check", message, updatedAt: new Date().toISOString() }));
+      ? error.message.slice(0, 250) : `중단 단계: ${stage} 편집기 응답을 확인하지 못했습니다. 저장 완료가 아니며 입력 내용은 열린 창에 보존했습니다.`;
+    await writeFile(journal, JSON.stringify({ status: "needs_check", stage, errorType: error?.name === "TimeoutError" ? "timeout" : "operation_failed", message, updatedAt: new Date().toISOString() }));
     await report("needs_check", message).catch(() => {});
     process.stdout.write(`${message}\n`);
   } finally { stopped = true; }

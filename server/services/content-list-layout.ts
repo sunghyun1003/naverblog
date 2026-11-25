@@ -11,6 +11,23 @@ export interface ContentListLayout {
 export interface ContentListLayoutStore {
   getContentListLayout(): Promise<{ revision: number; value: ContentListLayout } | null>;
   compareContentListLayout(revision: number, value: ContentListLayout): Promise<boolean>;
+  /** IDs explicitly marked deleted. Absent IDs are never treated as deleted. */
+  listDeletedContentIds(): Promise<string[]>;
+}
+
+/** Closes the gaps left by deleted contents: remaining numbers keep their
+ * relative order and everything below the first deleted number is unchanged.
+ * Only IDs marked deleted are removed, so a partial or failed list read can
+ * never renumber anything. Requested by the user on 2026-11-25.
+ */
+export function compactDeletedNumbers(layout: ContentListLayout, deletedIds: Iterable<string>): boolean {
+  const deleted = new Set(deletedIds);
+  if (!layout.entries.some(entry => deleted.has(entry.id))) return false;
+  const kept = layout.entries.filter(entry => !deleted.has(entry.id)).sort((a, b) => a.number - b.number);
+  layout.entries = kept.map((entry, index) => ({ id: entry.id, number: index + 1 }));
+  layout.order = layout.order.filter(id => !deleted.has(id));
+  layout.nextNumber = kept.length + 1;
+  return true;
 }
 
 export interface ContentMove {
@@ -41,9 +58,10 @@ export function planContentRenumbering(teamId: string, saved: { revision: number
   return { fingerprint, value, changes: entries.map(entry => ({ ...entry, previousNumber: oldNumbers.get(entry.id) ?? null })) };
 }
 
-/** Numbers are a permanent registry; display order is an independent preference.
- * Keep deleted IDs in the registry so neither deletion nor a later sync reuses
- * their numbers. Only currently active contents are rendered or moved.
+/** Numbers stay fixed for active contents; display order is an independent
+ * preference. A deleted content's number is released and later numbers move
+ * up by one so the list has no gaps. A content that is restored after its
+ * number was released gets a new number like a new arrival.
  */
 export class ContentListLayouts {
   constructor(private readonly store: ContentListLayoutStore) {}
@@ -53,6 +71,7 @@ export class ContentListLayouts {
     for (let attempt = 0; attempt < 5; attempt++) {
       const saved = await this.store.getContentListLayout();
       const layout: ContentListLayout = structuredClone(saved?.value ?? { nextNumber: 1, entries: [], order: [] });
+      const compacted = compactDeletedNumbers(layout, await this.store.listDeletedContentIds());
       const numbers = new Map(layout.entries.map(entry => [entry.id, entry.number]));
       const added = active.filter(item => !numbers.has(item.id)).sort((a, b) =>
         a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id, "en", { numeric: true }));
@@ -76,7 +95,7 @@ export class ContentListLayouts {
         const to = layout.order.indexOf(move.neighborId);
         [layout.order[from], layout.order[to]] = [layout.order[to]!, layout.order[from]!];
       }
-      if ((added.length || move) && !await this.store.compareContentListLayout(saved?.revision ?? 0, layout)) continue;
+      if ((added.length || move || compacted) && !await this.store.compareContentListLayout(saved?.revision ?? 0, layout)) continue;
       return layout.order.flatMap(id => {
         const content = byId.get(id);
         return content ? [{ ...content, number: numbers.get(id)! }] : [];

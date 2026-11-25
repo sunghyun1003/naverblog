@@ -86,6 +86,11 @@ export class PostgresAutomationRepository implements AutomationRepository {
     return result.rowCount === 1;
   }
 
+  async listDeletedContentIds(): Promise<string[]> {
+    const result = await this.pool.query("SELECT id FROM contents WHERE team_id=$1 AND state='deleted'", [this.teamId]);
+    return result.rows.map(row => String(row.id));
+  }
+
   async getLocalWriterState<T>(): Promise<{ revision: number; value: T } | null> {
     const result = await this.pool.query("SELECT revision,value FROM local_writer_state WHERE team_id=$1", [this.teamId]);
     return result.rows[0] as { revision: number; value: T } ?? null;

@@ -41,6 +41,10 @@ export class InMemoryAutomationRepository implements AutomationRepository {
     return true;
   }
 
+  async listDeletedContentIds(): Promise<string[]> {
+    return [...this.contents.values()].filter(content => content.state === "deleted").map(content => content.id);
+  }
+
   private localWriter: { revision: number; value: unknown } | null = null;
 
   async getLocalWriterState<T>(): Promise<{ revision: number; value: T } | null> {

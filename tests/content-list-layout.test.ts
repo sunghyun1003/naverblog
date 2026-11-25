@@ -26,7 +26,7 @@ test("oldest is 1 at the bottom; refresh, editing and caller order cannot renumb
   assert.equal((await repository.getContentListLayout())!.revision, revision, "ordinary reads never write");
 });
 
-test("deletion never reuses numbers; new arrivals go above custom order, restored IDs keep their number", async () => {
+test("a missing (not deleted) content keeps its number; new arrivals go above custom order", async () => {
   const service = new ContentListLayouts(new InMemoryAutomationRepository());
   await service.arrange(records);
   const withoutNewest = records.filter(item => item.id !== "new");
@@ -34,6 +34,33 @@ test("deletion never reuses numbers; new arrivals go above custom order, restore
   assert.deepEqual(summary(await service.arrange([...withoutNewest, content("next", 21)])), [["next", 4], ["middle", 2], ["old", 1]]);
   await service.arrange(records, { id: "middle", neighborId: "new", direction: "up" });
   assert.deepEqual(summary(await service.arrange([...records, content("last", 22)])), [["last", 5], ["middle", 2], ["new", 3], ["old", 1]]);
+});
+
+test("deleting a content closes its number gap; earlier numbers and custom order stay; absence alone never renumbers", async () => {
+  const repository = new InMemoryAutomationRepository();
+  const service = new ContentListLayouts(repository);
+  const five = [1, 2, 3, 4, 5].map(day => content(`c${day}`, day));
+  for (const item of five) await repository.createContent(item);
+  await service.arrange(five);
+  await service.arrange(five, { id: "c2", neighborId: "c3", direction: "up" });
+  // A partial list (failed read, filter) must not release any number.
+  const revision = (await repository.getContentListLayout())!.revision;
+  assert.deepEqual(summary(await service.arrange(five.slice(0, 2))), [["c2", 2], ["c1", 1]]);
+  assert.equal((await repository.getContentListLayout())!.revision, revision);
+  // Delete 3 and 4: 1 and 2 keep their numbers, 5 becomes 3, the user's move survives.
+  for (const id of ["c3", "c4"]) await repository.updateContent({ ...five.find(item => item.id === id)!, state: "deleted" });
+  const active = five.filter(item => !["c3", "c4"].includes(item.id));
+  assert.deepEqual(summary(await service.arrange(active)), [["c5", 3], ["c2", 2], ["c1", 1]]);
+  const saved = (await repository.getContentListLayout())!.value;
+  assert.equal(saved.nextNumber, 4);
+  assert.deepEqual(saved.entries.map(entry => entry.id).sort(), ["c1", "c2", "c5"]);
+  // The next arrival continues without a gap; a second read writes nothing.
+  const next = content("c6", 6);
+  await repository.createContent(next);
+  assert.deepEqual(summary(await service.arrange([...active, next])), [["c6", 4], ["c5", 3], ["c2", 2], ["c1", 1]]);
+  const settled = (await repository.getContentListLayout())!.revision;
+  await service.arrange([...active, next]);
+  assert.equal((await repository.getContentListLayout())!.revision, settled);
 });
 
 test("two clients moving the same neighbor do not swap back or lose saved order", async () => {
@@ -88,5 +115,7 @@ test("Postgres layout reads and compare-and-swap writes are team scoped", async 
   assert.match(calls[0]!.sql, /WHERE team_id=\$1/);
   assert.match(calls[1]!.sql, /ON CONFLICT DO NOTHING/);
   assert.match(calls[2]!.sql, /WHERE team_id=\$1 AND revision=\$2/);
+  await repository.listDeletedContentIds();
+  assert.match(calls[3]!.sql, /WHERE team_id=\$1 AND state='deleted'/);
   for (const call of calls) assert.equal(call.values[0], "team-a");
 });
